@@ -113,3 +113,53 @@ prohíbe de cuatro formas distintas retocar, recolorear o revectorizar el arte, 
 se editó ninguna imagen.
 
 **Conviene pedir el vector al diseñador.**
+
+---
+
+## 7. Verificación de cierre de rama · 2026-08-20
+
+Ejecutada sobre `feat/linea-grafica-thureos` antes de decidir la integración.
+
+| Comprobación | Resultado |
+|---|---|
+| `go build ./...` | ✅ |
+| `go vet ./...` | ✅ |
+| `npx next build` | ✅ 16 rutas |
+| Colores literales en `frontend/src` | ✅ sin salida |
+| Nombre de producto anterior en todo el repo | ✅ sin salida |
+| `gofmt -l backend/` | ❌ 12 archivos (F4, sigue pendiente) |
+
+El recuento de `gofmt` bajó de 16 a 12: los commits de la rama tocaron y
+reformatearon cuatro de esos archivos por el camino.
+
+### F9 · El renombrado de identificadores cambia la base y la clave de cola
+
+`21027e0` renombró la base Mongo `datawatch` → `thureos_compliance` y las claves
+`datawatch:queue:*` → `thureos:queue:*`. El plan lo listaba como **fuera de alcance**,
+así que entró sin la nota de migración que le correspondía.
+
+Sobre una instalación previa que ya hubiera arrancado, esto la apunta en silencio a
+una base vacía y abandona lo que quedara en la cola antigua. Es más grave que F8:
+allí el cambio *no llega*, aquí *redirige sin avisar*.
+
+**Verificado en esta máquina:** no existe la base `datawatch` ni ninguna clave
+`datawatch:*`. El volumen se creó ya con el nombre nuevo —coherente con F1, donde
+el compose nunca llegó a levantar por el choque de puertos—. La base viva es
+`thureos_compliance` con 194 países, 320 MCC, 1 usuario. **Aquí no hay nada que migrar.**
+
+Queda como advertencia para cualquier otra instalación: antes de desplegar esta rama
+hay que comprobar si existe una base `datawatch` y, si existe, renombrarla
+(`db.adminCommand({renameCollection…})` por colección, o `mongodump`/`mongorestore`).
+
+### F10 · Artefactos de verificación visual rastreados — **[resuelto]**
+
+`21027e0` commiteó `.playwright-mcp/` y `login-oscuro.png`. La regla de `.gitignore`
+para ese directorio se añadió un commit más tarde (`0e177ac`), demasiado tarde para
+alcanzar archivos ya rastreados. Desrastreados en `27925c5`; los archivos siguen en
+disco. `.gitignore` cubre ahora también las capturas `*-oscuro.png` / `*-claro.png`.
+
+### Nota sobre `mongo.go`
+
+`ConnectMongo` fija `dbName := "thureos_compliance"` en código e **ignora la base que
+venga en `MONGO_URI`**. No es una regresión de esta rama —ya era así— pero significa
+que la ruta del URI es decorativa: apuntar a otra base exige recompilar.
