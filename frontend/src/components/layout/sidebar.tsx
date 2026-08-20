@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/brand/logo";
 import { useAuthStore } from "@/stores/auth-store";
 import type { Role } from "@/lib/types";
 
@@ -76,12 +77,12 @@ export function Sidebar() {
   return (
     <aside className="flex h-screen w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
       {/* Logo */}
-      <div className="flex h-14 items-center border-b px-6">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Monitor className="h-4 w-4" />
-          </div>
-          <span className="text-lg font-semibold tracking-tight">DataWatch</span>
+      <div className="flex h-14 items-center border-b border-line-subtle px-6">
+        <Link href="/" className="flex items-center gap-2.5">
+          <Logo variant="isotipo" size={28} />
+          <span className="text-sm font-semibold uppercase tracking-[0.14em] text-ink">
+            Thureos
+          </span>
         </Link>
       </div>
 

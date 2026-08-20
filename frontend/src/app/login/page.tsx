@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Logo } from "@/components/brand/logo";
 import { useAuthStore } from "@/stores/auth-store";
 
 export default function LoginPage() {
@@ -33,11 +33,11 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Monitor className="h-6 w-6" />
+          <div className="mx-auto mb-4 flex items-center justify-center">
+            <Logo variant="isotipo" size={56} />
           </div>
-          <CardTitle className="text-xl">DataWatch</CardTitle>
-          <CardDescription>Inicia sesion en tu cuenta</CardDescription>
+          <CardTitle className="text-xl">Thureos Compliance</CardTitle>
+          <CardDescription>Inicia sesión en tu cuenta</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
