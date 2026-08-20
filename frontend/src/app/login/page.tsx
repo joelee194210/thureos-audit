@@ -25,7 +25,7 @@ export default function LoginPage() {
       await login(email, password);
       router.push("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al iniciar sesion");
+      setError(err instanceof Error ? err.message : "Error al iniciar sesión");
     }
   }
 
@@ -71,13 +71,13 @@ export default function LoginPage() {
             </div>
 
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Ingresando..." : "Iniciar sesion"}
+              {isLoading ? "Ingresando..." : "Iniciar sesión"}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
               No tienes cuenta?{" "}
               <Link href="/register" className="text-primary hover:underline">
-                Registrate
+                Regístrate
               </Link>
             </p>
           </form>

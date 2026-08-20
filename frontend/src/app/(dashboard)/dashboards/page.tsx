@@ -76,7 +76,7 @@ export default function DashboardsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Descripcion</Label>
+                  <Label>Descripción</Label>
                   <Input
                     value={newDashboard.description}
                     onChange={(e) => setNewDashboard({ ...newDashboard, description: e.target.value })}
@@ -133,7 +133,7 @@ export default function DashboardsPage() {
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex gap-1">
                       <Badge variant="outline">{dashboard.widgets?.length || 0} widgets</Badge>
-                      {dashboard.isPublic && <Badge variant="secondary">Publico</Badge>}
+                      {dashboard.isPublic && <Badge variant="secondary">Público</Badge>}
                     </div>
                     <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100" onClick={() => deleteDashboard(dashboard.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />

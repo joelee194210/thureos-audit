@@ -132,7 +132,7 @@ export default function MonitorDetailPage() {
                   <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Descripcion</Label>
+                  <Label>Descripción</Label>
                   <Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
                 </div>
                 <Button type="submit" className="w-full">Guardar</Button>
@@ -143,7 +143,7 @@ export default function MonitorDetailPage() {
           <span className="text-sm text-muted-foreground">{monitor.recordCount} registros</span>
           {monitor.lastIngested && (
             <span className="text-sm text-muted-foreground">
-              Ultima carga: {formatDate(monitor.lastIngested)}
+              Última carga: {formatDate(monitor.lastIngested)}
             </span>
           )}
           {monitor.recordCount > 0 && (

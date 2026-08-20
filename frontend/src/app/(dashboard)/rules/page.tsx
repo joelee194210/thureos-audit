@@ -199,7 +199,7 @@ function MCCPicker({ value, onChange, multi }: { value: unknown; onChange: (val:
               <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="h-7 pl-7 text-xs"
-                placeholder="Buscar codigo o descripcion..."
+                placeholder="Buscar código o descripción..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 autoFocus
@@ -772,7 +772,7 @@ function RulesContent() {
                           <SelectItem value="low">Baja</SelectItem>
                           <SelectItem value="medium">Media</SelectItem>
                           <SelectItem value="high">Alta</SelectItem>
-                          <SelectItem value="critical">Critica</SelectItem>
+                          <SelectItem value="critical">Crítica</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -955,7 +955,7 @@ function RulesContent() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Descripcion</Label>
+                    <Label>Descripción</Label>
                     <Textarea value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} />
                   </div>
 
@@ -1120,7 +1120,7 @@ function RulesContent() {
                           Monitor: <span className="font-medium text-foreground">{monitors.find(m => m.id === rule.monitorId)?.name ?? "—"}</span>
                           {" · "}
                           {rule.triggerCount} activaciones
-                          {rule.lastTriggered && ` · Ultima: ${formatDate(rule.lastTriggered)}`}
+                          {rule.lastTriggered && ` · Última: ${formatDate(rule.lastTriggered)}`}
                         </p>
                         {rule.aggregateConditions && rule.aggregateConditions.length > 0 && (
                           <p className="mt-1 flex items-center gap-1 text-xs text-accent-fg">
@@ -1130,7 +1130,7 @@ function RulesContent() {
                         )}
                         {rule.schedule?.enabled && (
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {rule.schedule.lastEvaluated && <>Ultima eval: {formatDate(rule.schedule.lastEvaluated)}</>}
+                            {rule.schedule.lastEvaluated && <>Última eval: {formatDate(rule.schedule.lastEvaluated)}</>}
                             {rule.schedule.nextRun && <> · Proxima: {formatDate(rule.schedule.nextRun)}</>}
                           </p>
                         )}
@@ -1182,7 +1182,7 @@ function RulesContent() {
                         <th className="px-4 py-2 text-left font-medium">Hora</th>
                         <th className="px-4 py-2 text-left font-medium">Activa</th>
                         <th className="px-4 py-2 text-left font-medium">Programada</th>
-                        <th className="px-4 py-2 text-left font-medium">Ultima eval.</th>
+                        <th className="px-4 py-2 text-left font-medium">Última eval.</th>
                         <th className="px-4 py-2 text-left font-medium">Proxima</th>
                       </tr>
                     </thead>
@@ -1283,7 +1283,7 @@ function RulesContent() {
                       <SelectItem value="low">Baja</SelectItem>
                       <SelectItem value="medium">Media</SelectItem>
                       <SelectItem value="high">Alta</SelectItem>
-                      <SelectItem value="critical">Critica</SelectItem>
+                      <SelectItem value="critical">Crítica</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1379,8 +1379,8 @@ function RulesContent() {
                           <SelectItem value="sum">SUM (Suma)</SelectItem>
                           <SelectItem value="count">COUNT (Contar)</SelectItem>
                           <SelectItem value="avg">AVG (Promedio)</SelectItem>
-                          <SelectItem value="min">MIN (Minimo)</SelectItem>
-                          <SelectItem value="max">MAX (Maximo)</SelectItem>
+                          <SelectItem value="min">MIN (Mínimo)</SelectItem>
+                          <SelectItem value="max">MAX (Máximo)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -1476,7 +1476,7 @@ function RulesContent() {
             </div>
 
             <div className="space-y-2">
-              <Label>Descripcion</Label>
+              <Label>Descripción</Label>
               <Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
             </div>
 

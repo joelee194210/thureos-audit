@@ -37,7 +37,7 @@ interface NavSection {
 
 const sections: NavSection[] = [
   {
-    label: "Operacion",
+    label: "Operación",
     items: [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Alertas", href: "/alerts", icon: Bell },
@@ -53,19 +53,19 @@ const sections: NavSection[] = [
     ],
   },
   {
-    label: "Catalogos",
+    label: "Catálogos",
     items: [
       { name: "MCC", href: "/mcc", icon: CreditCard },
-      { name: "Paises", href: "/countries", icon: Globe },
+      { name: "Países", href: "/countries", icon: Globe },
     ],
   },
   {
-    label: "Administracion",
+    label: "Administración",
     roles: ["admin"],
     items: [
       { name: "Usuarios", href: "/users", icon: Users },
-      { name: "Bitacora de acceso", href: "/activity-logs", icon: ScrollText },
-      { name: "Configuracion", href: "/settings", icon: Settings },
+      { name: "Bitácora de acceso", href: "/activity-logs", icon: ScrollText },
+      { name: "Configuración", href: "/settings", icon: Settings },
     ],
   },
 ];

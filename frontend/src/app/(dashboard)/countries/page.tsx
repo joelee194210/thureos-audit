@@ -151,7 +151,7 @@ export default function CountriesPage() {
 
   return (
     <>
-      <Header title="Paises y Riesgo" />
+      <Header title="Países y Riesgo" />
       <div className="p-6 space-y-6">
         {/* Stats */}
         <div className="grid grid-cols-5 gap-3">
@@ -162,7 +162,7 @@ export default function CountriesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.total}</p>
-                <p className="text-xs text-muted-foreground">Total paises</p>
+                <p className="text-xs text-muted-foreground">Total países</p>
               </div>
             </CardContent>
           </Card>
@@ -219,7 +219,7 @@ export default function CountriesPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Buscar por codigo, nombre o pais..."
+                placeholder="Buscar por código, nombre o país..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -281,12 +281,12 @@ export default function CountriesPage() {
         {/* Results */}
         {loading ? (
           <div className="py-12 text-center text-muted-foreground">
-            Cargando catalogo de paises...
+            Cargando catalogo de países...
           </div>
         ) : (
           <div className="space-y-6">
             <p className="text-sm text-muted-foreground">
-              Mostrando {filtered.length} de {countries.length} paises
+              Mostrando {filtered.length} de {countries.length} países
               {selectedRegion && (
                 <>
                   {" "}
@@ -307,7 +307,7 @@ export default function CountriesPage() {
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold">{region}</h3>
                   <Badge variant="secondary" className="text-[10px]">
-                    {items.length} paises
+                    {items.length} países
                   </Badge>
                 </div>
                 <div className="rounded-lg border overflow-hidden">

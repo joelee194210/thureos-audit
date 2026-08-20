@@ -80,7 +80,7 @@ export default function MonitorsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Descripcion</Label>
+                  <Label>Descripción</Label>
                   <Textarea
                     value={newMonitor.description}
                     onChange={(e) => setNewMonitor({ ...newMonitor, description: e.target.value })}
@@ -141,7 +141,7 @@ export default function MonitorsPage() {
                       </p>
                       {monitor.lastIngested && (
                         <p className="text-xs text-muted-foreground">
-                          Ultima carga: {formatDate(monitor.lastIngested)}
+                          Última carga: {formatDate(monitor.lastIngested)}
                         </p>
                       )}
                     </div>

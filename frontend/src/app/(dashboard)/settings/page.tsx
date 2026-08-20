@@ -97,7 +97,7 @@ export default function SettingsPage() {
         model: aiModel,
         ...(aiApiKey ? { apiKey: aiApiKey } : {}),
       });
-      toastSuccess("Configuracion de IA actualizada");
+      toastSuccess("Configuración de IA actualizada");
       // Refresh AI config to get updated masked key
       const fresh = await settingsApi.getAIConfig();
       setAiConfig(fresh);
@@ -128,7 +128,7 @@ export default function SettingsPage() {
   if (error) {
     return (
       <>
-        <Header title="Configuracion" />
+        <Header title="Configuración" />
         <div className="p-6">
           <p className="text-sm text-danger-fg">{error}</p>
         </div>
@@ -139,7 +139,7 @@ export default function SettingsPage() {
   if (!settings) {
     return (
       <>
-        <Header title="Configuracion" />
+        <Header title="Configuración" />
         <div className="p-6">
           <p className="text-sm text-muted-foreground">Cargando...</p>
         </div>
@@ -149,11 +149,11 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Header title="Configuracion" />
+      <Header title="Configuración" />
       <div className="p-6">
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">
-            Configuracion del sistema y servicios
+            Configuración del sistema y servicios
           </p>
         </div>
 

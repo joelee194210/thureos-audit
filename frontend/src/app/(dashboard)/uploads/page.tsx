@@ -216,7 +216,7 @@ export default function UploadsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.uniqueDates}</p>
-                <p className="text-xs text-muted-foreground">Dias</p>
+                <p className="text-xs text-muted-foreground">Días</p>
               </div>
             </CardContent>
           </Card>

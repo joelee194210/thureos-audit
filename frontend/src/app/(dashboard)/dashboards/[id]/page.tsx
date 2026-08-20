@@ -76,15 +76,17 @@ import type {
 } from "@/lib/types";
 
 // Professional color palette
+// Series de los tokens Thureos: cambian con el tema y están verificadas
+// para deuteranopía y protanopía.
 const CHART_COLORS = [
-  "hsl(221, 83%, 53%)", // blue
-  "hsl(160, 60%, 45%)", // emerald
-  "hsl(30, 95%, 55%)", // orange
-  "hsl(280, 65%, 60%)", // purple
-  "hsl(350, 75%, 55%)", // coral
-  "hsl(45, 90%, 50%)", // yellow
-  "hsl(190, 70%, 50%)", // cyan
-  "hsl(330, 60%, 50%)", // pink
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+  "var(--chart-7)",
+  "var(--chart-8)",
 ];
 
 const WIDGET_TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -452,7 +454,7 @@ export default function DashboardDetailPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <Label>Titulo</Label>
+                        <Label>Título</Label>
                         <Input
                           value={newWidget.title}
                           onChange={(e) => setNewWidget({ ...newWidget, title: e.target.value })}
@@ -492,7 +494,7 @@ export default function DashboardDetailPage() {
                 ) : (
                   <>
                     <div className="space-y-2">
-                      <Label>Titulo</Label>
+                      <Label>Título</Label>
                       <Input
                         value={newWidget.title}
                         onChange={(e) => setNewWidget({ ...newWidget, title: e.target.value })}
@@ -579,8 +581,8 @@ export default function DashboardDetailPage() {
                             <SelectItem value="count">Contar</SelectItem>
                             <SelectItem value="sum">Suma</SelectItem>
                             <SelectItem value="avg">Promedio</SelectItem>
-                            <SelectItem value="min">Minimo</SelectItem>
-                            <SelectItem value="max">Maximo</SelectItem>
+                            <SelectItem value="min">Mínimo</SelectItem>
+                            <SelectItem value="max">Máximo</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -808,7 +810,7 @@ export default function DashboardDetailPage() {
                                 <Cell
                                   key={i}
                                   fill={CHART_COLORS[i % CHART_COLORS.length]}
-                                  stroke="hsl(var(--background))"
+                                  stroke="var(--bg-canvas)"
                                   strokeWidth={2}
                                 />
                               ))}

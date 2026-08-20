@@ -118,7 +118,7 @@ export default function MCCPage() {
 
   return (
     <>
-      <Header title="Catalogo MCC" />
+      <Header title="Catálogo MCC" />
       <div className="p-6 space-y-6">
         {/* Stats */}
         <div className="grid grid-cols-5 gap-3">
@@ -163,7 +163,7 @@ export default function MCCPage() {
               <div className="rounded-lg bg-accent-soft p-2"><CreditCard className="h-5 w-5 text-accent-fg" /></div>
               <div>
                 <p className="text-2xl font-bold">{stats.categories}</p>
-                <p className="text-xs text-muted-foreground">Categorias</p>
+                <p className="text-xs text-muted-foreground">Categorías</p>
               </div>
             </CardContent>
           </Card>
@@ -176,7 +176,7 @@ export default function MCCPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Buscar por codigo, descripcion o categoria..."
+                placeholder="Buscar por código, descripción o categoría..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -245,7 +245,7 @@ export default function MCCPage() {
                     <thead>
                       <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
                         <th className="px-4 py-2 text-left w-20">Codigo</th>
-                        <th className="px-4 py-2 text-left">Descripcion</th>
+                        <th className="px-4 py-2 text-left">Descripción</th>
                         <th className="px-4 py-2 text-left w-20">Riesgo</th>
                         <th className="px-4 py-2 text-left w-[180px]">Redes</th>
                         <th className="px-4 py-2 text-left w-10"></th>
@@ -318,7 +318,7 @@ export default function MCCPage() {
           <div className="space-y-4 pt-2">
             {/* Description */}
             <div className="space-y-1.5">
-              <Label>Descripcion</Label>
+              <Label>Descripción</Label>
               <Input
                 value={editForm.description}
                 onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}

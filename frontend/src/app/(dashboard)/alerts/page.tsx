@@ -571,7 +571,7 @@ export default function AlertsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats.criticalCount}</p>
-                  <p className="text-xs text-muted-foreground">Criticas</p>
+                  <p className="text-xs text-muted-foreground">Críticas</p>
                 </div>
               </CardContent>
             </Card>
