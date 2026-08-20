@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env
+.env.local
+*.exe
+bin/
+tmp/
+.DS_Store
+data/
+.claude/

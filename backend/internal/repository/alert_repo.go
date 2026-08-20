@@ -1,0 +1,304 @@
+package repository
+
+import (
+	"context"
+	"time"
+
+	"github.com/joelee/datawatch/internal/database"
+	"github.com/joelee/datawatch/internal/models"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+type AlertRepository struct {
+	col *mongo.Collection
+}
+
+func NewAlertRepository(db *database.MongoDB) *AlertRepository {
+	repo := &AlertRepository{col: db.Collection("alerts")}
+	// Ensure unique index on fingerprint for deduplication
+	repo.ensureIndexes(context.Background())
+	return repo
+}
+
+func (r *AlertRepository) ensureIndexes(ctx context.Context) {
+	// Unique sparse index: only applies to documents with a non-empty fingerprint.
+	// Existing alerts without fingerprint are ignored by the sparse index.
+	_, _ = r.col.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "fingerprint", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetSparse(true).
+			SetName("idx_fingerprint_unique"),
+	})
+}
+
+func (r *AlertRepository) Create(ctx context.Context, alert *models.Alert) error {
+	alert.CreatedAt = time.Now()
+	alert.UpdatedAt = time.Now()
+	alert.Status = models.AlertNew
+
+	result, err := r.col.InsertOne(ctx, alert)
+	if err != nil {
+		return err
+	}
+	alert.ID = result.InsertedID.(primitive.ObjectID)
+	return nil
+}
+
+// Upsert creates a new alert or updates an existing one with the same fingerprint.
+// If an alert with this fingerprint already exists:
+//   - Data fields (matchedData, matchedRecords, matchCount, aggValue, message) are refreshed
+//   - Status is preserved (user may have acknowledged/resolved it)
+//   - CreatedAt is preserved (original detection time)
+//   - UpdatedAt is set to now
+//
+// Returns the alert (existing or new) and whether it was a new creation.
+func (r *AlertRepository) Upsert(ctx context.Context, alert *models.Alert) (bool, error) {
+	if alert.Fingerprint == "" {
+		// No fingerprint — fall back to simple create
+		return true, r.Create(ctx, alert)
+	}
+
+	now := time.Now()
+	alert.UpdatedAt = now
+
+	// Fields to set on insert only (not overwritten on update)
+	setOnInsert := bson.M{
+		"_id":        primitive.NewObjectID(),
+		"created_at": now,
+		"status":     models.AlertNew,
+	}
+
+	// Fields to always update (refresh data)
+	setAlways := bson.M{
+		"fingerprint":     alert.Fingerprint,
+		"monitor_id":      alert.MonitorID,
+		"rule_id":         alert.RuleID,
+		"rule_name":       alert.RuleName,
+		"monitor_name":    alert.MonitorName,
+		"severity":        alert.Severity,
+		"message":         alert.Message,
+		"alert_type":      alert.AlertType,
+		"matched_data":    alert.MatchedData,
+		"matched_records": alert.MatchedRecords,
+		"match_count":     alert.MatchCount,
+		"agg_field":       alert.AggField,
+		"agg_function":    alert.AggFunction,
+		"agg_value":       alert.AggValue,
+		"group_by_field":  alert.GroupByField,
+		"group_by_value":  alert.GroupByValue,
+		"threshold":       alert.Threshold,
+		"updated_at":      now,
+	}
+
+	filter := bson.M{"fingerprint": alert.Fingerprint}
+	update := bson.M{
+		"$set":         setAlways,
+		"$setOnInsert": setOnInsert,
+	}
+
+	opts := options.Update().SetUpsert(true)
+	result, err := r.col.UpdateOne(ctx, filter, update, opts)
+	if err != nil {
+		return false, err
+	}
+
+	isNew := result.UpsertedCount > 0
+	if isNew && result.UpsertedID != nil {
+		alert.ID = result.UpsertedID.(primitive.ObjectID)
+	}
+	return isNew, nil
+}
+
+// DeleteDuplicates removes duplicate alerts that share the same rule_id + monitor_id + date.
+// Keeps the oldest alert per group. Returns the number of deleted duplicates.
+func (r *AlertRepository) DeleteDuplicates(ctx context.Context) (int64, error) {
+	// Find groups with duplicates: same rule_id + alert_type + day
+	pipeline := mongo.Pipeline{
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{
+				{Key: "rule_id", Value: "$rule_id"},
+				{Key: "monitor_id", Value: "$monitor_id"},
+				{Key: "alert_type", Value: "$alert_type"},
+				{Key: "group_by_value", Value: "$group_by_value"},
+				{Key: "day", Value: bson.D{{Key: "$dateToString", Value: bson.D{
+					{Key: "format", Value: "%Y-%m-%d"},
+					{Key: "date", Value: "$created_at"},
+				}}}},
+			}},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+			{Key: "keepId", Value: bson.D{{Key: "$first", Value: "$_id"}}},
+			{Key: "allIds", Value: bson.D{{Key: "$push", Value: "$_id"}}},
+		}}},
+		{{Key: "$match", Value: bson.D{
+			{Key: "count", Value: bson.D{{Key: "$gt", Value: 1}}},
+		}}},
+	}
+
+	cursor, err := r.col.Aggregate(ctx, pipeline)
+	if err != nil {
+		return 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var totalDeleted int64
+	for cursor.Next(ctx) {
+		var result bson.M
+		if err := cursor.Decode(&result); err != nil {
+			continue
+		}
+		allIds, ok := result["allIds"].(primitive.A)
+		if !ok || len(allIds) <= 1 {
+			continue
+		}
+		keepId := result["keepId"]
+
+		// Delete all except the first (oldest)
+		var toDelete []interface{}
+		for _, id := range allIds {
+			if id != keepId {
+				toDelete = append(toDelete, id)
+			}
+		}
+		if len(toDelete) > 0 {
+			res, err := r.col.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": toDelete}})
+			if err == nil {
+				totalDeleted += res.DeletedCount
+			}
+		}
+	}
+	return totalDeleted, nil
+}
+
+func (r *AlertRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*models.Alert, error) {
+	var alert models.Alert
+	err := r.col.FindOne(ctx, bson.M{"_id": id}).Decode(&alert)
+	if err != nil {
+		return nil, err
+	}
+	return &alert, nil
+}
+
+func (r *AlertRepository) FindRecent(ctx context.Context, limit int64) ([]models.Alert, error) {
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetLimit(limit)
+
+	cursor, err := r.col.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var alerts []models.Alert
+	if err := cursor.All(ctx, &alerts); err != nil {
+		return nil, err
+	}
+	return alerts, nil
+}
+
+func (r *AlertRepository) FindByMonitor(ctx context.Context, monitorID primitive.ObjectID, limit int64) ([]models.Alert, error) {
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetLimit(limit)
+
+	cursor, err := r.col.Find(ctx, bson.M{"monitor_id": monitorID}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var alerts []models.Alert
+	if err := cursor.All(ctx, &alerts); err != nil {
+		return nil, err
+	}
+	return alerts, nil
+}
+
+func (r *AlertRepository) UpdateStatus(ctx context.Context, id primitive.ObjectID, status models.AlertStatus, userID *primitive.ObjectID) error {
+	update := bson.M{
+		"status":     status,
+		"updated_at": time.Now(),
+	}
+	if userID != nil {
+		update["acknowledged_by"] = userID
+	}
+	_, err := r.col.UpdateByID(ctx, id, bson.M{"$set": update})
+	return err
+}
+
+func (r *AlertRepository) CountByStatus(ctx context.Context, status models.AlertStatus) (int64, error) {
+	return r.col.CountDocuments(ctx, bson.M{"status": status})
+}
+
+// FindByDateRange returns alerts created within the given date range
+func (r *AlertRepository) FindByDateRange(ctx context.Context, from, to time.Time) ([]models.Alert, error) {
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetLimit(500)
+
+	filter := bson.M{
+		"created_at": bson.M{
+			"$gte": from,
+			"$lt":  to,
+		},
+	}
+
+	cursor, err := r.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var alerts []models.Alert
+	if err := cursor.All(ctx, &alerts); err != nil {
+		return nil, err
+	}
+	return alerts, nil
+}
+
+// CountByDay returns alert counts per day for a month (year/month)
+func (r *AlertRepository) CountByDay(ctx context.Context, year, month int) ([]bson.M, error) {
+	from := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	to := from.AddDate(0, 1, 0)
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{
+			"created_at": bson.M{"$gte": from, "$lt": to},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.M{
+				"$dateToString": bson.M{"format": "%Y-%m-%d", "date": "$created_at"},
+			}},
+			{Key: "total", Value: bson.M{"$sum": 1}},
+			{Key: "critical", Value: bson.M{"$sum": bson.M{
+				"$cond": bson.A{bson.M{"$eq": bson.A{"$severity", "critical"}}, 1, 0},
+			}}},
+			{Key: "high", Value: bson.M{"$sum": bson.M{
+				"$cond": bson.A{bson.M{"$eq": bson.A{"$severity", "high"}}, 1, 0},
+			}}},
+			{Key: "new", Value: bson.M{"$sum": bson.M{
+				"$cond": bson.A{bson.M{"$eq": bson.A{"$status", "new"}}, 1, 0},
+			}}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
+	}
+
+	cursor, err := r.col.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+	if results == nil {
+		results = []bson.M{}
+	}
+	return results, nil
+}
