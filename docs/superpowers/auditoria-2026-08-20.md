@@ -127,10 +127,16 @@ Ejecutada sobre `feat/linea-grafica-thureos` antes de decidir la integración.
 | `npx next build` | ✅ 16 rutas |
 | Colores literales en `frontend/src` | ✅ sin salida |
 | Nombre de producto anterior en todo el repo | ✅ sin salida |
-| `gofmt -l backend/` | ❌ 12 archivos (F4, sigue pendiente) |
+| `gofmt -l backend/` | ❌ 10 archivos (F4, sigue pendiente) |
+| Clon limpio compila `./cmd/server` | ✅ tras corregir F11 |
 
-El recuento de `gofmt` bajó de 16 a 12: los commits de la rama tocaron y
-reformatearon cuatro de esos archivos por el camino.
+Recuento de `gofmt` medido por comparación directa entre `master` y la rama:
+15 archivos en `master`, 12 en la rama. La rama reformateó de paso cinco
+(`mcc_handler.go`, `country_repo.go`, `mcc_repo.go`, `country_data.go`,
+`mcc_data.go`) y dejó **dos nuevos** sin formatear (`cmd/server/main.go`,
+`scheduler.go`), regresión propia corregida en `d2ca2a3`. Quedan 10, que son
+F4 y siguen fuera de alcance. La auditoría original decía 16; el recuento
+se hizo entonces sobre otro árbol y no se ha podido reproducir.
 
 ### F9 · El renombrado de identificadores cambia la base y la clave de cola
 
@@ -163,3 +169,34 @@ disco. `.gitignore` cubre ahora también las capturas `*-oscuro.png` / `*-claro.
 `ConnectMongo` fija `dbName := "thureos_compliance"` en código e **ignora la base que
 venga en `MONGO_URI`**. No es una regresión de esta rama —ya era así— pero significa
 que la ruta del URI es decorativa: apuntar a otra base exige recompilar.
+
+### F11 · El punto de entrada del backend no estaba en el repositorio — **[resuelto]**
+
+`backend/.gitignore` declaraba `server` en la línea 4 para ignorar el binario
+compilado. Sin barra inicial, un patrón sin `/` intermedia coincide con **cualquier
+archivo o directorio con ese nombre a cualquier profundidad**, así que la regla
+excluía `backend/cmd/server/` entero. `main.go` —las 149 líneas que arrancan Fiber,
+conectan Mongo y Redis, siembran el administrador y lanzan los workers— **nunca
+estuvo rastreado**, ni en el commit base ni en ningún commit de la rama.
+
+Consecuencia: un clon del repositorio no compila el servidor. Verificado sobre un
+clon real en `b3208dc`:
+
+```
+$ go build ./cmd/server
+stat backend/cmd/server: directory not found
+```
+
+No lo detectó ninguna verificación anterior porque todas se ejecutaron sobre el
+árbol de trabajo, donde el archivo sí está. Sólo aparece al clonar.
+
+Corregido en `7ad85fe`: regla anclada a `/server` y `cmd/server/main.go` añadido,
+ya formateado. El mismo clon compila ahora `./cmd/server`. `main.go` no contiene
+secretos: el administrador y la clave de API se siembran desde entorno.
+
+El glob `*-oscuro.png` que este mismo informe introdujo en `27925c5` tenía el defecto
+idéntico —habría tragado en silencio cualquier activo de marca en tema oscuro bajo
+`frontend/public/brand/`— y se ancló a `/login-oscuro.png` en el mismo commit.
+
+Barrido posterior de fuentes ignoradas por error: sólo queda `frontend/next-env.d.ts`,
+que Next regenera en cada build. Benigno.
