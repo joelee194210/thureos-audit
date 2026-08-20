@@ -45,38 +45,39 @@ import { monitorsApi } from "@/lib/api/monitors";
 import type { AlertRecordsResponse, CalendarDay } from "@/lib/api/alerts";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
+import { RISK_BG, RISK_BORDER_L } from "@/lib/semantic-colors";
 import type { Alert, AlertStatus, AlertLog, ActionCategory, Severity, Monitor } from "@/lib/types";
 
 const severityConfig: Record<
   Severity,
   {
-    variant: "destructive" | "warning" | "secondary" | "default";
+    variant: "risk-critical" | "risk-high" | "risk-medium" | "risk-low";
     color: string;
     icon: typeof AlertTriangle;
     label: string;
   }
 > = {
   critical: {
-    variant: "destructive",
-    color: "border-l-red-500 bg-red-500/5",
+    variant: "risk-critical",
+    color: `${RISK_BORDER_L.critical} ${RISK_BG.critical}`,
     icon: ShieldAlert,
-    label: "Critica",
+    label: "Crítica",
   },
   high: {
-    variant: "destructive",
-    color: "border-l-orange-500 bg-orange-500/5",
+    variant: "risk-high",
+    color: `${RISK_BORDER_L.high} ${RISK_BG.high}`,
     icon: AlertTriangle,
     label: "Alta",
   },
   medium: {
-    variant: "warning",
-    color: "border-l-yellow-500 bg-yellow-500/5",
+    variant: "risk-medium",
+    color: `${RISK_BORDER_L.medium} ${RISK_BG.medium}`,
     icon: Info,
     label: "Media",
   },
   low: {
-    variant: "secondary",
-    color: "border-l-blue-500 bg-blue-500/5",
+    variant: "risk-low",
+    color: `${RISK_BORDER_L.low} ${RISK_BG.low}`,
     icon: Info,
     label: "Baja",
   },
@@ -204,7 +205,11 @@ function AlertCalendar({
             const isSelected = selectedDate === dateStr;
             const isToday = dateStr === todayStr;
             const hasAlerts = data && data.total > 0;
-            const dotColor = data?.critical ? "bg-red-500" : data?.high ? "bg-orange-500" : "bg-yellow-500";
+            const dotColor = data?.critical
+              ? "bg-risk-critical-fg"
+              : data?.high
+                ? "bg-risk-high-fg"
+                : "bg-risk-medium-fg";
 
             return (
               <button
@@ -550,8 +555,8 @@ export default function AlertsPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 content-start">
             <Card>
               <CardContent className="flex items-center gap-3 p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500/10">
-                  <Bell className="h-4 w-4 text-red-500" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-soft">
+                  <Bell className="h-4 w-4 text-accent-fg" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats.newCount}</p>
@@ -561,8 +566,8 @@ export default function AlertsPage() {
             </Card>
             <Card>
               <CardContent className="flex items-center gap-3 p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500/10">
-                  <ShieldAlert className="h-4 w-4 text-red-500" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-risk-critical-bg">
+                  <ShieldAlert className="h-4 w-4 text-risk-critical-fg" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats.criticalCount}</p>
@@ -572,8 +577,8 @@ export default function AlertsPage() {
             </Card>
             <Card>
               <CardContent className="flex items-center gap-3 p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-500/10">
-                  <AlertTriangle className="h-4 w-4 text-orange-500" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-risk-high-bg">
+                  <AlertTriangle className="h-4 w-4 text-risk-high-fg" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats.highCount}</p>
@@ -583,8 +588,8 @@ export default function AlertsPage() {
             </Card>
             <Card>
               <CardContent className="flex items-center gap-3 p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
-                  <Calculator className="h-4 w-4 text-blue-500" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-soft">
+                  <Calculator className="h-4 w-4 text-accent-fg" />
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats.aggCount}</p>
@@ -688,7 +693,7 @@ export default function AlertsPage() {
                           <Badge variant={config.variant}>{config.label}</Badge>
                           <Badge variant="outline">{statusLabels[alert.status]}</Badge>
                           {isAggregate && (
-                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 gap-1">
+                            <Badge variant="secondary" className="bg-accent-soft text-accent-fg gap-1">
                               <Calculator className="h-3 w-3" />
                               Agregada
                             </Badge>
@@ -720,7 +725,7 @@ export default function AlertsPage() {
                               <div className="mt-2">
                                 <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                                   <div
-                                    className="h-full rounded-full bg-red-500 transition-all"
+                                    className="h-full rounded-full bg-risk-high-fg transition-all"
                                     style={{
                                       width: `${Math.min((alert.aggValue! / alert.threshold) * 100, 100)}%`,
                                     }}
@@ -728,7 +733,7 @@ export default function AlertsPage() {
                                 </div>
                                 <div className="flex justify-between mt-1">
                                   <span className="text-[10px] text-muted-foreground">0</span>
-                                  <span className="text-[10px] text-red-500 font-medium">
+                                  <span className="text-[10px] text-risk-high-fg font-medium">
                                     {((alert.aggValue! / alert.threshold) * 100).toFixed(0)}% del umbral
                                   </span>
                                   <span className="text-[10px] text-muted-foreground">
@@ -778,7 +783,7 @@ export default function AlertsPage() {
                               onClick={() => openActionDialog(alert, "resolved")}
                               title="Resolver"
                             >
-                              <Check className="h-4 w-4 text-emerald-500" />
+                              <Check className="h-4 w-4 text-success-fg" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -797,7 +802,7 @@ export default function AlertsPage() {
                             onClick={() => openActionDialog(alert, "resolved")}
                             title="Resolver"
                           >
-                            <Check className="h-4 w-4 text-emerald-500" />
+                            <Check className="h-4 w-4 text-success-fg" />
                           </Button>
                         )}
                         <Button
@@ -914,9 +919,9 @@ export default function AlertsPage() {
                 <div className="relative border-l-2 border-border ml-3 space-y-4">
                   {alertLogs.map((log) => {
                     const dotColor =
-                      log.newStatus === "resolved" ? "bg-emerald-500" :
-                      log.newStatus === "acknowledged" ? "bg-blue-500" :
-                      log.newStatus === "dismissed" ? "bg-gray-400" : "bg-yellow-500";
+                      log.newStatus === "resolved" ? "bg-success-fg" :
+                      log.newStatus === "acknowledged" ? "bg-info-fg" :
+                      log.newStatus === "dismissed" ? "bg-ink-subtle" : "bg-warning-fg";
                     const categoryLabels: Record<string, string> = {
                       investigation: "Investigación",
                       false_positive: "Falso positivo",

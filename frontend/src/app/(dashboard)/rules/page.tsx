@@ -20,6 +20,7 @@ import type { Dashboard, WidgetType } from "@/lib/types";
 import { mccApi } from "@/lib/api/mcc";
 import { useToast } from "@/lib/use-toast";
 import { formatDate, cn } from "@/lib/utils";
+import { RISK_CLASSES } from "@/lib/semantic-colors";
 import type { Rule, Monitor, AIRuleSuggestion, Severity, ConditionGroup, Condition, Operator, AggregateCondition, AggFunction, MCC, SchedulePreset, RuleSchedule } from "@/lib/types";
 
 function wasTriggeredToday(lastTriggered?: string): boolean {
@@ -164,9 +165,9 @@ function MCCPicker({ value, onChange, multi }: { value: unknown; onChange: (val:
   }
 
   const riskColors: Record<string, string> = {
-    high: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    medium: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-    low: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+    high: RISK_CLASSES.high,
+    medium: RISK_CLASSES.medium,
+    low: RISK_CLASSES.low,
   };
   const riskColor = (level: string) => riskColors[level] ?? riskColors.low;
 
@@ -1091,11 +1092,11 @@ function RulesContent() {
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">{idx + 1}</span>
                           {wasTriggeredToday(rule.lastTriggered) ? (
                             <span title="Ejecutada hoy" className="flex h-5 w-5 shrink-0 items-center justify-center">
-                              <CircleCheck className="h-4 w-4 text-emerald-500" />
+                              <CircleCheck className="h-4 w-4 text-success-fg" />
                             </span>
                           ) : (
                             <span title="No ejecutada hoy" className="flex h-5 w-5 shrink-0 items-center justify-center">
-                              <CircleAlert className="h-4 w-4 text-amber-500" />
+                              <CircleAlert className="h-4 w-4 text-warning-fg" />
                             </span>
                           )}
                           <p className="font-medium">{rule.name}</p>
@@ -1122,7 +1123,7 @@ function RulesContent() {
                           {rule.lastTriggered && ` · Ultima: ${formatDate(rule.lastTriggered)}`}
                         </p>
                         {rule.aggregateConditions && rule.aggregateConditions.length > 0 && (
-                          <p className="mt-1 flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                          <p className="mt-1 flex items-center gap-1 text-xs text-accent-fg">
                             <Calculator className="h-3 w-3" />
                             {rule.aggregateConditions.map(a => `${a.function.toUpperCase()}(${a.field}) por ${a.groupBy} / ${a.timeWindow}`).join(", ")}
                           </p>
@@ -1148,11 +1149,11 @@ function RulesContent() {
                           {executingRuleId === rule.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <Play className="h-4 w-4 text-green-600" />
+                            <Play className="h-4 w-4 text-success-fg" />
                           )}
                         </Button>
                         <Button variant="ghost" size="icon" title="Crear gráfico" onClick={() => openChartDialog(rule)}>
-                          <BarChart3 className="h-4 w-4 text-blue-600" />
+                          <BarChart3 className="h-4 w-4 text-accent-fg" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => openEditRule(rule)}>
                           <Pencil className="h-4 w-4" />
