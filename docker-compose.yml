@@ -13,7 +13,7 @@ services:
     image: redis:7-alpine
     container_name: datawatch-redis
     ports:
-      - "6381:6379"
+      - "6383:6379"
     volumes:
       - redis_data:/data
 
