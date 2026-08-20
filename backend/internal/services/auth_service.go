@@ -7,10 +7,10 @@ import (
 	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/joelee/datawatch/internal/config"
-	"github.com/joelee/datawatch/internal/middleware"
-	"github.com/joelee/datawatch/internal/models"
-	"github.com/joelee/datawatch/internal/repository"
+	"github.com/thureos/compliance/internal/config"
+	"github.com/thureos/compliance/internal/middleware"
+	"github.com/thureos/compliance/internal/models"
+	"github.com/thureos/compliance/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
 

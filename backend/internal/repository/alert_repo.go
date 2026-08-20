@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/joelee/datawatch/internal/database"
-	"github.com/joelee/datawatch/internal/models"
+	"github.com/thureos/compliance/internal/database"
+	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"

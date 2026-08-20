@@ -3,7 +3,7 @@ package seed
 import (
 	"time"
 
-	"github.com/joelee/datawatch/internal/models"
+	"github.com/thureos/compliance/internal/models"
 )
 
 var now = time.Now()

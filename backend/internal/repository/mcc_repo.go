@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 
-	"github.com/joelee/datawatch/internal/database"
-	"github.com/joelee/datawatch/internal/models"
+	"github.com/thureos/compliance/internal/database"
+	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"

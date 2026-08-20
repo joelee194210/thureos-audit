@@ -10,8 +10,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/joelee/datawatch/internal/models"
-	"github.com/joelee/datawatch/internal/repository"
+	"github.com/thureos/compliance/internal/models"
+	"github.com/thureos/compliance/internal/repository"
 )
 
 // AIRuleSuggestion represents a single AI-generated rule suggestion.

@@ -27,7 +27,7 @@ func ConnectMongo(uri string) (*MongoDB, error) {
 		return nil, err
 	}
 
-	dbName := "datawatch"
+	dbName := "thureos_compliance"
 	log.Printf("Connected to MongoDB: %s", dbName)
 
 	return &MongoDB{

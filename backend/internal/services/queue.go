@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	QueueRuleEvaluation = "datawatch:queue:rule_eval"
-	QueueDead           = "datawatch:queue:dead"
+	QueueRuleEvaluation = "thureos:queue:rule_eval"
+	QueueDead           = "thureos:queue:dead"
 	MaxRetries          = 3
 )
 

@@ -28,7 +28,7 @@ func Load() *Config {
 	return &Config{
 		Port:           getEnv("PORT", "8080"),
 		AppEnv:         appEnv,
-		MongoURI:       getEnv("MONGO_URI", "mongodb://localhost:27017/datawatch"),
+		MongoURI:       getEnv("MONGO_URI", "mongodb://localhost:27017/thureos_compliance"),
 		RedisURL:       getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:      loadJWTSecret(appEnv),
 		AnthropicKey:   getEnv("ANTHROPIC_API_KEY", ""),

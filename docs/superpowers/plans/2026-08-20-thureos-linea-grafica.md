@@ -1159,7 +1159,7 @@ APP_ENV=development
 
 # Puertos publicados por docker-compose.yml, no los estándar:
 # el compose remapea para no chocar con otras instancias locales.
-MONGO_URI=mongodb://localhost:27019/datawatch
+MONGO_URI=mongodb://localhost:27019/thureos_compliance
 REDIS_URL=redis://localhost:6381
 
 JWT_SECRET=change-this-to-a-secure-secret
@@ -1196,7 +1196,7 @@ func Load() *Config {
 	appEnv := getEnv("APP_ENV", "development")
 	return &Config{
 		Port:           getEnv("PORT", "8080"),
-		MongoURI:       getEnv("MONGO_URI", "mongodb://localhost:27017/datawatch"),
+		MongoURI:       getEnv("MONGO_URI", "mongodb://localhost:27017/thureos_compliance"),
 		RedisURL:       getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:      loadJWTSecret(appEnv),
 		AnthropicKey:   getEnv("ANTHROPIC_API_KEY", ""),

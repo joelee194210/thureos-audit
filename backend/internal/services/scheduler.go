@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joelee/datawatch/internal/models"
-	"github.com/joelee/datawatch/internal/repository"
+	"github.com/thureos/compliance/internal/models"
+	"github.com/thureos/compliance/internal/repository"
 	"github.com/robfig/cron/v3"
 )
 

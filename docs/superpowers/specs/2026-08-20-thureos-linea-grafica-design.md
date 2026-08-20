@@ -13,9 +13,20 @@ criterio propio y son revisables; cada una está marcada como **[S1]**…**[S3]*
 - **[S1] Alcance.** Línea gráfica completa más los dos hallazgos de auditoría que impiden
   arrancar el proyecto (puertos y `JWT_SECRET`). Quedan fuera: tests, configuración de
   ESLint, `gofmt`, rate limiting. Están documentados en la auditoría para decisión aparte.
-- **[S2] Nomenclatura.** «DataWatch» → «Thureos Compliance» solo en textos visibles. No se
-  tocan el módulo Go `github.com/joelee/datawatch`, la base Mongo, los contenedores ni la
-  clave de cola `datawatch:queue:rule_eval`.
+- **[S2] Nomenclatura. — AMPLIADA POR EL USUARIO.** La suposición original era renombrar
+  solo los textos visibles. El usuario pidió después *«quita cualquier referencia a
+  datawatch y versatec»*, así que el alcance incluye los identificadores internos:
+
+  | Antes | Ahora |
+  |---|---|
+  | módulo `github.com/joelee/datawatch` | `github.com/thureos/compliance` |
+  | base Mongo `datawatch` | `thureos_compliance` |
+  | colas `datawatch:queue:*` | `thureos:queue:*` |
+  | contenedores `datawatch-mongo/redis` | `thureos-mongo` / `thureos-redis` |
+  | paquete `datawatch-frontend` | `thureos-compliance-frontend` |
+
+  Renombrar la base era seguro porque solo contenía catálogos semilla (194 países,
+  320 MCC, cero usuarios y cero alertas) que `main.go` vuelve a sembrar al arrancar.
 - **[S3] Marca única.** Se instala la capa de tokens con soporte para las dos marcas
   (`compliance` y `fraud`), pero la aplicación fija `data-brand="compliance"`. No se
   construyen vistas de Fraud & Behavior.

@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**DataWatch** — Plataforma de monitoreo transaccional con motor de reglas dinámicas. Permite ingestar datos de múltiples fuentes (CSV, Excel, JSON, APIs), estructurarlos automáticamente, aplicar reglas configurables y generar dashboards personalizados.
+**Thureos Compliance** — Plataforma de monitoreo transaccional con motor de reglas dinámicas. Permite ingestar datos de múltiples fuentes (CSV, Excel, JSON, APIs), estructurarlos automáticamente, aplicar reglas configurables y generar dashboards personalizados.
 
 ## Architecture
 
 ```
-monitoring/
+monitors-main/
 ├── frontend/          # Next.js 15 + React 19 + shadcn/ui + Tailwind CSS 4
 ├── backend/           # Go (Gin/Fiber) REST API + WebSocket
-├── docker/            # Docker Compose (MongoDB, Redis, backend, frontend)
-└── docs/              # Architecture decisions, API specs
+├── linea_grafica/     # Manual de marca y arte del logotipo (normativo)
+└── docs/superpowers/  # Specs de diseño y planes de implementación
 ```
 
 ### Frontend (`frontend/`)
@@ -21,7 +21,7 @@ monitoring/
 - **UI:** shadcn/ui components + Tailwind CSS 4, minimalist design
 - **State:** Zustand for global state, TanStack Query for server state
 - **Charts:** Recharts for dashboards
-- **Auth:** NextAuth.js with role-based access (admin, analyst, viewer)
+- **Auth:** JWT del backend, estado de sesión en Zustand (`stores/auth-store.ts`). Roles: admin, compliance, viewer
 - **Theming:** Light/dark mode with CSS variables
 
 ### Backend (`backend/`)
@@ -45,7 +45,7 @@ Rule evaluation is decoupled from data ingestion via a Redis queue:
 - Worker goroutines (`internal/services/worker.go`) poll the queue with `BRPOP`
 - Failed evaluations retry up to 3 times, then move to dead queue
 - Workers are started in `main.go` only when Redis is available
-- Queue key: `datawatch:queue:rule_eval`, dead: `datawatch:queue:dead`
+- Queue key: `thureos:queue:rule_eval`, dead: `thureos:queue:dead`
 
 ## Build & Development Commands
 
@@ -100,7 +100,7 @@ Rules support: comparison operators, regex, aggregate functions, time windows, a
 ### Role-Based Access
 Three roles with hierarchical permissions:
 - **admin**: Full access — manage users, monitors, rules, system config
-- **analyst**: Create/edit monitors, rules, dashboards. Cannot manage users
+- **compliance**: Create/edit monitors, rules, dashboards. Cannot manage users
 - **viewer**: Read-only access to assigned dashboards
 
 ### Dashboard System
@@ -122,19 +122,43 @@ Dashboards are composed of configurable widgets tied to specific monitors and ru
 - All errors wrapped with context: `fmt.Errorf("operation: %w", err)`
 - Configuration via environment variables loaded in `internal/config/`
 
+## Sistema de marca Thureos
+
+La aplicación es **Thureos Compliance**. «Compliance» es un descriptor funcional,
+nunca una marca independiente: no se usa solo.
+
+- Tokens en `frontend/src/styles/tokens/`. **No se editan**: son copias de la fuente
+  de verdad (`/Users/slacker/Downloads/tokens/`, con copia idéntica en
+  `thureos_monitoreo/packages/design-tokens/`). Cualquier ajuste va en la capa
+  puente `@theme inline` de `globals.css`.
+- Tema y marca son atributos de `<html>`: `data-theme="dark|light"` y
+  `data-brand="compliance"`. Cambiar de producto es cambiar un atributo.
+- El puente envuelve los tripletes de shadcn: `--color-primary: hsl(var(--primary))`.
+  Sin el `hsl()` Tailwind emite CSS inválido que se ignora **en silencio**.
+- **Ningún componente escribe un color literal.** Importa de `@/lib/semantic-colors`
+  o usa las utilidades de token (`bg-canvas`, `text-ink-muted`, `bg-risk-high-bg`…).
+- Tres ejes de color que no se mezclan: riesgo (`--risk-*`), estado (`--success-*`,
+  `--danger-*`…) y categoría (`--chart-1..8`). El acento azul identifica al producto
+  y **nunca** comunica severidad.
+- Tipografía: Inter 400/500/600/700 para lectura; JetBrains Mono 400/500/600 para
+  identificadores, montos, hashes y timestamps.
+- El arte del logotipo no se modifica, recolorea, redibuja ni revectoriza.
+  Único punto que lo referencia: `components/brand/logo.tsx`.
+- Manual normativo: `linea_grafica/Thureos-Manual-de-Marca_1.pdf`.
+
 ## Environment Variables
 
 ### Frontend (`.env.local`)
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
-NEXTAUTH_SECRET=<secret>
-NEXTAUTH_URL=http://localhost:3000
 ```
 
 ### Backend (`.env`)
 ```
-MONGO_URI=mongodb://localhost:27017/datawatch
-REDIS_URL=redis://localhost:6379
+# Puertos publicados por docker-compose.yml, no los estándar
+MONGO_URI=mongodb://localhost:27019/thureos_compliance
+REDIS_URL=redis://localhost:6383
+APP_ENV=development
 JWT_SECRET=<secret>
 PORT=8080
 ```

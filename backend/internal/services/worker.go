@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/joelee/datawatch/internal/repository"
+	"github.com/thureos/compliance/internal/repository"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 

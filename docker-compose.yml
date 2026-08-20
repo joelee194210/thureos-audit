@@ -1,17 +1,17 @@
 services:
   mongodb:
     image: mongo:7
-    container_name: datawatch-mongo
+    container_name: thureos-mongo
     ports:
       - "27019:27017"
     volumes:
       - mongo_data:/data/db
     environment:
-      MONGO_INITDB_DATABASE: datawatch
+      MONGO_INITDB_DATABASE: thureos_compliance
 
   redis:
     image: redis:7-alpine
-    container_name: datawatch-redis
+    container_name: thureos-redis
     ports:
       - "6383:6379"
     volumes:

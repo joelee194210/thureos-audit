@@ -5,7 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/joelee/datawatch/internal/config"
+	"github.com/thureos/compliance/internal/config"
 )
 
 type JWTClaims struct {

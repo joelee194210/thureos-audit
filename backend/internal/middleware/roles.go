@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/joelee/datawatch/internal/models"
+	"github.com/thureos/compliance/internal/models"
 )
 
 func RequireRole(roles ...models.Role) fiber.Handler {

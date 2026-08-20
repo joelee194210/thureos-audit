@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joelee/datawatch/internal/models"
-	"github.com/joelee/datawatch/internal/repository"
+	"github.com/thureos/compliance/internal/models"
+	"github.com/thureos/compliance/internal/repository"
 	"github.com/xuri/excelize/v2"
 	"go.mongodb.org/mongo-driver/bson"
 )

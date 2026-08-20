@@ -5,11 +5,11 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/joelee/datawatch/internal/config"
-	"github.com/joelee/datawatch/internal/handlers"
-	"github.com/joelee/datawatch/internal/middleware"
-	"github.com/joelee/datawatch/internal/models"
-	"github.com/joelee/datawatch/internal/repository"
+	"github.com/thureos/compliance/internal/config"
+	"github.com/thureos/compliance/internal/handlers"
+	"github.com/thureos/compliance/internal/middleware"
+	"github.com/thureos/compliance/internal/models"
+	"github.com/thureos/compliance/internal/repository"
 )
 
 type Handlers struct {

@@ -1,6 +1,6 @@
 package seed
 
-import "github.com/joelee/datawatch/internal/models"
+import "github.com/thureos/compliance/internal/models"
 
 var all = []models.MCCNetwork{models.NetworkVisa, models.NetworkMastercard, models.NetworkUnionPay, models.NetworkAmex, models.NetworkDiscover, models.NetworkDiners, models.NetworkJCB}
 

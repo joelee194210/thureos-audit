@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/joelee/datawatch/internal/models"
-	"github.com/joelee/datawatch/internal/repository"
-	"github.com/joelee/datawatch/internal/services"
+	"github.com/thureos/compliance/internal/models"
+	"github.com/thureos/compliance/internal/repository"
+	"github.com/thureos/compliance/internal/services"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )

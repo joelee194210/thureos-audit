@@ -1,5 +1,5 @@
 // Script to add missing MCCs to the catalog
-// Run: docker exec -i datawatch-mongo mongosh datawatch < backend/scripts/add_mccs.js
+// Run: docker exec -i thureos-mongo mongosh thureos_compliance < backend/scripts/add_mccs.js
 
 const all = ["visa", "mastercard", "unionpay", "amex", "discover", "diners", "jcb"];
 

@@ -1,4 +1,4 @@
-module github.com/joelee/datawatch
+module github.com/thureos/compliance
 
 go 1.22
 
@@ -6,7 +6,9 @@ require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-beta.3
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/xuri/excelize/v2 v2.9.0
 	go.mongodb.org/mongo-driver v1.17.1
 	golang.org/x/crypto v0.31.0
@@ -18,7 +20,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -28,7 +29,6 @@ require (
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
