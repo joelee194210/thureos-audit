@@ -9,3 +9,7 @@ tmp/
 data/
 .claude/
 .playwright-mcp/
+
+# Capturas de verificación visual, no son entregables
+*-oscuro.png
+*-claro.png
