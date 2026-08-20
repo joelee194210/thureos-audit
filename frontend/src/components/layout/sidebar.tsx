@@ -75,7 +75,7 @@ export function Sidebar() {
   const { user, logout } = useAuthStore();
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
+    <aside className="flex h-screen w-64 flex-col border-r border-line-subtle bg-surface text-ink">
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-line-subtle px-6">
         <Link href="/" className="flex items-center gap-2.5">
@@ -108,9 +108,11 @@ export function Sidebar() {
                     href={item.href}
                     className={cn(
                       "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      // El acento sólido se reserva para la acción primaria de cada
+                      // vista. La navegación activa usa la variante suave.
                       isActive
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        ? "bg-accent-soft text-accent-fg"
+                        : "text-ink-muted hover:bg-surface-2 hover:text-ink"
                     )}
                   >
                     <item.icon className="h-4 w-4" />

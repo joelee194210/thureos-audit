@@ -314,8 +314,8 @@ export default function CountriesPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
-                        <th className="px-4 py-2 text-left w-14">Codigo</th>
-                        <th className="px-4 py-2 text-left">Pais</th>
+                        <th className="px-4 py-2 text-left w-14">Código</th>
+                        <th className="px-4 py-2 text-left">País</th>
                         <th className="px-4 py-2 text-left w-20">Riesgo</th>
                         <th className="px-4 py-2 text-left w-[180px]">
                           Fuentes

@@ -922,7 +922,7 @@ function RulesContent() {
                                 <SelectItem value="15d">15 dias</SelectItem>
                                 <SelectItem value="30d">30 dias</SelectItem>
                                 <SelectItem value="90d">90 dias</SelectItem>
-                                <SelectItem value="365d">1 ano</SelectItem>
+                                <SelectItem value="365d">1 año</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1437,7 +1437,7 @@ function RulesContent() {
                           <SelectItem value="15d">15 dias</SelectItem>
                           <SelectItem value="30d">30 dias</SelectItem>
                           <SelectItem value="90d">90 dias</SelectItem>
-                          <SelectItem value="365d">1 ano</SelectItem>
+                          <SelectItem value="365d">1 año</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

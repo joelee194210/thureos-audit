@@ -244,7 +244,7 @@ export default function MCCPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-muted/50 text-xs text-muted-foreground">
-                        <th className="px-4 py-2 text-left w-20">Codigo</th>
+                        <th className="px-4 py-2 text-left w-20">Código</th>
                         <th className="px-4 py-2 text-left">Descripción</th>
                         <th className="px-4 py-2 text-left w-20">Riesgo</th>
                         <th className="px-4 py-2 text-left w-[180px]">Redes</th>
