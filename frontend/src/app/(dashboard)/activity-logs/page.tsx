@@ -9,6 +9,7 @@ import { ScrollText, LogIn, Bell, FileText, Upload, Users, Loader2, CreditCard }
 import { activityLogsApi } from "@/lib/api/activity-logs";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
+import { CATEGORY_CLASSES } from "@/lib/semantic-colors";
 import type { ActivityLogEntry, ActivityType } from "@/lib/types";
 
 const ACTION_LABELS: Record<ActivityType, string> = {
@@ -35,16 +36,19 @@ const ACTION_ICONS: Record<ActivityType, typeof LogIn> = {
   mcc_update: CreditCard,
 };
 
+// Tipo de acción: eje categórico. Distingue sin ordenar ni medir severidad.
+// Hay 8 series y 9 acciones, así que dos comparten color: se eligen dos que
+// rara vez aparecen juntas en la misma pantalla.
 const ACTION_COLORS: Record<ActivityType, string> = {
-  login: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  alert_action: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  rule_create: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-  rule_update: "bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300",
-  rule_delete: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  rule_execute: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300",
-  upload: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  user_manage: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-  mcc_update: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
+  login: CATEGORY_CLASSES[0],
+  alert_action: CATEGORY_CLASSES[2],
+  rule_create: CATEGORY_CLASSES[1],
+  rule_update: CATEGORY_CLASSES[3],
+  rule_delete: CATEGORY_CLASSES[5],
+  rule_execute: CATEGORY_CLASSES[4],
+  upload: CATEGORY_CLASSES[6],
+  user_manage: CATEGORY_CLASSES[7],
+  mcc_update: CATEGORY_CLASSES[2],
 };
 
 export default function ActivityLogsPage() {
@@ -131,7 +135,7 @@ export default function ActivityLogsPage() {
           <div className="space-y-2">
             {filtered.map((log) => {
               const Icon = ACTION_ICONS[log.action] || ScrollText;
-              const colorClass = ACTION_COLORS[log.action] || "bg-gray-100 text-gray-700";
+              const colorClass = ACTION_COLORS[log.action] || "bg-surface-2 text-ink-muted";
               return (
                 <Card key={log.id}>
                   <CardContent className="flex items-center gap-4 p-4">

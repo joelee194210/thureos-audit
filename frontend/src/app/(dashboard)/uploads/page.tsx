@@ -25,6 +25,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
+import { CATEGORY_CLASSES } from "@/lib/semantic-colors";
 import type { SourceType } from "@/lib/types";
 
 interface IngestionEntry {
@@ -49,11 +51,13 @@ const SOURCE_LABELS: Record<SourceType, string> = {
   api: "API",
 };
 
+// Tipo de fuente: eje categórico. Una carga por API no es más peligrosa
+// que una por CSV, así que no usa la escala de riesgo.
 const SOURCE_COLORS: Record<SourceType, string> = {
-  csv: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  excel: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  json: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  api: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+  csv: CATEGORY_CLASSES[0],
+  excel: CATEGORY_CLASSES[1],
+  json: CATEGORY_CLASSES[2],
+  api: CATEGORY_CLASSES[3],
 };
 
 function formatDate(dateStr: string) {
@@ -171,7 +175,7 @@ export default function UploadsPage() {
       <>
         <Header title="Historial de cargas" />
         <div className="p-6">
-          <p className="text-sm text-red-500">{error}</p>
+          <p className="text-sm text-danger-fg">{error}</p>
         </div>
       </>
     );
@@ -185,8 +189,8 @@ export default function UploadsPage() {
         <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-950">
-                <Upload className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <div className={cn("rounded-lg p-2", CATEGORY_CLASSES[0])}>
+                <Upload className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.totalEntries}</p>
@@ -196,8 +200,8 @@ export default function UploadsPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-950">
-                <Database className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <div className={cn("rounded-lg p-2", CATEGORY_CLASSES[1])}>
+                <Database className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{formatNumber(stats.totalRecords)}</p>
@@ -207,8 +211,8 @@ export default function UploadsPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-amber-100 p-2 dark:bg-amber-950">
-                <Calendar className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <div className={cn("rounded-lg p-2", CATEGORY_CLASSES[2])}>
+                <Calendar className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.uniqueDates}</p>
@@ -218,8 +222,8 @@ export default function UploadsPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-purple-100 p-2 dark:bg-purple-950">
-                <TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              <div className={cn("rounded-lg p-2", CATEGORY_CLASSES[3])}>
+                <TrendingUp className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.uniqueMonitors}</p>
