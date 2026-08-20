@@ -1,68 +1,102 @@
 @import "tailwindcss";
+@import "../styles/tokens/thureos-tokens.css";
+@import "../styles/tokens/shadcn-theme.css";
 
-@custom-variant dark (&:is(.dark *));
+/* El tema vive en un atributo del elemento raíz, no en una clase.
+   Toda utilidad dark: existente sigue funcionando: solo cambia la condición. */
+@custom-variant dark (&:is([data-theme="dark"] *));
 
-@theme {
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(0 0% 3.9%);
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(0 0% 3.9%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(0 0% 3.9%);
-  --color-primary: hsl(221 83% 53%);
-  --color-primary-foreground: hsl(0 0% 100%);
-  --color-secondary: hsl(0 0% 96.1%);
-  --color-secondary-foreground: hsl(0 0% 9%);
-  --color-muted: hsl(0 0% 96.1%);
-  --color-muted-foreground: hsl(0 0% 45.1%);
-  --color-accent: hsl(0 0% 96.1%);
-  --color-accent-foreground: hsl(0 0% 9%);
-  --color-destructive: hsl(0 84.2% 60.2%);
-  --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(0 0% 89.8%);
-  --color-input: hsl(0 0% 89.8%);
-  --color-ring: hsl(221 83% 53%);
-  --color-chart-1: hsl(12 76% 61%);
-  --color-chart-2: hsl(173 58% 39%);
-  --color-chart-3: hsl(197 37% 24%);
-  --color-chart-4: hsl(43 74% 66%);
-  --color-chart-5: hsl(27 87% 67%);
-  --color-sidebar: hsl(0 0% 98%);
-  --color-sidebar-foreground: hsl(0 0% 9%);
-  --color-sidebar-border: hsl(0 0% 89.8%);
-  --radius-lg: 0.5rem;
-  --radius-md: calc(var(--radius-lg) - 2px);
-  --radius-sm: calc(var(--radius-lg) - 4px);
-}
+@theme inline {
+  /* --- Puente shadcn ---------------------------------------------------
+     shadcn-theme.css emite tripletes sin función (--primary: 214 100% 35%).
+     Se envuelven aquí para que shadcn-theme.css quede intacto como fuente
+     de verdad. Sin el hsl() Tailwind emite CSS inválido que se ignora en
+     silencio: los colores no se aplican y no hay error en consola.        */
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
 
-.dark {
-  --color-background: hsl(0 0% 3.9%);
-  --color-foreground: hsl(0 0% 98%);
-  --color-card: hsl(0 0% 3.9%);
-  --color-card-foreground: hsl(0 0% 98%);
-  --color-popover: hsl(0 0% 3.9%);
-  --color-popover-foreground: hsl(0 0% 98%);
-  --color-primary: hsl(217 91% 60%);
-  --color-primary-foreground: hsl(0 0% 100%);
-  --color-secondary: hsl(0 0% 14.9%);
-  --color-secondary-foreground: hsl(0 0% 98%);
-  --color-muted: hsl(0 0% 14.9%);
-  --color-muted-foreground: hsl(0 0% 63.9%);
-  --color-accent: hsl(0 0% 14.9%);
-  --color-accent-foreground: hsl(0 0% 98%);
-  --color-destructive: hsl(0 62.8% 30.6%);
-  --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(0 0% 14.9%);
-  --color-input: hsl(0 0% 14.9%);
-  --color-ring: hsl(217 91% 60%);
-  --color-chart-1: hsl(220 70% 50%);
-  --color-chart-2: hsl(160 60% 45%);
-  --color-chart-3: hsl(30 80% 55%);
-  --color-chart-4: hsl(280 65% 60%);
-  --color-chart-5: hsl(340 75% 55%);
-  --color-sidebar: hsl(0 0% 5.9%);
-  --color-sidebar-foreground: hsl(0 0% 98%);
-  --color-sidebar-border: hsl(0 0% 14.9%);
+  /* --- Tokens Thureos ---------------------------------------------------
+     Ya son colores completos en thureos-tokens.css: NO se envuelven.      */
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-surface-2: var(--bg-surface-2);
+  --color-elevated: var(--bg-elevated);
+  --color-inset: var(--bg-inset);
+
+  --color-line: var(--border-default);
+  --color-line-subtle: var(--border-subtle);
+  --color-line-strong: var(--border-strong);
+
+  --color-ink: var(--fg-default);
+  --color-ink-muted: var(--fg-muted);
+  --color-ink-subtle: var(--fg-subtle);
+  --color-ink-disabled: var(--fg-disabled);
+  --color-ink-inverse: var(--fg-inverse);
+
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft-bg);
+  --color-accent-on: var(--fg-on-accent);
+
+  --color-success-fg: var(--success-fg);
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-warning-fg: var(--warning-fg);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-info-fg: var(--info-fg);
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+
+  /* Escala de riesgo: eje independiente del acento de producto. */
+  --color-risk-none-fg: var(--risk-none-fg);
+  --color-risk-none-bg: var(--risk-none-bg);
+  --color-risk-low-fg: var(--risk-low-fg);
+  --color-risk-low-bg: var(--risk-low-bg);
+  --color-risk-medium-fg: var(--risk-medium-fg);
+  --color-risk-medium-bg: var(--risk-medium-bg);
+  --color-risk-high-fg: var(--risk-high-fg);
+  --color-risk-high-bg: var(--risk-high-bg);
+  --color-risk-critical-fg: var(--risk-critical-fg);
+  --color-risk-critical-bg: var(--risk-critical-bg);
+
+  /* Series de gráfico: verificadas para deuteranopía y protanopía. */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+
+  --font-sans: var(--font-inter), "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-sm: var(--thu-radius-sm);
+  --radius-md: var(--thu-radius-md);
+  --radius-lg: var(--thu-radius-lg);
+  --radius-xl: var(--thu-radius-xl);
 }
 
 @layer base {
@@ -72,5 +106,9 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  /* Cifras tabulares en datos: el manual las exige en tablas y KPIs. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }

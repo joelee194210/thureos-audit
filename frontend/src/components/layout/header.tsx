@@ -5,28 +5,15 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { alertsApi } from "@/lib/api/alerts";
+import { useTheme } from "@/components/theme-provider";
 
 export function Header({ title }: { title: string }) {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const { theme, toggleTheme } = useTheme();
   const [alertCount, setAlertCount] = useState(0);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("theme") as "light" | "dark" | null;
-    const initial = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    setTheme(initial);
-    document.documentElement.classList.toggle("dark", initial === "dark");
-  }, []);
 
   useEffect(() => {
     alertsApi.stats().then((s) => setAlertCount(s.new)).catch(() => {});
   }, []);
-
-  function toggleTheme() {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  }
 
   return (
     <header className="flex h-14 items-center justify-between border-b px-6">

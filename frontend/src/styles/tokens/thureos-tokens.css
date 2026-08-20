@@ -1,0 +1,253 @@
+/* ============================================================================
+   THUREOS — Design Tokens v1.0
+   Marca madre: Thureos · Productos: Compliance (azul) · Fraud & Behavior (ámbar)
+   Paleta derivada por muestreo directo del arte oficial del logotipo.
+   Uso:  <html data-theme="dark" data-brand="compliance">
+   ========================================================================== */
+
+:root {
+  /* ---------- PRIMITIVAS · Thureos Navy (campo del escudo) ---------------- */
+  --thu-navy-950:#010B18; --thu-navy-900:#02101F; --thu-navy-850:#051829;
+  --thu-navy-800:#08223A; --thu-navy-700:#0D3050; --thu-navy-600:#144067;
+  --thu-navy-500:#1E5480; --thu-navy-400:#3B7099; --thu-navy-300:#6B93B0;
+  --thu-navy-200:#A5C1D4; --thu-navy-100:#D3E1EC; --thu-navy-50:#EEF4F9;
+
+  /* ---------- PRIMITIVAS · Chrome (bisel plateado) ------------------------ */
+  --thu-chrome-100:#FFFFFF; --thu-chrome-200:#F4F7FA; --thu-chrome-300:#DCE6EF;
+  --thu-chrome-400:#BCCDDC; --thu-chrome-500:#93AABF; --thu-chrome-600:#6B8399;
+  --thu-chrome-700:#4A5F75;
+
+  /* ---------- PRIMITIVAS · Azul eléctrico (Compliance) -------------------- */
+  --thu-blue-50:#E7F1FF;  --thu-blue-100:#CBE1FF; --thu-blue-200:#9BC5FF;
+  --thu-blue-300:#63A3FF; --thu-blue-400:#2F80F0; --thu-blue-500:#0B5FD6;
+  --thu-blue-600:#0048B0; --thu-blue-700:#00398C; --thu-blue-800:#002C6C;
+  --thu-blue-900:#04224E;
+
+  /* ---------- PRIMITIVAS · Cyan glow (halo del núcleo) -------------------- */
+  --thu-glow-100:#D0E9F2; --thu-glow-300:#8FCDEB; --thu-glow-500:#4FA9DD;
+
+  /* ---------- PRIMITIVAS · Ámbar (Fraud & Behavior Analytics) ------------- */
+  --thu-amber-50:#FFF7E6;  --thu-amber-100:#FFEBC2; --thu-amber-200:#FFD787;
+  --thu-amber-300:#FFBE45; --thu-amber-400:#F5A11A; --thu-amber-500:#DB8408;
+  --thu-amber-600:#B36806; --thu-amber-700:#8C5006; --thu-amber-800:#6B3D07;
+  --thu-amber-900:#4A2B06;
+
+  /* ---------- PRIMITIVAS · Semánticas ------------------------------------- */
+  --thu-green-400:#34D399; --thu-green-600:#0F8A5F;
+  --thu-red-400:#FF8A85;   --thu-red-500:#F0524D;  --thu-red-600:#C62A25;
+  --thu-purple-400:#A78BFA; --thu-purple-600:#6D46D9;
+
+  /* ---------- TIPOGRAFÍA -------------------------------------------------- */
+  --thu-font-sans:"Inter","Inter var",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --thu-font-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+
+  --thu-text-display-2xl:3.75rem; --thu-lh-display-2xl:1.05; --thu-ls-display-2xl:-0.022em;
+  --thu-text-display-xl:3rem;     --thu-lh-display-xl:1.08;  --thu-ls-display-xl:-0.02em;
+  --thu-text-display-lg:2.375rem; --thu-lh-display-lg:1.15;  --thu-ls-display-lg:-0.018em;
+  --thu-text-h1:2rem;    --thu-lh-h1:1.2;   --thu-ls-h1:-0.015em;
+  --thu-text-h2:1.625rem;--thu-lh-h2:1.25;  --thu-ls-h2:-0.012em;
+  --thu-text-h3:1.3125rem;--thu-lh-h3:1.3;  --thu-ls-h3:-0.008em;
+  --thu-text-h4:1.125rem;--thu-lh-h4:1.4;   --thu-ls-h4:-0.004em;
+  --thu-text-body-lg:1.125rem; --thu-lh-body-lg:1.6;
+  --thu-text-body:1rem;        --thu-lh-body:1.6;
+  --thu-text-body-sm:0.875rem; --thu-lh-body-sm:1.55;
+  --thu-text-caption:0.75rem;  --thu-lh-caption:1.45;
+  --thu-text-eyebrow:0.75rem;  --thu-lh-eyebrow:1;  --thu-ls-eyebrow:0.18em;
+  --thu-text-mono:0.8125rem;   --thu-lh-mono:1.5;
+
+  --thu-weight-regular:400; --thu-weight-medium:500;
+  --thu-weight-semibold:600; --thu-weight-bold:700;
+
+  /* ---------- ESPACIADO (base 4px) ---------------------------------------- */
+  --thu-space-0:0;      --thu-space-1:0.25rem; --thu-space-2:0.5rem;
+  --thu-space-3:0.75rem;--thu-space-4:1rem;    --thu-space-5:1.25rem;
+  --thu-space-6:1.5rem; --thu-space-8:2rem;    --thu-space-10:2.5rem;
+  --thu-space-12:3rem;  --thu-space-16:4rem;   --thu-space-20:5rem;
+  --thu-space-24:6rem;  --thu-space-32:8rem;
+
+  /* ---------- RADIOS ------------------------------------------------------ */
+  --thu-radius-xs:4px; --thu-radius-sm:6px;  --thu-radius-md:8px;
+  --thu-radius-lg:12px;--thu-radius-xl:16px; --thu-radius-2xl:24px;
+  --thu-radius-pill:999px;
+
+  /* ---------- LAYOUT ------------------------------------------------------ */
+  --thu-container:1200px; --thu-container-narrow:760px;
+  --thu-sidebar:264px;    --thu-topbar:60px;
+  --thu-border-width:1px; --thu-focus-width:2px; --thu-focus-offset:2px;
+
+  /* ---------- MOTION ------------------------------------------------------ */
+  --thu-dur-instant:80ms; --thu-dur-fast:140ms; --thu-dur-base:200ms;
+  --thu-dur-slow:280ms;   --thu-dur-slower:420ms;
+  --thu-ease-standard:cubic-bezier(.2,0,0,1);
+  --thu-ease-out:cubic-bezier(0,0,.2,1);
+  --thu-ease-in:cubic-bezier(.4,0,1,1);
+  --thu-ease-emphasis:cubic-bezier(.2,0,0,1.2);
+}
+
+/* ============================ TEMA OSCURO ================================= */
+/* Modo operativo de los sistemas (turnos largos, monitoreo, SOC).           */
+[data-theme="dark"] {
+  --bg-canvas:var(--thu-navy-900);
+  --bg-surface:var(--thu-navy-850);
+  --bg-surface-2:var(--thu-navy-800);
+  --bg-elevated:#0B2B47;
+  --bg-inset:#010A14;
+  --bg-scrim:rgba(1,11,24,.72);
+
+  --border-subtle:#0F3355;
+  --border-default:#16456E;
+  --border-strong:#24628F;
+
+  --fg-default:#E7EFF7;
+  --fg-muted:#9FB6CB;
+  --fg-subtle:#6B8AA5;
+  --fg-disabled:#42607A;
+  --fg-inverse:var(--thu-navy-900);
+  --fg-on-accent:#FFFFFF;
+
+  --success-fg:var(--thu-green-400); --success-bg:rgba(52,211,153,.14); --success-border:rgba(52,211,153,.34);
+  --warning-fg:var(--thu-amber-300); --warning-bg:rgba(255,190,69,.14);  --warning-border:rgba(255,190,69,.34);
+  --danger-fg:var(--thu-red-400);    --danger-bg:rgba(255,138,133,.14);  --danger-border:rgba(255,138,133,.34);
+  --info-fg:var(--thu-blue-300);     --info-bg:rgba(99,163,255,.14);     --info-border:rgba(99,163,255,.34);
+  --neutral-fg:var(--fg-muted);      --neutral-bg:rgba(159,182,203,.12); --neutral-border:rgba(159,182,203,.28);
+
+  --shadow-sm:0 1px 2px rgba(1,11,24,.6);
+  --shadow-md:0 4px 14px rgba(1,11,24,.55);
+  --shadow-lg:0 16px 40px rgba(1,11,24,.6);
+  --shadow-xl:0 28px 72px rgba(1,11,24,.68);
+
+  --chart-grid:#0F3355; --chart-axis:#6B8AA5;
+  color-scheme:dark;
+}
+
+/* ============================ TEMA CLARO ================================== */
+/* Sitio corporativo, reportes exportables e impresión.                      */
+[data-theme="light"] {
+  --bg-canvas:#FFFFFF;
+  --bg-surface:#F7FAFC;
+  --bg-surface-2:var(--thu-navy-50);
+  --bg-elevated:#FFFFFF;
+  --bg-inset:#EEF4F9;
+  --bg-scrim:rgba(2,16,31,.48);
+
+  --border-subtle:#E4EBF2;
+  --border-default:#CBD8E3;
+  --border-strong:#A5B8C9;
+
+  --fg-default:#04182C;
+  --fg-muted:#42586E;
+  --fg-subtle:#5C6E82;
+  --fg-disabled:#9DAEBF;
+  --fg-inverse:#FFFFFF;
+  --fg-on-accent:#FFFFFF;
+
+  --success-fg:#0B6B4A; --success-bg:#E4F6EF; --success-border:#A9E0CC;
+  --warning-fg:#8C5006; --warning-bg:#FFF4E0; --warning-border:#F3D097;
+  --danger-fg:#A81F1B;  --danger-bg:#FDECEB;  --danger-border:#F3B5B2;
+  --info-fg:var(--thu-blue-700); --info-bg:#E7F1FF; --info-border:#B7D5FF;
+  --neutral-fg:var(--fg-muted);  --neutral-bg:#EEF3F8; --neutral-border:#D8E2EC;
+
+  --shadow-sm:0 1px 2px rgba(4,24,44,.06);
+  --shadow-md:0 4px 14px rgba(4,24,44,.08);
+  --shadow-lg:0 16px 40px rgba(4,24,44,.10);
+  --shadow-xl:0 28px 72px rgba(4,24,44,.14);
+
+  --chart-grid:#E4EBF2; --chart-axis:#66798D;
+  color-scheme:light;
+}
+
+/* ==================== ACENTO POR PRODUCTO (sub-marca) ===================== */
+/* Thureos Compliance — azul eléctrico del escudo. Autoridad, norma, control. */
+[data-brand="compliance"][data-theme="dark"] {
+  --accent-fg:var(--thu-blue-300);
+  --accent-solid:var(--thu-blue-500);
+  --accent-solid-hover:#1170EA;
+  --accent-solid-active:var(--thu-blue-600);
+  --accent-soft-bg:rgba(99,163,255,.13);
+  --accent-soft-border:rgba(99,163,255,.32);
+  --accent-ring:rgba(99,163,255,.55);
+  --accent-glow:0 0 0 1px rgba(99,163,255,.35), 0 0 28px rgba(11,95,214,.40);
+  --accent-gradient:linear-gradient(135deg,var(--thu-blue-400) 0%,var(--thu-blue-600) 100%);
+  --accent-halo:radial-gradient(60% 60% at 50% 0%,rgba(79,169,221,.30) 0%,transparent 70%);
+}
+[data-brand="compliance"][data-theme="light"] {
+  --accent-fg:var(--thu-blue-600);
+  --accent-solid:var(--thu-blue-600);
+  --accent-solid-hover:var(--thu-blue-700);
+  --accent-solid-active:var(--thu-blue-800);
+  --accent-soft-bg:#E7F1FF;
+  --accent-soft-border:#B7D5FF;
+  --accent-ring:rgba(0,72,176,.45);
+  --accent-glow:0 0 0 1px rgba(0,72,176,.20), 0 6px 20px rgba(0,72,176,.18);
+  --accent-gradient:linear-gradient(135deg,var(--thu-blue-500) 0%,var(--thu-blue-700) 100%);
+  --accent-halo:radial-gradient(60% 60% at 50% 0%,rgba(0,72,176,.10) 0%,transparent 70%);
+}
+
+/* Thureos Fraud & Behavior Analytics — ámbar. Señal, anomalía, vigilancia.  */
+[data-brand="fraud"][data-theme="dark"] {
+  --accent-fg:var(--thu-amber-300);
+  --accent-solid:var(--thu-amber-500);
+  --accent-solid-hover:#F09209;
+  --accent-solid-active:var(--thu-amber-600);
+  --accent-soft-bg:rgba(255,190,69,.13);
+  --accent-soft-border:rgba(255,190,69,.32);
+  --accent-ring:rgba(255,190,69,.55);
+  --accent-glow:0 0 0 1px rgba(255,190,69,.35), 0 0 28px rgba(219,132,8,.40);
+  --accent-gradient:linear-gradient(135deg,var(--thu-amber-300) 0%,var(--thu-amber-600) 100%);
+  --accent-halo:radial-gradient(60% 60% at 50% 0%,rgba(255,190,69,.22) 0%,transparent 70%);
+  --fg-on-accent:#2B1A02;
+}
+[data-brand="fraud"][data-theme="light"] {
+  --accent-fg:var(--thu-amber-700);
+  --accent-solid:var(--thu-amber-700);      /* #8C5006 · 6.43:1 con texto blanco */
+  --accent-solid-hover:var(--thu-amber-800);
+  --accent-solid-active:var(--thu-amber-900);
+  --accent-soft-bg:var(--thu-amber-50);
+  --accent-soft-border:#F3D097;
+  --accent-ring:rgba(140,80,6,.45);
+  --accent-glow:0 0 0 1px rgba(140,80,6,.20), 0 6px 20px rgba(140,80,6,.16);
+  --accent-gradient:linear-gradient(135deg,var(--thu-amber-500) 0%,var(--thu-amber-700) 100%);
+  --accent-halo:radial-gradient(60% 60% at 50% 0%,rgba(179,104,6,.10) 0%,transparent 70%);
+  --fg-on-accent:#FFFFFF;
+}
+
+/* ==================== ESCALA DE RIESGO (transversal) ====================== */
+/* Nunca usar el acento de producto para comunicar riesgo: son ejes distintos.*/
+[data-theme="dark"]{
+  --risk-none-fg:#9FB6CB;  --risk-none-bg:rgba(159,182,203,.12);
+  --risk-low-fg:#34D399;   --risk-low-bg:rgba(52,211,153,.14);
+  --risk-medium-fg:#FFBE45;--risk-medium-bg:rgba(255,190,69,.14);
+  --risk-high-fg:#FF8A85;  --risk-high-bg:rgba(255,138,133,.14);
+  --risk-critical-fg:#FFD9D7; --risk-critical-bg:#8E1F1B;
+}
+[data-theme="light"]{
+  --risk-none-fg:#5C6E82;  --risk-none-bg:#EEF3F8;
+  --risk-low-fg:#0B6B4A;   --risk-low-bg:#E4F6EF;
+  --risk-medium-fg:#8C5006;--risk-medium-bg:#FFF4E0;
+  --risk-high-fg:#A81F1B;  --risk-high-bg:#FDECEB;
+  --risk-critical-fg:#FFFFFF; --risk-critical-bg:#8E1F1B;
+}
+
+/* ==================== SERIES DE DATOS (charts) ============================ */
+/* Ordenadas por separación perceptual; seguras para daltonismo deutan/protan.*/
+[data-theme="dark"]{
+  --chart-1:#63A3FF; --chart-2:#34D399; --chart-3:#FFBE45; --chart-4:#A78BFA;
+  --chart-5:#4FA9DD; --chart-6:#FF8A85; --chart-7:#93AABF; --chart-8:#F472B6;
+}
+[data-theme="light"]{
+  --chart-1:#0048B0; --chart-2:#0F8A5F; --chart-3:#B36806; --chart-4:#6D46D9;
+  --chart-5:#0E7490; --chart-6:#C62A25; --chart-7:#4A5F75; --chart-8:#BE1D66;
+}
+
+/* ==================== ACCESIBILIDAD BASE ================================== */
+:where(a,button,input,select,textarea,[tabindex]):focus-visible{
+  outline:var(--thu-focus-width) solid var(--accent-ring);
+  outline-offset:var(--thu-focus-offset);
+  border-radius:var(--thu-radius-xs);
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important; scroll-behavior:auto !important;
+  }
+}

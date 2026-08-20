@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { ToastProvider } from "@/lib/use-toast";
+import { ThemeProvider } from "@/components/theme-provider";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -17,11 +18,14 @@ export function Providers({ children }: { children: ReactNode }) {
       })
   );
 
+  // ThemeProvider es el más externo: cualquier componente puede leer el tema.
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        {children}
-      </ToastProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

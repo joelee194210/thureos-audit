@@ -1,0 +1,62 @@
+/* Thureos — tema shadcn/ui. Importar DESPUÉS de thureos-tokens.css.
+   Todos los valores en el formato HSL sin coma que espera shadcn.          */
+@layer base {
+  :root, [data-theme="light"] {
+    --background:0 0% 100%;
+    --foreground:210 83% 9%;
+    --card:0 0% 100%;
+    --card-foreground:210 83% 9%;
+    --popover:0 0% 100%;
+    --popover-foreground:210 83% 9%;
+    --primary:214 100% 35%;          /* electric-600 #0048B0 */
+    --primary-foreground:0 0% 100%;
+    --secondary:206 45% 95%;
+    --secondary-foreground:212 45% 22%;
+    --muted:206 45% 95%;
+    --muted-foreground:211 25% 35%;
+    --accent:214 100% 95%;
+    --accent-foreground:214 100% 27%;
+    --destructive:2 71% 39%;
+    --destructive-foreground:0 0% 100%;
+    --border:209 30% 84%;
+    --input:209 30% 84%;
+    --ring:214 100% 35%;
+    --radius:0.5rem;
+    --chart-1:214 100% 35%; --chart-2:160 80% 30%; --chart-3:33 94% 36%;
+    --chart-4:259 66% 56%;  --chart-5:190 79% 30%;
+  }
+  [data-theme="dark"] {
+    --background:211 82% 6%;         /* navy-900 #02101F */
+    --foreground:210 47% 94%;
+    --card:210 72% 9%;               /* navy-850 */
+    --card-foreground:210 47% 94%;
+    --popover:211 70% 13%;
+    --popover-foreground:210 47% 94%;
+    --primary:216 90% 44%;           /* electric-500 #0B5FD6 */
+    --primary-foreground:0 0% 100%;
+    --secondary:209 65% 13%;
+    --secondary-foreground:210 47% 94%;
+    --muted:209 65% 13%;
+    --muted-foreground:207 26% 71%;
+    --accent:214 100% 69%;
+    --accent-foreground:211 82% 6%;
+    --destructive:2 100% 76%;
+    --destructive-foreground:211 82% 6%;
+    --border:209 65% 20%;
+    --input:209 65% 20%;
+    --ring:214 100% 69%;
+    --chart-1:214 100% 69%; --chart-2:160 64% 52%; --chart-3:39 100% 64%;
+    --chart-4:258 90% 76%;  --chart-5:199 68% 59%;
+  }
+  /* Sub-marca Fraud & Behavior Analytics: solo cambia primary/accent/ring.  */
+  [data-brand="fraud"][data-theme="dark"] {
+    --primary:35 93% 45%;  --primary-foreground:33 91% 9%;
+    --accent:39 100% 64%;  --accent-foreground:33 91% 9%;
+    --ring:39 100% 64%;
+  }
+  [data-brand="fraud"][data-theme="light"] {
+    --primary:33 92% 29%;  --primary-foreground:0 0% 100%;
+    --accent:39 100% 95%;  --accent-foreground:33 92% 29%;
+    --ring:33 92% 29%;
+  }
+}

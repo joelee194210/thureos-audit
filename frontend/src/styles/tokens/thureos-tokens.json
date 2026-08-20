@@ -1,0 +1,61 @@
+{
+  "$schema": "https://design-tokens.org/schema.json",
+  "meta": { "name": "Thureos Design Tokens", "version": "1.0.0",
+    "brands": ["compliance", "fraud"], "themes": ["light", "dark"],
+    "source": "Muestreo directo del arte oficial del logotipo Thureos" },
+  "color": {
+    "navy": {"950":"#010B18","900":"#02101F","850":"#051829","800":"#08223A","700":"#0D3050","600":"#144067","500":"#1E5480","400":"#3B7099","300":"#6B93B0","200":"#A5C1D4","100":"#D3E1EC","50":"#EEF4F9"},
+    "chrome": {"100":"#FFFFFF","200":"#F4F7FA","300":"#DCE6EF","400":"#BCCDDC","500":"#93AABF","600":"#6B8399","700":"#4A5F75"},
+    "blue": {"50":"#E7F1FF","100":"#CBE1FF","200":"#9BC5FF","300":"#63A3FF","400":"#2F80F0","500":"#0B5FD6","600":"#0048B0","700":"#00398C","800":"#002C6C","900":"#04224E"},
+    "glow": {"100":"#D0E9F2","300":"#8FCDEB","500":"#4FA9DD"},
+    "amber": {"50":"#FFF7E6","100":"#FFEBC2","200":"#FFD787","300":"#FFBE45","400":"#F5A11A","500":"#DB8408","600":"#B36806","700":"#8C5006","800":"#6B3D07","900":"#4A2B06"},
+    "green": {"400":"#34D399","600":"#0F8A5F"},
+    "red": {"400":"#FF8A85","500":"#F0524D","600":"#C62A25"},
+    "purple": {"400":"#A78BFA","600":"#6D46D9"}
+  },
+  "semantic": {
+    "dark": {
+      "bg": {"canvas":"#02101F","surface":"#051829","surface2":"#08223A","elevated":"#0B2B47","inset":"#010A14"},
+      "border": {"subtle":"#0F3355","default":"#16456E","strong":"#24628F"},
+      "fg": {"default":"#E7EFF7","muted":"#9FB6CB","subtle":"#6B8AA5","disabled":"#42607A","onAccent":"#FFFFFF"},
+      "accent": {"compliance":{"fg":"#63A3FF","solid":"#0B5FD6"},"fraud":{"fg":"#FFBE45","solid":"#DB8408"}},
+      "status": {"success":"#34D399","warning":"#FFBE45","danger":"#FF8A85","info":"#63A3FF"},
+      "risk": {"low":"#34D399","medium":"#FFBE45","high":"#FF8A85","critical":"#8E1F1B"},
+      "chart": ["#63A3FF","#34D399","#FFBE45","#A78BFA","#4FA9DD","#FF8A85","#93AABF","#F472B6"]
+    },
+    "light": {
+      "bg": {"canvas":"#FFFFFF","surface":"#F7FAFC","surface2":"#EEF4F9","elevated":"#FFFFFF","inset":"#EEF4F9"},
+      "border": {"subtle":"#E4EBF2","default":"#CBD8E3","strong":"#A5B8C9"},
+      "fg": {"default":"#04182C","muted":"#42586E","subtle":"#5C6E82","disabled":"#9DAEBF","onAccent":"#FFFFFF"},
+      "accent": {"compliance":{"fg":"#0048B0","solid":"#0048B0"},"fraud":{"fg":"#8C5006","solid":"#8C5006"}},
+      "status": {"success":"#0B6B4A","warning":"#8C5006","danger":"#A81F1B","info":"#00398C"},
+      "risk": {"low":"#0B6B4A","medium":"#8C5006","high":"#A81F1B","critical":"#8E1F1B"},
+      "chart": ["#0048B0","#0F8A5F","#B36806","#6D46D9","#0E7490","#C62A25","#4A5F75","#BE1D66"]
+    }
+  },
+  "typography": {
+    "family": {"sans":"Inter","mono":"JetBrains Mono"},
+    "scale": {
+      "display2xl":{"size":"3.75rem","lineHeight":1.05,"tracking":"-0.022em","weight":700},
+      "displayXl":{"size":"3rem","lineHeight":1.08,"tracking":"-0.02em","weight":700},
+      "displayLg":{"size":"2.375rem","lineHeight":1.15,"tracking":"-0.018em","weight":700},
+      "h1":{"size":"2rem","lineHeight":1.2,"tracking":"-0.015em","weight":600},
+      "h2":{"size":"1.625rem","lineHeight":1.25,"tracking":"-0.012em","weight":600},
+      "h3":{"size":"1.3125rem","lineHeight":1.3,"tracking":"-0.008em","weight":600},
+      "h4":{"size":"1.125rem","lineHeight":1.4,"tracking":"-0.004em","weight":600},
+      "bodyLg":{"size":"1.125rem","lineHeight":1.6,"weight":400},
+      "body":{"size":"1rem","lineHeight":1.6,"weight":400},
+      "bodySm":{"size":"0.875rem","lineHeight":1.55,"weight":400},
+      "caption":{"size":"0.75rem","lineHeight":1.45,"weight":400},
+      "eyebrow":{"size":"0.75rem","lineHeight":1,"tracking":"0.18em","weight":600,"transform":"uppercase"},
+      "mono":{"size":"0.8125rem","lineHeight":1.5,"weight":400}
+    }
+  },
+  "space": {"0":"0","1":"4px","2":"8px","3":"12px","4":"16px","5":"20px","6":"24px","8":"32px","10":"40px","12":"48px","16":"64px","20":"80px","24":"96px","32":"128px"},
+  "radius": {"xs":"4px","sm":"6px","md":"8px","lg":"12px","xl":"16px","2xl":"24px","pill":"999px"},
+  "motion": {
+    "duration": {"instant":"80ms","fast":"140ms","base":"200ms","slow":"280ms","slower":"420ms"},
+    "easing": {"standard":"cubic-bezier(.2,0,0,1)","out":"cubic-bezier(0,0,.2,1)","in":"cubic-bezier(.4,0,1,1)","emphasis":"cubic-bezier(.2,0,0,1.2)"}
+  },
+  "layout": {"container":"1200px","containerNarrow":"760px","sidebar":"264px","topbar":"60px"}
+}
