@@ -55,9 +55,8 @@ cd frontend
 npm install              # Install dependencies
 npm run dev              # Dev server (http://localhost:3000)
 npm run build            # Production build
-npm run lint             # ESLint
-npm run test             # Vitest unit tests
-npm run test -- --run    # Run tests once (CI mode)
+npm run lint             # ⚠ ESLint NO está configurado: abre un asistente interactivo
+npm run test             # ⚠ Vitest instalado pero el proyecto no tiene tests
 ```
 
 ### Backend
@@ -66,9 +65,7 @@ cd backend
 go mod tidy              # Sync dependencies
 go run cmd/server/main.go  # Run API server (http://localhost:8080)
 go build -o bin/server cmd/server/main.go  # Build binary
-go test ./...            # Run all tests
-go test ./internal/rules/...  # Run specific package tests
-go test -v -run TestRuleName ./internal/rules/  # Single test
+go test ./...            # ⚠ el backend no tiene tests todavía
 golangci-lint run        # Linting
 ```
 
@@ -121,6 +118,9 @@ Dashboards are composed of configurable widgets tied to specific monitors and ru
 - MongoDB operations in `internal/repository/`
 - All errors wrapped with context: `fmt.Errorf("operation: %w", err)`
 - Configuration via environment variables loaded in `internal/config/`
+
+> Estado del proyecto y hallazgos abiertos (sin tests, ESLint sin configurar, `gofmt`
+> pendiente, sin rate limiting): `docs/superpowers/auditoria-2026-08-20.md`.
 
 ## Sistema de marca Thureos
 
