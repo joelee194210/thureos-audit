@@ -128,7 +128,8 @@ Ejecutada sobre `feat/linea-grafica-thureos` antes de decidir la integración.
 | Colores literales en `frontend/src` | ✅ sin salida |
 | Nombre de producto anterior en todo el repo | ✅ sin salida |
 | `gofmt -l backend/` | ❌ 10 archivos (F4, sigue pendiente) |
-| Clon limpio compila `./cmd/server` | ✅ tras corregir F11 |
+| Clon limpio: `go build ./cmd/server` | ✅ tras corregir F11 |
+| Clon limpio: `npm ci && npx next build` | ✅ 16 rutas |
 
 Recuento de `gofmt` medido por comparación directa entre `master` y la rama:
 15 archivos en `master`, 12 en la rama. La rama reformateó de paso cinco
@@ -200,3 +201,17 @@ idéntico —habría tragado en silencio cualquier activo de marca en tema oscur
 
 Barrido posterior de fuentes ignoradas por error: sólo queda `frontend/next-env.d.ts`,
 que Next regenera en cada build. Benigno.
+
+### Nota sobre el método de verificación
+
+F11 estuvo cuatro commits sin detectarse porque toda comprobación anterior corrió
+sobre el árbol de trabajo, donde el archivo ausente sí existe. `git status --ignored`
+tampoco lo delata: colapsa un directorio ignorado entero en una sola línea
+(`!! backend/cmd/`), sin decir qué contiene.
+
+La comprobación que sí discrimina es clonar y compilar. Hecha en ambas mitades sobre
+`58fa3f9`: el backend compila `./cmd/server`, y el frontend levanta las 16 rutas tras
+`npm ci`, con `src/styles/tokens/` y `public/brand/` completos en el clon.
+
+**Conviene repetirla antes de cualquier despliegue**, no la verificación sobre el
+árbol local.
