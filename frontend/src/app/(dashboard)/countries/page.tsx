@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { countriesApi } from "@/lib/api/countries";
 import { cn } from "@/lib/utils";
+import { CATEGORY_CLASSES, RISK_BG, RISK_CLASSES, RISK_FG, STATUS_CLASSES } from "@/lib/semantic-colors";
 import type { Country, CountryRiskLevel } from "@/lib/types";
 
 const riskConfig: Record<
@@ -35,29 +36,29 @@ const riskConfig: Record<
   high: {
     label: "Alto",
     color:
-      "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800",
+      `${RISK_CLASSES.high} border-transparent`,
     icon: ShieldAlert,
   },
   medium: {
     label: "Medio",
     color:
-      "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800",
+      `${RISK_CLASSES.medium} border-transparent`,
     icon: Shield,
   },
   low: {
     label: "Bajo",
     color:
-      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800",
+      `${RISK_CLASSES.low} border-transparent`,
     icon: ShieldCheck,
   },
 };
 
 const sourceColors: Record<string, string> = {
-  FATF: "bg-red-600 text-white",
-  OFAC: "bg-blue-700 text-white",
-  ONU: "bg-sky-600 text-white",
-  EU: "bg-indigo-600 text-white",
-  Basel: "bg-purple-600 text-white",
+  FATF: CATEGORY_CLASSES[5],
+  OFAC: CATEGORY_CLASSES[0],
+  ONU: CATEGORY_CLASSES[4],
+  EU: CATEGORY_CLASSES[3],
+  Basel: CATEGORY_CLASSES[6],
 };
 
 export default function CountriesPage() {
@@ -167,8 +168,8 @@ export default function CountriesPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-red-100 dark:bg-red-900/30 p-2">
-                <ShieldAlert className="h-5 w-5 text-red-600 dark:text-red-400" />
+              <div className={cn("rounded-lg p-2", RISK_BG.high)}>
+                <ShieldAlert className={cn("h-5 w-5", RISK_FG.high)} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.high}</p>
@@ -178,8 +179,8 @@ export default function CountriesPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-yellow-100 dark:bg-yellow-900/30 p-2">
-                <Shield className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+              <div className={cn("rounded-lg p-2", RISK_BG.medium)}>
+                <Shield className={cn("h-5 w-5", RISK_FG.medium)} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.medium}</p>
@@ -189,8 +190,8 @@ export default function CountriesPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-green-100 dark:bg-green-900/30 p-2">
-                <ShieldCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <div className={cn("rounded-lg p-2", RISK_BG.low)}>
+                <ShieldCheck className={cn("h-5 w-5", RISK_FG.low)} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.low}</p>
@@ -200,8 +201,8 @@ export default function CountriesPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-purple-100 dark:bg-purple-900/30 p-2">
-                <Globe className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <div className="rounded-lg bg-accent-soft p-2">
+                <Globe className="h-5 w-5 text-accent-fg" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{stats.regions}</p>
@@ -401,8 +402,8 @@ export default function CountriesPage() {
                                   className={cn(
                                     "rounded-full px-2 py-0.5 text-[10px] font-medium border",
                                     editForm.active
-                                      ? "bg-green-100 text-green-700 border-green-200"
-                                      : "bg-gray-100 text-gray-500 border-gray-200"
+                                      ? STATUS_CLASSES.success
+                                      : STATUS_CLASSES.neutral
                                   )}
                                 >
                                   {editForm.active ? "Activo" : "Inactivo"}
@@ -416,7 +417,7 @@ export default function CountriesPage() {
                                     className="h-6 w-6"
                                     onClick={() => saveEdit(country.id)}
                                   >
-                                    <Check className="h-3.5 w-3.5 text-green-600" />
+                                    <Check className="h-3.5 w-3.5 text-success-fg" />
                                   </Button>
                                   <Button
                                     variant="ghost"
@@ -424,7 +425,7 @@ export default function CountriesPage() {
                                     className="h-6 w-6"
                                     onClick={() => setEditingId(null)}
                                   >
-                                    <X className="h-3.5 w-3.5 text-red-600" />
+                                    <X className="h-3.5 w-3.5 text-danger-fg" />
                                   </Button>
                                 </div>
                               </td>
@@ -471,7 +472,7 @@ export default function CountriesPage() {
                                     className={cn(
                                       "inline-block rounded px-1.5 py-0.5 text-[8px] font-bold leading-none whitespace-nowrap",
                                       sourceColors[src] ??
-                                        "bg-gray-500 text-white"
+                                        "bg-surface-2 text-ink-muted"
                                     )}
                                   >
                                     {src}
@@ -492,8 +493,8 @@ export default function CountriesPage() {
                                 className={cn(
                                   "rounded-full px-2 py-0.5 text-[10px] font-medium border",
                                   country.active
-                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800"
-                                    : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700"
+                                    ? STATUS_CLASSES.success
+                                    : STATUS_CLASSES.neutral
                                 )}
                               >
                                 {country.active ? "Activo" : "Inactivo"}

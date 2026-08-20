@@ -13,22 +13,25 @@ import { Search, CreditCard, ShieldAlert, ShieldCheck, Shield, Pencil } from "lu
 import { mccApi } from "@/lib/api/mcc";
 import { useToast } from "@/lib/use-toast";
 import { cn } from "@/lib/utils";
+import { CATEGORY_CLASSES, RISK_BG, RISK_CLASSES, RISK_FG } from "@/lib/semantic-colors";
 import type { MCC, MCCRiskLevel, MCCNetwork } from "@/lib/types";
 
+// La red de tarjeta es un eje categórico: distingue, no ordena ni mide riesgo.
+// Usa las series de gráfico, verificadas para deuteranopía y protanopía.
 const networkLabels: Record<string, { label: string; short: string; color: string }> = {
-  visa: { label: "Visa", short: "V", color: "bg-blue-600 text-white" },
-  mastercard: { label: "Mastercard", short: "MC", color: "bg-orange-600 text-white" },
-  unionpay: { label: "UnionPay", short: "UP", color: "bg-red-600 text-white" },
-  amex: { label: "American Express", short: "AX", color: "bg-emerald-600 text-white" },
-  discover: { label: "Discover", short: "DI", color: "bg-amber-600 text-white" },
-  diners: { label: "Diners Club", short: "DC", color: "bg-indigo-600 text-white" },
-  jcb: { label: "JCB", short: "JCB", color: "bg-teal-600 text-white" },
+  visa: { label: "Visa", short: "V", color: CATEGORY_CLASSES[0] },
+  mastercard: { label: "Mastercard", short: "MC", color: CATEGORY_CLASSES[2] },
+  unionpay: { label: "UnionPay", short: "UP", color: CATEGORY_CLASSES[5] },
+  amex: { label: "American Express", short: "AX", color: CATEGORY_CLASSES[1] },
+  discover: { label: "Discover", short: "DI", color: CATEGORY_CLASSES[3] },
+  diners: { label: "Diners Club", short: "DC", color: CATEGORY_CLASSES[6] },
+  jcb: { label: "JCB", short: "JCB", color: CATEGORY_CLASSES[4] },
 };
 
 const riskConfig: Record<string, { label: string; color: string; icon: typeof ShieldAlert }> = {
-  high: { label: "Alto", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800", icon: ShieldAlert },
-  medium: { label: "Medio", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800", icon: Shield },
-  low: { label: "Bajo", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800", icon: ShieldCheck },
+  high: { label: "Alto", color: `${RISK_CLASSES.high} border-transparent`, icon: ShieldAlert },
+  medium: { label: "Medio", color: `${RISK_CLASSES.medium} border-transparent`, icon: Shield },
+  low: { label: "Bajo", color: `${RISK_CLASSES.low} border-transparent`, icon: ShieldCheck },
 };
 
 const ALL_NETWORKS: MCCNetwork[] = ["visa", "mastercard", "unionpay", "amex", "discover", "diners", "jcb"];
@@ -130,7 +133,7 @@ export default function MCCPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-red-100 dark:bg-red-900/30 p-2"><ShieldAlert className="h-5 w-5 text-red-600 dark:text-red-400" /></div>
+              <div className={cn("rounded-lg p-2", RISK_BG.high)}><ShieldAlert className={cn("h-5 w-5", RISK_FG.high)} /></div>
               <div>
                 <p className="text-2xl font-bold">{stats.high}</p>
                 <p className="text-xs text-muted-foreground">Riesgo alto</p>
@@ -139,7 +142,7 @@ export default function MCCPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-yellow-100 dark:bg-yellow-900/30 p-2"><Shield className="h-5 w-5 text-yellow-600 dark:text-yellow-400" /></div>
+              <div className={cn("rounded-lg p-2", RISK_BG.medium)}><Shield className={cn("h-5 w-5", RISK_FG.medium)} /></div>
               <div>
                 <p className="text-2xl font-bold">{stats.medium}</p>
                 <p className="text-xs text-muted-foreground">Riesgo medio</p>
@@ -148,7 +151,7 @@ export default function MCCPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-green-100 dark:bg-green-900/30 p-2"><ShieldCheck className="h-5 w-5 text-green-600 dark:text-green-400" /></div>
+              <div className={cn("rounded-lg p-2", RISK_BG.low)}><ShieldCheck className={cn("h-5 w-5", RISK_FG.low)} /></div>
               <div>
                 <p className="text-2xl font-bold">{stats.low}</p>
                 <p className="text-xs text-muted-foreground">Riesgo bajo</p>
@@ -157,7 +160,7 @@ export default function MCCPage() {
           </Card>
           <Card>
             <CardContent className="flex items-center gap-3 p-4">
-              <div className="rounded-lg bg-purple-100 dark:bg-purple-900/30 p-2"><CreditCard className="h-5 w-5 text-purple-600 dark:text-purple-400" /></div>
+              <div className="rounded-lg bg-accent-soft p-2"><CreditCard className="h-5 w-5 text-accent-fg" /></div>
               <div>
                 <p className="text-2xl font-bold">{stats.categories}</p>
                 <p className="text-xs text-muted-foreground">Categorias</p>
