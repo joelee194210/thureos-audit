@@ -45,8 +45,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             className={`animate-in slide-in-from-right rounded-md px-4 py-3 text-sm font-medium shadow-lg ${
               toast.type === "error"
-                ? "bg-red-600 text-white"
-                : "bg-emerald-600 text-white"
+                ? "bg-danger-bg text-danger-fg border border-danger-border"
+                : "bg-success-bg text-success-fg border border-success-border"
             }`}
           >
             {toast.message}

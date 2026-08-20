@@ -51,10 +51,10 @@ export default function HomePage() {
   }, []);
 
   const statCards = [
-    { title: "Monitores", value: stats.monitors, icon: Monitor, color: "text-blue-500" },
-    { title: "Reglas activas", value: stats.rules, icon: ShieldCheck, color: "text-emerald-500" },
-    { title: "Alertas nuevas", value: stats.alerts, icon: Bell, color: "text-amber-500" },
-    { title: "Dashboards", value: stats.dashboards, icon: BarChart3, color: "text-violet-500" },
+    { title: "Monitores", value: stats.monitors, icon: Monitor, color: "text-accent-fg" },
+    { title: "Reglas activas", value: stats.rules, icon: ShieldCheck, color: "text-success-fg" },
+    { title: "Alertas nuevas", value: stats.alerts, icon: Bell, color: "text-warning-fg" },
+    { title: "Dashboards", value: stats.dashboards, icon: BarChart3, color: "text-chart-4" },
   ];
 
   return (

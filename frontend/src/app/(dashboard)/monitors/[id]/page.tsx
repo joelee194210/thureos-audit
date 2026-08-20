@@ -155,8 +155,8 @@ export default function MonitorDetailPage() {
         </div>
 
         {evalResult && (
-          <div className={`mb-4 rounded-md p-4 ${evalResult.alertsGenerated >= 0 ? "bg-emerald-50 dark:bg-emerald-950" : "bg-red-50 dark:bg-red-950"}`}>
-            <p className={`text-sm font-medium ${evalResult.alertsGenerated >= 0 ? "text-emerald-800 dark:text-emerald-200" : "text-red-800 dark:text-red-200"}`}>
+          <div className={`mb-4 rounded-md p-4 ${evalResult.alertsGenerated >= 0 ? "bg-success-bg" : "bg-danger-bg"}`}>
+            <p className={`text-sm font-medium ${evalResult.alertsGenerated >= 0 ? "text-success-fg" : "text-danger-fg"}`}>
               {evalResult.alertsGenerated >= 0
                 ? `${evalResult.alertsGenerated} alertas generadas`
                 : "Error al evaluar reglas"}
@@ -196,8 +196,8 @@ export default function MonitorDetailPage() {
                 </div>
 
                 {uploadResult && (
-                  <div className="mt-4 rounded-md bg-emerald-50 p-4 dark:bg-emerald-950">
-                    <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                  <div className="mt-4 rounded-md bg-success-bg p-4">
+                    <p className="text-sm font-medium text-success-fg">
                       {uploadResult.recordsIngested} registros cargados
                       {uploadResult.evaluationQueued && " — reglas en evaluacion"}
                     </p>
@@ -249,7 +249,7 @@ export default function MonitorDetailPage() {
                                   const val = String(row[field.name] ?? "");
                                   const isMatch = searchTerm && val.toLowerCase().includes(searchTerm.toLowerCase());
                                   return (
-                                    <td key={field.name} className={`max-w-[200px] truncate px-3 py-2 ${isMatch ? "bg-yellow-100 dark:bg-yellow-900/30 font-medium" : ""}`}>
+                                    <td key={field.name} className={`max-w-[200px] truncate px-3 py-2 ${isMatch ? "bg-warning-bg font-medium" : ""}`}>
                                       {val}
                                     </td>
                                   );

@@ -41,9 +41,9 @@ const providerLabels: Record<string, string> = {
 
 function StatusDot({ ok }: { ok: boolean }) {
   return ok ? (
-    <CheckCircle className="h-4 w-4 text-emerald-500" />
+    <CheckCircle className="h-4 w-4 text-success-fg" />
   ) : (
-    <XCircle className="h-4 w-4 text-red-500" />
+    <XCircle className="h-4 w-4 text-danger-fg" />
   );
 }
 
@@ -130,7 +130,7 @@ export default function SettingsPage() {
       <>
         <Header title="Configuracion" />
         <div className="p-6">
-          <p className="text-sm text-red-500">{error}</p>
+          <p className="text-sm text-danger-fg">{error}</p>
         </div>
       </>
     );
