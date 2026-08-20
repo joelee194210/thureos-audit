@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
-	"github.com/robfig/cron/v3"
 )
 
 // Scheduler runs rule evaluations on a per-rule cron schedule.
