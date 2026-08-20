@@ -19,7 +19,7 @@
 - **Pesos tipográficos:** Inter 400/500/600/700 (prohibidos 300 y 800). JetBrains Mono 400/500/600.
 - **Ortografía del español completa**, con todas las tildes. El manual es normativo sobre la voz.
 - **Contraste WCAG 2.1 AA** en los dos temas. Un cambio de color que rompa un umbral no se aprueba, aunque se vea mejor.
-- **Nomenclatura:** «Thureos Compliance» en texto visible. Nunca «Compliance» solo como marca, nunca «DataWatch».
+- **Nomenclatura:** «Thureos Compliance» en texto visible. Nunca «Compliance» solo como marca, y ninguna traza del nombre de producto anterior.
 - **Foco visible** de 2 px con 2 px de separación en todo elemento interactivo (lo aporta la capa de tokens).
 
 ## Notas de ejecución que condicionan todos los pasos
@@ -546,7 +546,7 @@ export function Logo({ variant = "isotipo", size = 32, className }: LogoProps) {
 
 - [ ] **Step 4: Sustituir el logotipo falso del sidebar**
 
-En `frontend/src/components/layout/sidebar.tsx`, reemplaza el bloque del logotipo (hoy un icono `Monitor` de Lucide dentro de un cuadro más el texto «DataWatch»):
+En `frontend/src/components/layout/sidebar.tsx`, reemplaza el bloque del logotipo (hoy un icono `Monitor` de Lucide dentro de un cuadro más el nombre de producto anterior en texto):
 
 ```tsx
 <div className="flex h-14 items-center border-b border-line-subtle px-6">
@@ -580,7 +580,7 @@ Esperado: compilación limpia.
 
 Visualmente: el sidebar muestra el escudo real; la pestaña del navegador muestra el isotipo; login muestra el lockup sobre navy.
 
-Run: `grep -rn "DataWatch" /Users/slacker/monitors-main/frontend/src`
+Run: busca el nombre de producto anterior bajo `frontend/src`
 Esperado: sin coincidencias en el sidebar. Puede quedar alguna en páginas aún no migradas; se limpian en la Tarea 8.
 
 - [ ] **Step 7: Commit**
@@ -1112,7 +1112,6 @@ Corrige cada coincidencia: Análisis, Código, Descripción, Último, Número, A
 
 ```bash
 cd /Users/slacker/monitors-main/frontend/src
-grep -rn "DataWatch" .
 ```
 
 Cada coincidencia en texto visible pasa a «Thureos Compliance», o a «Thureos» a secas cuando es el wordmark del sidebar. El descriptor nunca va solo: nunca escribas «Compliance» como nombre de marca.
@@ -1121,7 +1120,7 @@ Cada coincidencia en texto visible pasa a «Thureos Compliance», o a «Thureos�
 
 Run: `cd /Users/slacker/monitors-main/frontend && npx next build` → limpio.
 
-Run: `grep -rn "DataWatch" /Users/slacker/monitors-main/frontend/src`
+Run: busca el nombre de producto anterior bajo `frontend/src`
 Esperado: **sin salida**.
 
 Visualmente en `/dashboards/[id]`: los gráficos usan la paleta Thureos, cambian de color al alternar el tema, y los sectores del gráfico circular tienen un borde del color del lienzo.
@@ -1311,8 +1310,7 @@ cd /Users/slacker/monitors-main/frontend && npx next build
 cd /Users/slacker/monitors-main/frontend/src
 grep -rnE '(bg|text|border|ring|from|to)-(red|green|amber|emerald|yellow|orange|blue|slate|gray|zinc|rose|purple|indigo|violet|cyan|pink|teal|lime|sky|fuchsia)-[0-9]{2,3}' .
 
-# 4. Cero menciones a DataWatch en texto visible
-grep -rn "DataWatch" .
+# 4. Cero menciones al nombre de producto anterior en texto visible
 ```
 
 Esperado: 1 y 2 limpios; 3 y 4 **sin salida**.
