@@ -41,6 +41,7 @@ const SOURCE_ICONS: Record<SourceType, typeof FileText> = {
   csv: FileText,
   excel: FileSpreadsheet,
   json: FileJson,
+  txt: FileText,
   api: Globe,
 };
 
@@ -48,6 +49,7 @@ const SOURCE_LABELS: Record<SourceType, string> = {
   csv: "CSV",
   excel: "Excel",
   json: "JSON",
+  txt: "TXT",
   api: "API",
 };
 
@@ -57,7 +59,8 @@ const SOURCE_COLORS: Record<SourceType, string> = {
   csv: CATEGORY_CLASSES[0],
   excel: CATEGORY_CLASSES[1],
   json: CATEGORY_CLASSES[2],
-  api: CATEGORY_CLASSES[3],
+  txt: CATEGORY_CLASSES[3],
+  api: CATEGORY_CLASSES[4],
 };
 
 function formatDate(dateStr: string) {
