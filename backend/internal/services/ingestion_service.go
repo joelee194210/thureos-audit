@@ -27,21 +27,56 @@ func NewIngestionService(monitorRepo *repository.MonitorRepository) *IngestionSe
 
 // IngestCSV parses a CSV file, detects schema, and stores data
 func (s *IngestionService) IngestCSV(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
-	reader := csv.NewReader(file)
+	return s.ingestDelimited(ctx, monitor, file, ',')
+}
 
-	headers, err := reader.Read()
-	if err != nil {
-		return 0, fmt.Errorf("reading CSV headers: %w", err)
+// IngestTXT parses a delimited text file (default: tab-separated), detects
+// schema, and stores data. Same parser as IngestCSV — only the default
+// delimiter differs, and SourceConfig.Delimiter always overrides either default.
+func (s *IngestionService) IngestTXT(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
+	return s.ingestDelimited(ctx, monitor, file, '\t')
+}
+
+func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.Monitor, file multipart.File, defaultDelimiter rune) (int, error) {
+	delimiter := defaultDelimiter
+	hasHeaderRow := true
+	if monitor.SourceConfig != nil {
+		if monitor.SourceConfig.Delimiter != "" {
+			delimiter = rune(monitor.SourceConfig.Delimiter[0])
+		}
+		if monitor.SourceConfig.HasHeaderRow != nil {
+			hasHeaderRow = *monitor.SourceConfig.HasHeaderRow
+		}
 	}
 
+	reader := csv.NewReader(file)
+	reader.Comma = delimiter
+
+	var headers []string
 	var allRows [][]string
+
+	if hasHeaderRow {
+		h, err := reader.Read()
+		if err != nil {
+			return 0, fmt.Errorf("reading headers: %w", err)
+		}
+		headers = h
+	}
+
 	for {
 		row, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return 0, fmt.Errorf("reading CSV row: %w", err)
+			return 0, fmt.Errorf("reading row: %w", err)
+		}
+		if headers == nil {
+			// No header row: synthesize column names from the first row's width.
+			headers = make([]string, len(row))
+			for i := range row {
+				headers[i] = fmt.Sprintf("col_%d", i+1)
+			}
 		}
 		allRows = append(allRows, row)
 	}
