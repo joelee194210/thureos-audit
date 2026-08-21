@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
@@ -42,17 +45,42 @@ func (h *MonitorHandler) Create(c *fiber.Ctx) error {
 		Name:         req.Name,
 		Description:  req.Description,
 		SourceType:   req.SourceType,
+		SourceConfig: req.SourceConfig.ToSourceConfig(),
 		CollectionID: primitive.NewObjectID().Hex(),
-		APIEndpoint:  req.APIEndpoint,
-		Schedule:     req.Schedule,
 		OwnerID:      userID,
+	}
+
+	var pushToken string
+	if monitor.SourceType == models.SourceAPI && monitor.SourceConfig != nil && monitor.SourceConfig.Mode == models.APIModePush {
+		token, err := generatePushToken()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "generating push token: " + err.Error()})
+		}
+		monitor.SourceConfig.PushToken = token
+		pushToken = token
 	}
 
 	if err := h.monitorRepo.Create(c.Context(), monitor); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "creating monitor: " + err.Error()})
 	}
 
+	if pushToken != "" {
+		// PushToken has json:"-" on Monitor, so it never round-trips through
+		// the normal response. This is the one moment it's shown — the
+		// frontend must display and let the user copy it now.
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{"monitor": monitor, "pushToken": pushToken})
+	}
 	return c.Status(fiber.StatusCreated).JSON(monitor)
+}
+
+// generatePushToken returns a 64-character hex-encoded random token
+// (32 bytes of entropy) for authenticating API push ingestion requests.
+func generatePushToken() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 func (h *MonitorHandler) List(c *fiber.Ctx) error {
@@ -154,6 +182,8 @@ func (h *MonitorHandler) UploadData(c *fiber.Ctx) error {
 		count, err = h.ingestionService.IngestJSON(c.Context(), monitor, f)
 	case models.SourceExcel:
 		count, err = h.ingestionService.IngestExcel(c.Context(), monitor, f)
+	case models.SourceTXT:
+		count, err = h.ingestionService.IngestTXT(c.Context(), monitor, f)
 	default:
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "unsupported source type"})
 	}
@@ -199,14 +229,14 @@ func (h *MonitorHandler) Evaluate(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitor has no data to evaluate"})
 	}
 
-	alerts, err := h.ruleEngine.EvaluateRules(c.Context(), monitor)
+	redFlags, err := h.ruleEngine.EvaluateRules(c.Context(), monitor)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "rule evaluation failed: " + err.Error()})
 	}
 
 	return c.JSON(fiber.Map{
-		"alertsGenerated": len(alerts),
-		"alerts":          alerts,
+		"redFlagsGenerated": len(redFlags),
+		"redFlags":          redFlags,
 	})
 }
 
