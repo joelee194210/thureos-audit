@@ -38,7 +38,7 @@ export const RISK_BG: Record<RiskLevel, string> = {
   critical: "bg-risk-critical-bg",
 };
 
-/** Borde izquierdo para tarjetas de alerta. */
+/** Borde izquierdo para tarjetas de bandera roja. */
 export const RISK_BORDER_L: Record<RiskLevel, string> = {
   none: "border-l-risk-none-fg",
   low: "border-l-risk-low-fg",

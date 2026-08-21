@@ -40,13 +40,13 @@ import {
   Loader2,
   ClipboardList,
 } from "lucide-react";
-import { alertsApi } from "@/lib/api/alerts";
+import { redFlagsApi } from "@/lib/api/red-flags";
 import { monitorsApi } from "@/lib/api/monitors";
-import type { AlertRecordsResponse, CalendarDay } from "@/lib/api/alerts";
+import type { RedFlagRecordsResponse, CalendarDay } from "@/lib/api/red-flags";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
 import { RISK_BG, RISK_BORDER_L } from "@/lib/semantic-colors";
-import type { Alert, AlertStatus, AlertLog, ActionCategory, Severity, Monitor } from "@/lib/types";
+import type { RedFlag, RedFlagStatus, RedFlagLog, ActionCategory, Severity, Monitor } from "@/lib/types";
 
 const severityConfig: Record<
   Severity,
@@ -83,7 +83,7 @@ const severityConfig: Record<
   },
 };
 
-const statusLabels: Record<AlertStatus, string> = {
+const statusLabels: Record<RedFlagStatus, string> = {
   new: "Nueva",
   acknowledged: "Reconocida",
   resolved: "Resuelta",
@@ -108,20 +108,20 @@ function isNumericField(val: unknown): boolean {
 
 const AGG_RE = /Aggregate rule '.*?': (\w+)\((\w+)\) for (\w+)='(.+?)' = ([\d.]+) \(threshold: (\w+) ([\d.]+)\)/;
 
-function parseAggregateFromMessage(alert: Alert): Alert {
-  if (alert.alertType === "aggregate") return alert;
-  const m = alert.message.match(AGG_RE);
-  if (!m) return alert;
+function parseAggregateFromMessage(redFlag: RedFlag): RedFlag {
+  if (redFlag.redFlagType === "aggregate") return redFlag;
+  const m = redFlag.message.match(AGG_RE);
+  if (!m) return redFlag;
   return {
-    ...alert,
-    alertType: "aggregate",
+    ...redFlag,
+    redFlagType: "aggregate",
     aggFunction: m[1],
     aggField: m[2],
     groupByField: m[3],
     groupByValue: m[4],
     aggValue: parseFloat(m[5]),
     threshold: parseFloat(m[7]),
-    matchCount: alert.matchedData?.count != null ? Number(alert.matchedData.count) : alert.matchCount,
+    matchCount: redFlag.matchedData?.count != null ? Number(redFlag.matchedData.count) : redFlag.matchCount,
   };
 }
 
@@ -132,7 +132,7 @@ const MONTH_NAMES = [
 const DAY_NAMES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
 // ─── Calendar Component ──────────────────────────────────────
-function AlertCalendar({
+function RedFlagCalendar({
   selectedDate,
   onSelectDate,
 }: {
@@ -145,7 +145,7 @@ function AlertCalendar({
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
 
   useEffect(() => {
-    alertsApi.calendar(year, month).then(data => setCalendarData(data ?? [])).catch((err) => {
+    redFlagsApi.calendar(year, month).then(data => setCalendarData(data ?? [])).catch((err) => {
       console.error("Failed to load calendar data:", err);
     });
   }, [year, month]);
@@ -204,7 +204,7 @@ function AlertCalendar({
             const data = dayMap.get(dateStr);
             const isSelected = selectedDate === dateStr;
             const isToday = dateStr === todayStr;
-            const hasAlerts = data && data.total > 0;
+            const hasRedFlags = data && data.total > 0;
             const dotColor = data?.critical
               ? "bg-risk-critical-fg"
               : data?.high
@@ -219,17 +219,17 @@ function AlertCalendar({
                   relative flex flex-col items-center justify-center rounded-md p-1 text-xs transition-colors
                   ${isSelected ? "bg-primary text-primary-foreground" : ""}
                   ${isToday && !isSelected ? "ring-1 ring-primary" : ""}
-                  ${!isSelected && hasAlerts ? "hover:bg-accent" : "hover:bg-muted/50"}
+                  ${!isSelected && hasRedFlags ? "hover:bg-accent" : "hover:bg-muted/50"}
                 `}
               >
                 <span className="tabular-nums">{day}</span>
-                {hasAlerts && (
+                {hasRedFlags && (
                   <div className="flex gap-0.5 mt-0.5">
                     <div className={`h-1 w-1 rounded-full ${dotColor}`} />
                     {data!.total > 5 && <div className="h-1 w-1 rounded-full bg-muted-foreground" />}
                   </div>
                 )}
-                {hasAlerts && !isSelected && (
+                {hasRedFlags && !isSelected && (
                   <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-destructive text-[8px] text-destructive-foreground font-bold">
                     {data!.total > 99 ? "99+" : data!.total}
                   </span>
@@ -255,9 +255,9 @@ function AlertCalendar({
   );
 }
 
-// ─── AlertDataTable with lazy loading ──────────────────────────
-function AlertDataTable({ alert }: { alert: Alert }) {
-  const [data, setData] = useState<AlertRecordsResponse | null>(null);
+// ─── RedFlagDataTable with lazy loading ──────────────────────────
+function RedFlagDataTable({ redFlag }: { redFlag: RedFlag }) {
+  const [data, setData] = useState<RedFlagRecordsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [dataSearch, setDataSearch] = useState("");
@@ -266,15 +266,15 @@ function AlertDataTable({ alert }: { alert: Alert }) {
   const loadPage = useCallback(async (p: number) => {
     setLoading(true);
     try {
-      const res = await alertsApi.records(alert.id, p, pageSize);
+      const res = await redFlagsApi.records(redFlag.id, p, pageSize);
       setData(res);
       setPage(p);
     } catch (err) {
       console.error("Failed to load paginated records, using embedded fallback:", err);
-      const records = alert.matchedRecords ?? (alert.matchedData ? [alert.matchedData] : []);
+      const records = redFlag.matchedRecords ?? (redFlag.matchedData ? [redFlag.matchedData] : []);
       setData({
         records: records as Record<string, unknown>[],
-        total: alert.matchCount || records.length,
+        total: redFlag.matchCount || records.length,
         page: 1,
         limit: records.length,
         totalPages: 1,
@@ -282,7 +282,7 @@ function AlertDataTable({ alert }: { alert: Alert }) {
     } finally {
       setLoading(false);
     }
-  }, [alert]);
+  }, [redFlag]);
 
   useEffect(() => {
     loadPage(1);
@@ -300,7 +300,7 @@ function AlertDataTable({ alert }: { alert: Alert }) {
   if (!data || data.records.length === 0) {
     return (
       <div className="mt-3 rounded-md border p-4 text-center text-sm text-muted-foreground">
-        No hay datos disponibles para esta alerta
+        No hay datos disponibles para esta bandera roja
       </div>
     );
   }
@@ -432,8 +432,8 @@ function AlertDataTable({ alert }: { alert: Alert }) {
 }
 
 // ─── Main Page ──────────────────────────────────────────────
-export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+export default function RedFlagsPage() {
+  const [redFlags, setRedFlags] = useState<RedFlag[]>([]);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [filter, setFilter] = useState<string>("all");
   const [filterMonitorId, setFilterMonitorId] = useState<string>("all");
@@ -449,36 +449,36 @@ export default function AlertsPage() {
   }, []);
 
   useEffect(() => {
-    loadAlerts();
+    loadRedFlags();
   }, [selectedDate]);
 
-  async function loadAlerts() {
+  async function loadRedFlags() {
     try {
-      let raw: Alert[];
+      let raw: RedFlag[];
       if (selectedDate) {
-        raw = await alertsApi.byDate(selectedDate);
+        raw = await redFlagsApi.byDate(selectedDate);
       } else {
-        raw = await alertsApi.list({ limit: 100 });
+        raw = await redFlagsApi.list({ limit: 100 });
       }
-      setAlerts((raw ?? []).map(parseAggregateFromMessage));
+      setRedFlags((raw ?? []).map(parseAggregateFromMessage));
     } catch {
-      toastError("Error al cargar alertas");
+      toastError("Error al cargar banderas rojas");
     }
   }
 
   // Action dialog state
-  const [actionDialog, setActionDialog] = useState<{ alert: Alert; targetStatus: AlertStatus } | null>(null);
+  const [actionDialog, setActionDialog] = useState<{ redFlag: RedFlag; targetStatus: RedFlagStatus } | null>(null);
   const [actionCategory, setActionCategory] = useState<ActionCategory>("investigation");
   const [actionNotes, setActionNotes] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
   // Log timeline dialog state
-  const [logDialog, setLogDialog] = useState<Alert | null>(null);
-  const [alertLogs, setAlertLogs] = useState<AlertLog[]>([]);
+  const [logDialog, setLogDialog] = useState<RedFlag | null>(null);
+  const [redFlagLogs, setRedFlagLogs] = useState<RedFlagLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  function openActionDialog(alert: Alert, targetStatus: AlertStatus) {
-    setActionDialog({ alert, targetStatus });
+  function openActionDialog(redFlag: RedFlag, targetStatus: RedFlagStatus) {
+    setActionDialog({ redFlag, targetStatus });
     setActionCategory("investigation");
     setActionNotes("");
   }
@@ -488,21 +488,21 @@ export default function AlertsPage() {
     if (!actionNotes.trim()) { toastError("Las notas son requeridas"); return; }
     setActionLoading(true);
     try {
-      await alertsApi.updateStatus(actionDialog.alert.id, actionDialog.targetStatus, actionCategory, actionNotes);
+      await redFlagsApi.updateStatus(actionDialog.redFlag.id, actionDialog.targetStatus, actionCategory, actionNotes);
       setActionDialog(null);
-      loadAlerts();
+      loadRedFlags();
     } catch {
-      toastError("Error al actualizar alerta");
+      toastError("Error al actualizar bandera roja");
     } finally {
       setActionLoading(false);
     }
   }
 
-  async function openLogTimeline(alert: Alert) {
-    setLogDialog(alert);
+  async function openLogTimeline(redFlag: RedFlag) {
+    setLogDialog(redFlag);
     setLogsLoading(true);
     try {
-      setAlertLogs(await alertsApi.getLogs(alert.id));
+      setRedFlagLogs(await redFlagsApi.getLogs(redFlag.id));
     } catch {
       toastError("Error al cargar bitácora");
     } finally {
@@ -511,7 +511,7 @@ export default function AlertsPage() {
   }
 
   const filtered = useMemo(() => {
-    let result = filter === "all" ? alerts : alerts.filter((a) => a.status === filter);
+    let result = filter === "all" ? redFlags : redFlags.filter((a) => a.status === filter);
     if (filterMonitorId !== "all") {
       result = result.filter((a) => a.monitorId === filterMonitorId);
     }
@@ -526,31 +526,31 @@ export default function AlertsPage() {
       );
     }
     return result;
-  }, [alerts, filter, filterMonitorId, searchTerm]);
+  }, [redFlags, filter, filterMonitorId, searchTerm]);
 
   const stats = useMemo(() => {
     let newCount = 0;
     let criticalCount = 0;
     let highCount = 0;
     let aggCount = 0;
-    for (const a of alerts) {
+    for (const a of redFlags) {
       if (a.status === "new") {
         newCount++;
         if (a.severity === "critical") criticalCount++;
         if (a.severity === "high") highCount++;
       }
-      if (a.alertType === "aggregate") aggCount++;
+      if (a.redFlagType === "aggregate") aggCount++;
     }
     return { newCount, criticalCount, highCount, aggCount };
-  }, [alerts]);
+  }, [redFlags]);
 
   return (
     <>
-      <Header title="Alertas" />
+      <Header title="Banderas rojas" />
       <div className="p-6 space-y-4">
         {/* Top: Calendar + Stats */}
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-          <AlertCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+          <RedFlagCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 content-start">
             <Card>
@@ -627,7 +627,7 @@ export default function AlertsPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todas ({alerts.length})</SelectItem>
+              <SelectItem value="all">Todas ({redFlags.length})</SelectItem>
               <SelectItem value="new">Nuevas</SelectItem>
               <SelectItem value="acknowledged">Reconocidas</SelectItem>
               <SelectItem value="resolved">Resueltas</SelectItem>
@@ -641,10 +641,10 @@ export default function AlertsPage() {
           <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2">
             <Calendar className="h-4 w-4 text-primary" />
             <span className="text-sm font-medium">
-              Alertas del {selectedDate}
+              Banderas rojas del {selectedDate}
             </span>
             <span className="text-sm text-muted-foreground">
-              ({filtered.length} alertas)
+              ({filtered.length} banderas rojas)
             </span>
             <Button
               variant="ghost"
@@ -657,30 +657,30 @@ export default function AlertsPage() {
           </div>
         )}
 
-        {/* Alert list */}
+        {/* Red flag list */}
         {filtered.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Bell className="mb-4 h-12 w-12 text-muted-foreground" />
-              <p className="mb-2 font-medium">No hay alertas</p>
+              <p className="mb-2 font-medium">No hay banderas rojas</p>
               <p className="text-sm text-muted-foreground">
                 {selectedDate
-                  ? `No se encontraron alertas para el ${selectedDate}`
-                  : "Las alertas apareceran cuando las reglas se activen"}
+                  ? `No se encontraron banderas rojas para el ${selectedDate}`
+                  : "Las banderas rojas aparecerán cuando las reglas se activen"}
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
-            {filtered.map((alert) => {
-              const config = severityConfig[alert.severity];
+            {filtered.map((redFlag) => {
+              const config = severityConfig[redFlag.severity];
               const SeverityIcon = config.icon;
-              const isExpanded = expandedId === alert.id;
-              const isAggregate = alert.alertType === "aggregate";
+              const isExpanded = expandedId === redFlag.id;
+              const isAggregate = redFlag.redFlagType === "aggregate";
 
               return (
                 <Card
-                  key={alert.id}
+                  key={redFlag.id}
                   className={`border-l-4 transition-colors ${config.color}`}
                 >
                   <CardContent className="p-4">
@@ -689,9 +689,9 @@ export default function AlertsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <SeverityIcon className="h-4 w-4 shrink-0" />
-                          <p className="font-semibold">{alert.ruleName}</p>
+                          <p className="font-semibold">{redFlag.ruleName}</p>
                           <Badge variant={config.variant}>{config.label}</Badge>
-                          <Badge variant="outline">{statusLabels[alert.status]}</Badge>
+                          <Badge variant="outline">{statusLabels[redFlag.status]}</Badge>
                           {isAggregate && (
                             <Badge variant="secondary" className="bg-accent-soft text-accent-fg gap-1">
                               <Calculator className="h-3 w-3" />
@@ -701,78 +701,78 @@ export default function AlertsPage() {
                         </div>
 
                         {/* Aggregate summary */}
-                        {isAggregate && alert.aggValue !== undefined ? (
+                        {isAggregate && redFlag.aggValue !== undefined ? (
                           <div className="mt-3 rounded-lg border bg-card p-3">
                             <div className="flex items-center justify-between gap-4">
                               <div>
                                 <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                                  {alert.aggFunction?.toUpperCase()}({alert.aggField}) por {alert.groupByField}
+                                  {redFlag.aggFunction?.toUpperCase()}({redFlag.aggField}) por {redFlag.groupByField}
                                 </p>
                                 <p className="text-lg font-bold text-foreground mt-0.5">
-                                  {alert.groupByValue}
+                                  {redFlag.groupByValue}
                                 </p>
                               </div>
                               <div className="text-right">
                                 <p className="text-2xl font-bold tabular-nums">
-                                  {formatNumber(alert.aggValue)}
+                                  {formatNumber(redFlag.aggValue)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Umbral: {formatNumber(alert.threshold)}
+                                  Umbral: {formatNumber(redFlag.threshold)}
                                 </p>
                               </div>
                             </div>
-                            {alert.threshold !== undefined && alert.threshold > 0 && (
+                            {redFlag.threshold !== undefined && redFlag.threshold > 0 && (
                               <div className="mt-2">
                                 <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                                   <div
                                     className="h-full rounded-full bg-risk-high-fg transition-all"
                                     style={{
-                                      width: `${Math.min((alert.aggValue! / alert.threshold) * 100, 100)}%`,
+                                      width: `${Math.min((redFlag.aggValue! / redFlag.threshold) * 100, 100)}%`,
                                     }}
                                   />
                                 </div>
                                 <div className="flex justify-between mt-1">
                                   <span className="text-[10px] text-muted-foreground">0</span>
                                   <span className="text-[10px] text-risk-high-fg font-medium">
-                                    {((alert.aggValue! / alert.threshold) * 100).toFixed(0)}% del umbral
+                                    {((redFlag.aggValue! / redFlag.threshold) * 100).toFixed(0)}% del umbral
                                   </span>
                                   <span className="text-[10px] text-muted-foreground">
-                                    {formatNumber(alert.threshold)}
+                                    {formatNumber(redFlag.threshold)}
                                   </span>
                                 </div>
                               </div>
                             )}
-                            {alert.matchCount > 0 && (
+                            {redFlag.matchCount > 0 && (
                               <p className="text-xs text-muted-foreground mt-2">
                                 <Database className="h-3 w-3 inline mr-1" />
-                                {alert.matchCount.toLocaleString()} transacciones en el periodo
+                                {redFlag.matchCount.toLocaleString()} transacciones en el periodo
                               </p>
                             )}
                           </div>
                         ) : (
-                          <p className="mt-1 text-sm text-muted-foreground">{alert.message}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">{redFlag.message}</p>
                         )}
 
                         <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>Monitor: {alert.monitorName}</span>
+                          <span>Monitor: {redFlag.monitorName}</span>
                           {!isAggregate && (
                             <span className="flex items-center gap-1">
                               <Database className="h-3 w-3" />
-                              {alert.matchCount} coincidencias
+                              {redFlag.matchCount} coincidencias
                             </span>
                           )}
-                          <span>{formatDate(alert.createdAt)}</span>
+                          <span>{formatDate(redFlag.createdAt)}</span>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="flex gap-1 shrink-0">
-                        {alert.status === "new" && (
+                        {redFlag.status === "new" && (
                           <>
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openActionDialog(alert, "acknowledged")}
+                              onClick={() => openActionDialog(redFlag, "acknowledged")}
                               title="Reconocer"
                             >
                               <Eye className="h-4 w-4" />
@@ -780,7 +780,7 @@ export default function AlertsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openActionDialog(alert, "resolved")}
+                              onClick={() => openActionDialog(redFlag, "resolved")}
                               title="Resolver"
                             >
                               <Check className="h-4 w-4 text-success-fg" />
@@ -788,18 +788,18 @@ export default function AlertsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openActionDialog(alert, "dismissed")}
+                              onClick={() => openActionDialog(redFlag, "dismissed")}
                               title="Descartar"
                             >
                               <X className="h-4 w-4 text-muted-foreground" />
                             </Button>
                           </>
                         )}
-                        {alert.status === "acknowledged" && (
+                        {redFlag.status === "acknowledged" && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => openActionDialog(alert, "resolved")}
+                            onClick={() => openActionDialog(redFlag, "resolved")}
                             title="Resolver"
                           >
                             <Check className="h-4 w-4 text-success-fg" />
@@ -808,7 +808,7 @@ export default function AlertsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => openLogTimeline(alert)}
+                          onClick={() => openLogTimeline(redFlag)}
                           title="Bitácora"
                         >
                           <ClipboardList className="h-4 w-4 text-primary" />
@@ -816,7 +816,7 @@ export default function AlertsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setExpandedId(isExpanded ? null : alert.id)}
+                          onClick={() => setExpandedId(isExpanded ? null : redFlag.id)}
                           title="Ver datos"
                         >
                           {isExpanded ? (
@@ -829,7 +829,7 @@ export default function AlertsPage() {
                     </div>
 
                     {/* Expanded data table with lazy loading */}
-                    {isExpanded && <AlertDataTable alert={alert} />}
+                    {isExpanded && <RedFlagDataTable redFlag={redFlag} />}
                   </CardContent>
                 </Card>
               );
@@ -843,21 +843,21 @@ export default function AlertsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {actionDialog?.targetStatus === "acknowledged" && "Reconocer alerta"}
-              {actionDialog?.targetStatus === "resolved" && "Resolver alerta"}
-              {actionDialog?.targetStatus === "dismissed" && "Descartar alerta"}
+              {actionDialog?.targetStatus === "acknowledged" && "Reconocer bandera roja"}
+              {actionDialog?.targetStatus === "resolved" && "Resolver bandera roja"}
+              {actionDialog?.targetStatus === "dismissed" && "Descartar bandera roja"}
             </DialogTitle>
           </DialogHeader>
           {actionDialog && (
             <div className="space-y-4">
               <div className="rounded-md border p-3 text-sm space-y-1">
-                <p className="font-medium">{actionDialog.alert.ruleName}</p>
-                <p className="text-muted-foreground">{actionDialog.alert.monitorName}</p>
+                <p className="font-medium">{actionDialog.redFlag.ruleName}</p>
+                <p className="text-muted-foreground">{actionDialog.redFlag.monitorName}</p>
                 <div className="flex gap-2 mt-1">
-                  <Badge variant={actionDialog.alert.severity === "critical" || actionDialog.alert.severity === "high" ? "destructive" : "secondary"}>
-                    {actionDialog.alert.severity}
+                  <Badge variant={actionDialog.redFlag.severity === "critical" || actionDialog.redFlag.severity === "high" ? "destructive" : "secondary"}>
+                    {actionDialog.redFlag.severity}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{actionDialog.alert.matchCount} coincidencias</span>
+                  <span className="text-xs text-muted-foreground">{actionDialog.redFlag.matchCount} coincidencias</span>
                 </div>
               </div>
 
@@ -898,7 +898,7 @@ export default function AlertsPage() {
       <Dialog open={!!logDialog} onOpenChange={(open) => !open && setLogDialog(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Bitácora de alerta</DialogTitle>
+            <DialogTitle>Bitácora de bandera roja</DialogTitle>
           </DialogHeader>
           {logDialog && (
             <div>
@@ -911,13 +911,13 @@ export default function AlertsPage() {
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : alertLogs.length === 0 ? (
+              ) : redFlagLogs.length === 0 ? (
                 <p className="text-center text-sm text-muted-foreground py-8">
-                  No hay acciones registradas para esta alerta
+                  No hay acciones registradas para esta bandera roja
                 </p>
               ) : (
                 <div className="relative border-l-2 border-border ml-3 space-y-4">
-                  {alertLogs.map((log) => {
+                  {redFlagLogs.map((log) => {
                     const dotColor =
                       log.newStatus === "resolved" ? "bg-success-fg" :
                       log.newStatus === "acknowledged" ? "bg-info-fg" :

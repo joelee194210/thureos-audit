@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Sidebar } from "@/components/layout/sidebar";
+import { TopNav } from "@/components/layout/top-nav";
 import { useAuthStore } from "@/stores/auth-store";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -28,8 +28,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+    <div className="flex h-screen flex-col overflow-hidden">
+      <TopNav />
       <main className="flex-1 overflow-y-auto">{children}</main>
     </div>
   );

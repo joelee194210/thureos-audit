@@ -290,7 +290,7 @@ function RulesContent() {
   const [activeTab, setActiveTab] = useState("daily");
   const [executingRuleId, setExecutingRuleId] = useState<string | null>(null);
   const [executingAll, setExecutingAll] = useState(false);
-  const [executeAllProgress, setExecuteAllProgress] = useState({ current: 0, total: 0, alerts: 0 });
+  const [executeAllProgress, setExecuteAllProgress] = useState({ current: 0, total: 0, redFlags: 0 });
   const { toastError, toastSuccess } = useToast();
 
   // Create chart from rule state
@@ -378,7 +378,7 @@ function RulesContent() {
         description: createForm.description,
         conditionGroup: { logic: createForm.logic, conditions: createForm.conditions },
         aggregateConditions: createForm.aggregateConditions.length > 0 ? createForm.aggregateConditions : undefined,
-        actions: ["alert"],
+        actions: ["red_flag"],
         severity: createForm.severity,
         schedule: createForm.scheduleEnabled ? { enabled: true, preset: "" as SchedulePreset, cronExpr: buildCronExpr(createForm.scheduleFrequency, createForm.scheduleDay, createForm.scheduleTime) } : undefined,
         fatfTypology: createForm.fatfTypology || undefined,
@@ -575,7 +575,7 @@ function RulesContent() {
     setExecutingRuleId(id);
     try {
       const result = await rulesApi.execute(id);
-      toastSuccess(`Regla ejecutada: ${result.alertsGenerated} alerta(s) generada(s)`);
+      toastSuccess(`Regla ejecutada: ${result.redFlagsGenerated} bandera(s) roja(s) generada(s)`);
       loadRules();
     } catch (err) {
       console.error("Failed to execute rule:", err);
@@ -589,8 +589,8 @@ function RulesContent() {
     const activeRules = rules.filter(r => r.active);
     if (activeRules.length === 0) return;
     setExecutingAll(true);
-    setExecuteAllProgress({ current: 0, total: activeRules.length, alerts: 0 });
-    let totalAlerts = 0;
+    setExecuteAllProgress({ current: 0, total: activeRules.length, redFlags: 0 });
+    let totalRedFlags = 0;
     let failedCount = 0;
     for (let i = 0; i < activeRules.length; i++) {
       const rule = activeRules[i];
@@ -598,8 +598,8 @@ function RulesContent() {
       setExecuteAllProgress(prev => ({ ...prev, current: i + 1 }));
       try {
         const result = await rulesApi.execute(rule.id);
-        totalAlerts += result.alertsGenerated;
-        setExecuteAllProgress(prev => ({ ...prev, alerts: totalAlerts }));
+        totalRedFlags += result.redFlagsGenerated;
+        setExecuteAllProgress(prev => ({ ...prev, redFlags: totalRedFlags }));
       } catch (err) {
         failedCount++;
         console.error(`Failed to execute rule ${rule.name}:`, err);
@@ -608,9 +608,9 @@ function RulesContent() {
     setExecutingRuleId(null);
     setExecutingAll(false);
     if (failedCount > 0) {
-      toastError(`${failedCount} de ${activeRules.length} reglas fallaron. ${totalAlerts} alerta(s) generada(s)`);
+      toastError(`${failedCount} de ${activeRules.length} reglas fallaron. ${totalRedFlags} bandera(s) roja(s) generada(s)`);
     } else {
-      toastSuccess(`Todas las reglas ejecutadas: ${totalAlerts} alerta(s) generada(s)`);
+      toastSuccess(`Todas las reglas ejecutadas: ${totalRedFlags} bandera(s) roja(s) generada(s)`);
     }
     loadRules();
   }
@@ -673,7 +673,7 @@ function RulesContent() {
               {executingAll ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  {executeAllProgress.current}/{executeAllProgress.total} ({executeAllProgress.alerts} alertas)
+                  {executeAllProgress.current}/{executeAllProgress.total} ({executeAllProgress.redFlags} banderas rojas)
                 </>
               ) : (
                 <>

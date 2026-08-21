@@ -13,10 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings, Server, Database, Brain, CheckCircle, XCircle, Clock, Save, Loader2 } from "lucide-react";
+import { Settings, Server, Database, Brain, CheckCircle, XCircle, Clock, Save, Loader2, Sun, Moon, Palette } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { settingsApi, type AIConfigResponse } from "@/lib/api/settings";
 import { useToast } from "@/lib/use-toast";
+import { useTheme } from "@/components/theme-provider";
 
 interface SystemSettings {
   port: string;
@@ -63,6 +64,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [error, setError] = useState("");
   const { toastSuccess, toastError } = useToast();
+  const { theme, toggleTheme } = useTheme();
 
   // AI config form state
   const [aiConfig, setAiConfig] = useState<AIConfigResponse | null>(null);
@@ -158,6 +160,36 @@ export default function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Apariencia — preferencia local, persiste en este navegador */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Palette className="h-4 w-4" /> Apariencia
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div>
+                  <p className="text-sm font-medium">Tema</p>
+                  <p className="text-sm text-muted-foreground">
+                    {theme === "dark" ? "Oscuro" : "Claro"} — se recuerda en este navegador
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={toggleTheme}>
+                  {theme === "dark" ? (
+                    <>
+                      <Sun className="mr-2 h-4 w-4" /> Cambiar a claro
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="mr-2 h-4 w-4" /> Cambiar a oscuro
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* AI Configuration — EDITABLE */}
           <Card>
             <CardHeader>

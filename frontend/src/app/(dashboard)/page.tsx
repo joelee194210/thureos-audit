@@ -7,11 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Monitor, ShieldCheck, Bell, BarChart3 } from "lucide-react";
 import { monitorsApi } from "@/lib/api/monitors";
 import { rulesApi } from "@/lib/api/rules";
-import { alertsApi } from "@/lib/api/alerts";
+import { redFlagsApi } from "@/lib/api/red-flags";
 import { dashboardsApi } from "@/lib/api/dashboards";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
-import type { Monitor as MonitorType, Alert, Severity } from "@/lib/types";
+import type { Monitor as MonitorType, RedFlag, Severity } from "@/lib/types";
 
 const severityColors: Record<Severity, "destructive" | "warning" | "secondary" | "default"> = {
   critical: "destructive",
@@ -24,10 +24,10 @@ export default function HomePage() {
   const [stats, setStats] = useState({
     monitors: 0,
     rules: 0,
-    alerts: 0,
+    redFlags: 0,
     dashboards: 0,
   });
-  const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
+  const [recentRedFlags, setRecentRedFlags] = useState<RedFlag[]>([]);
   const [recentMonitors, setRecentMonitors] = useState<MonitorType[]>([]);
   const { toastError } = useToast();
 
@@ -35,17 +35,17 @@ export default function HomePage() {
     Promise.all([
       monitorsApi.list(),
       rulesApi.list(),
-      alertsApi.stats(),
+      redFlagsApi.stats(),
       dashboardsApi.list(),
-      alertsApi.list({ limit: 5 }),
-    ]).then(([monitors, rules, alertStats, dashboards, alerts]) => {
+      redFlagsApi.list({ limit: 5 }),
+    ]).then(([monitors, rules, redFlagStats, dashboards, redFlags]) => {
       setStats({
         monitors: monitors.length,
         rules: rules.length,
-        alerts: alertStats.new,
+        redFlags: redFlagStats.new,
         dashboards: dashboards.length,
       });
-      setRecentAlerts(alerts);
+      setRecentRedFlags(redFlags);
       setRecentMonitors(monitors.slice(0, 5));
     }).catch(() => toastError("Error al cargar datos del dashboard"));
   }, []);
@@ -53,7 +53,7 @@ export default function HomePage() {
   const statCards = [
     { title: "Monitores", value: stats.monitors, icon: Monitor, color: "text-accent-fg" },
     { title: "Reglas activas", value: stats.rules, icon: ShieldCheck, color: "text-success-fg" },
-    { title: "Alertas nuevas", value: stats.alerts, icon: Bell, color: "text-warning-fg" },
+    { title: "Banderas rojas nuevas", value: stats.redFlags, icon: Bell, color: "text-warning-fg" },
     { title: "Dashboards", value: stats.dashboards, icon: BarChart3, color: "text-chart-4" },
   ];
 
@@ -79,24 +79,24 @@ export default function HomePage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Recent Alerts */}
+          {/* Recent Red Flags */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Alertas recientes</CardTitle>
+              <CardTitle className="text-base">Banderas rojas recientes</CardTitle>
             </CardHeader>
             <CardContent>
-              {recentAlerts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No hay alertas</p>
+              {recentRedFlags.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No hay banderas rojas</p>
               ) : (
                 <div className="space-y-3">
-                  {recentAlerts.map((alert) => (
-                    <div key={alert.id} className="flex items-start justify-between gap-2 rounded-md border p-3">
+                  {recentRedFlags.map((redFlag) => (
+                    <div key={redFlag.id} className="flex items-start justify-between gap-2 rounded-md border p-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{alert.ruleName}</p>
-                        <p className="text-xs text-muted-foreground">{alert.monitorName}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{formatDate(alert.createdAt)}</p>
+                        <p className="truncate text-sm font-medium">{redFlag.ruleName}</p>
+                        <p className="text-xs text-muted-foreground">{redFlag.monitorName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDate(redFlag.createdAt)}</p>
                       </div>
-                      <Badge variant={severityColors[alert.severity]}>{alert.severity}</Badge>
+                      <Badge variant={severityColors[redFlag.severity]}>{redFlag.severity}</Badge>
                     </div>
                   ))}
                 </div>

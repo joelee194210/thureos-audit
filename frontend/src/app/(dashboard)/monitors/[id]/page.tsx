@@ -28,7 +28,7 @@ export default function MonitorDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ recordsIngested: number; evaluationQueued: boolean } | null>(null);
   const [evaluating, setEvaluating] = useState(false);
-  const [evalResult, setEvalResult] = useState<{ alertsGenerated: number } | null>(null);
+  const [evalResult, setEvalResult] = useState<{ redFlagsGenerated: number } | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", description: "" });
   const [searchTerm, setSearchTerm] = useState("");
@@ -105,7 +105,7 @@ export default function MonitorDetailPage() {
       setEvalResult(result);
       loadRules();
     } catch (err) {
-      setEvalResult({ alertsGenerated: -1 });
+      setEvalResult({ redFlagsGenerated: -1 });
     } finally {
       setEvaluating(false);
     }
@@ -155,10 +155,10 @@ export default function MonitorDetailPage() {
         </div>
 
         {evalResult && (
-          <div className={`mb-4 rounded-md p-4 ${evalResult.alertsGenerated >= 0 ? "bg-success-bg" : "bg-danger-bg"}`}>
-            <p className={`text-sm font-medium ${evalResult.alertsGenerated >= 0 ? "text-success-fg" : "text-danger-fg"}`}>
-              {evalResult.alertsGenerated >= 0
-                ? `${evalResult.alertsGenerated} alertas generadas`
+          <div className={`mb-4 rounded-md p-4 ${evalResult.redFlagsGenerated >= 0 ? "bg-success-bg" : "bg-danger-bg"}`}>
+            <p className={`text-sm font-medium ${evalResult.redFlagsGenerated >= 0 ? "text-success-fg" : "text-danger-fg"}`}>
+              {evalResult.redFlagsGenerated >= 0
+                ? `${evalResult.redFlagsGenerated} banderas rojas generadas`
                 : "Error al evaluar reglas"}
             </p>
           </div>

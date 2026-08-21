@@ -14,7 +14,7 @@ import type { ActivityLogEntry, ActivityType } from "@/lib/types";
 
 const ACTION_LABELS: Record<ActivityType, string> = {
   login: "Inicio de sesión",
-  alert_action: "Acción en alerta",
+  red_flag_action: "Acción en bandera roja",
   rule_create: "Regla creada",
   rule_update: "Regla actualizada",
   rule_delete: "Regla eliminada",
@@ -26,7 +26,7 @@ const ACTION_LABELS: Record<ActivityType, string> = {
 
 const ACTION_ICONS: Record<ActivityType, typeof LogIn> = {
   login: LogIn,
-  alert_action: Bell,
+  red_flag_action: Bell,
   rule_create: FileText,
   rule_update: FileText,
   rule_delete: FileText,
@@ -41,7 +41,7 @@ const ACTION_ICONS: Record<ActivityType, typeof LogIn> = {
 // rara vez aparecen juntas en la misma pantalla.
 const ACTION_COLORS: Record<ActivityType, string> = {
   login: CATEGORY_CLASSES[0],
-  alert_action: CATEGORY_CLASSES[2],
+  red_flag_action: CATEGORY_CLASSES[2],
   rule_create: CATEGORY_CLASSES[1],
   rule_update: CATEGORY_CLASSES[3],
   rule_delete: CATEGORY_CLASSES[5],
@@ -96,7 +96,7 @@ export default function ActivityLogsPage() {
             <SelectContent>
               <SelectItem value="all">Todas las acciones</SelectItem>
               <SelectItem value="login">Inicio de sesión</SelectItem>
-              <SelectItem value="alert_action">Acción en alerta</SelectItem>
+              <SelectItem value="red_flag_action">Acción en bandera roja</SelectItem>
               <SelectItem value="rule_create">Regla creada</SelectItem>
               <SelectItem value="rule_update">Regla actualizada</SelectItem>
               <SelectItem value="rule_delete">Regla eliminada</SelectItem>
