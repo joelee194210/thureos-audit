@@ -12,6 +12,7 @@ const (
 	SourceCSV   SourceType = "csv"
 	SourceExcel SourceType = "excel"
 	SourceJSON  SourceType = "json"
+	SourceTXT   SourceType = "txt"
 	SourceAPI   SourceType = "api"
 )
 
@@ -31,15 +32,100 @@ type SchemaField struct {
 	Sample   string    `bson:"sample" json:"sample"`
 }
 
+type APIMode string
+
+const (
+	APIModePush APIMode = "push"
+	APIModePull APIMode = "pull"
+)
+
+type APIAuthType string
+
+const (
+	APIAuthNone   APIAuthType = "none"
+	APIAuthAPIKey APIAuthType = "api_key_header"
+	APIAuthBearer APIAuthType = "bearer"
+)
+
+// SourceConfig holds ingestion parameters specific to a monitor's SourceType.
+// Which fields apply depends on SourceType — see the design spec. Every field
+// is optional so existing monitors (created before this struct existed)
+// behave exactly as before.
+type SourceConfig struct {
+	// csv / txt
+	Delimiter    string `bson:"delimiter,omitempty" json:"delimiter,omitempty"`
+	HasHeaderRow *bool  `bson:"has_header_row,omitempty" json:"hasHeaderRow,omitempty"`
+
+	// excel
+	SheetName string `bson:"sheet_name,omitempty" json:"sheetName,omitempty"`
+
+	// json / api (nested array extraction)
+	RootPath string `bson:"root_path,omitempty" json:"rootPath,omitempty"`
+
+	// api
+	Mode                APIMode     `bson:"mode,omitempty" json:"mode,omitempty"`
+	PushToken           string      `bson:"push_token,omitempty" json:"-"`
+	PullURL             string      `bson:"pull_url,omitempty" json:"pullUrl,omitempty"`
+	PullMethod          string      `bson:"pull_method,omitempty" json:"pullMethod,omitempty"`
+	PullAuthType        APIAuthType `bson:"pull_auth_type,omitempty" json:"pullAuthType,omitempty"`
+	PullAuthHeaderName  string      `bson:"pull_auth_header_name,omitempty" json:"pullAuthHeaderName,omitempty"`
+	PullAuthValue       string      `bson:"pull_auth_value,omitempty" json:"-"`
+	PullIntervalMinutes int         `bson:"pull_interval_minutes,omitempty" json:"pullIntervalMinutes,omitempty"`
+	NextPullAt          *time.Time  `bson:"next_pull_at,omitempty" json:"nextPullAt,omitempty"`
+	LastPullAt          *time.Time  `bson:"last_pull_at,omitempty" json:"lastPullAt,omitempty"`
+	LastPullStatus      string      `bson:"last_pull_status,omitempty" json:"lastPullStatus,omitempty"`
+	LastPullError       string      `bson:"last_pull_error,omitempty" json:"lastPullError,omitempty"`
+}
+
+// SourceConfigInput is the client-facing shape for creating a monitor's
+// source configuration. Unlike SourceConfig, PullAuthValue has no `json:"-"`
+// here — this struct is only ever used to receive input, never to respond,
+// so there is no leak risk. PushToken and the LastPull*/NextPullAt fields
+// are server-controlled and intentionally absent: a client cannot set them.
+type SourceConfigInput struct {
+	Delimiter           string      `json:"delimiter,omitempty"`
+	HasHeaderRow        *bool       `json:"hasHeaderRow,omitempty"`
+	SheetName           string      `json:"sheetName,omitempty"`
+	RootPath            string      `json:"rootPath,omitempty"`
+	Mode                APIMode     `json:"mode,omitempty"`
+	PullURL             string      `json:"pullUrl,omitempty"`
+	PullMethod          string      `json:"pullMethod,omitempty"`
+	PullAuthType        APIAuthType `json:"pullAuthType,omitempty"`
+	PullAuthHeaderName  string      `json:"pullAuthHeaderName,omitempty"`
+	PullAuthValue       string      `json:"pullAuthValue,omitempty"`
+	PullIntervalMinutes int         `json:"pullIntervalMinutes,omitempty"`
+}
+
+// ToSourceConfig converts client input into the stored shape. Returns nil
+// for a nil receiver so callers can do `monitor.SourceConfig = req.SourceConfig.ToSourceConfig()`
+// unconditionally, even when the client sent no sourceConfig at all.
+func (in *SourceConfigInput) ToSourceConfig() *SourceConfig {
+	if in == nil {
+		return nil
+	}
+	return &SourceConfig{
+		Delimiter:           in.Delimiter,
+		HasHeaderRow:        in.HasHeaderRow,
+		SheetName:           in.SheetName,
+		RootPath:            in.RootPath,
+		Mode:                in.Mode,
+		PullURL:             in.PullURL,
+		PullMethod:          in.PullMethod,
+		PullAuthType:        in.PullAuthType,
+		PullAuthHeaderName:  in.PullAuthHeaderName,
+		PullAuthValue:       in.PullAuthValue,
+		PullIntervalMinutes: in.PullIntervalMinutes,
+	}
+}
+
 type Monitor struct {
 	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	Name         string             `bson:"name" json:"name"`
 	Description  string             `bson:"description" json:"description"`
 	SourceType   SourceType         `bson:"source_type" json:"sourceType"`
+	SourceConfig *SourceConfig      `bson:"source_config,omitempty" json:"sourceConfig,omitempty"`
 	Schema       []SchemaField      `bson:"schema" json:"schema"`
 	CollectionID string             `bson:"collection_id" json:"collectionId"`
-	APIEndpoint  string             `bson:"api_endpoint,omitempty" json:"apiEndpoint,omitempty"`
-	Schedule     string             `bson:"schedule,omitempty" json:"schedule,omitempty"`
 	OwnerID      primitive.ObjectID `bson:"owner_id" json:"ownerId"`
 	RecordCount  int64              `bson:"record_count" json:"recordCount"`
 	LastIngested *time.Time         `bson:"last_ingested,omitempty" json:"lastIngested,omitempty"`
@@ -48,9 +134,8 @@ type Monitor struct {
 }
 
 type CreateMonitorRequest struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	SourceType  SourceType `json:"sourceType"`
-	APIEndpoint string     `json:"apiEndpoint,omitempty"`
-	Schedule    string     `json:"schedule,omitempty"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description"`
+	SourceType   SourceType         `json:"sourceType"`
+	SourceConfig *SourceConfigInput `json:"sourceConfig,omitempty"`
 }
