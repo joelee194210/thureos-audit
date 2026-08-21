@@ -79,6 +79,7 @@ export default function MonitorDetailPage() {
       "application/json": [".json"],
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
       "application/vnd.ms-excel": [".xls"],
+      "text/plain": [".txt"],
     },
   });
 
@@ -175,33 +176,71 @@ export default function MonitorDetailPage() {
           <TabsContent value="upload">
             <Card>
               <CardContent className="pt-6">
-                <div
-                  {...getRootProps()}
-                  className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 transition-colors ${
-                    isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"
-                  }`}
-                >
-                  <input {...getInputProps()} />
-                  <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
-                  {uploading ? (
-                    <p className="text-sm text-muted-foreground">Procesando archivo...</p>
-                  ) : isDragActive ? (
-                    <p className="text-sm">Suelta el archivo aqui</p>
+                {monitor.sourceType === "api" ? (
+                  monitor.sourceConfig?.mode === "pull" ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between rounded-md border p-3">
+                        <span className="text-sm text-muted-foreground">URL</span>
+                        <span className="max-w-[60%] truncate text-sm font-mono">{monitor.sourceConfig?.pullUrl}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-md border p-3">
+                        <span className="text-sm text-muted-foreground">Cada</span>
+                        <span className="text-sm">{monitor.sourceConfig?.pullIntervalMinutes ?? 60} minutos</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-md border p-3">
+                        <span className="text-sm text-muted-foreground">Último intento</span>
+                        <span className="text-sm">
+                          {monitor.sourceConfig?.lastPullAt ? formatDate(monitor.sourceConfig.lastPullAt) : "Aún no se ha ejecutado"}
+                        </span>
+                      </div>
+                      {monitor.sourceConfig?.lastPullStatus === "error" && (
+                        <div className="rounded-md bg-danger-bg p-3 text-sm text-danger-fg">
+                          {monitor.sourceConfig.lastPullError}
+                        </div>
+                      )}
+                      {monitor.sourceConfig?.lastPullStatus === "ok" && (
+                        <div className="rounded-md bg-success-bg p-3 text-sm text-success-fg">
+                          Última consulta exitosa
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    <>
-                      <p className="text-sm font-medium">Arrastra un archivo o haz clic para seleccionar</p>
-                      <p className="mt-1 text-xs text-muted-foreground">CSV, Excel (.xlsx), JSON</p>
-                    </>
-                  )}
-                </div>
-
-                {uploadResult && (
-                  <div className="mt-4 rounded-md bg-success-bg p-4">
-                    <p className="text-sm font-medium text-success-fg">
-                      {uploadResult.recordsIngested} registros cargados
-                      {uploadResult.evaluationQueued && " — reglas en evaluacion"}
+                    <p className="text-sm text-muted-foreground">
+                      Este monitor recibe datos por push. La URL y el token se mostraron una sola vez al crearlo —
+                      si los perdiste, elimina este monitor y crea uno nuevo (no se pueden volver a mostrar).
                     </p>
-                  </div>
+                  )
+                ) : (
+                  <>
+                    <div
+                      {...getRootProps()}
+                      className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 transition-colors ${
+                        isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"
+                      }`}
+                    >
+                      <input {...getInputProps()} />
+                      <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
+                      {uploading ? (
+                        <p className="text-sm text-muted-foreground">Procesando archivo...</p>
+                      ) : isDragActive ? (
+                        <p className="text-sm">Suelta el archivo aqui</p>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium">Arrastra un archivo o haz clic para seleccionar</p>
+                          <p className="mt-1 text-xs text-muted-foreground">CSV, Excel (.xlsx), JSON, TXT</p>
+                        </>
+                      )}
+                    </div>
+
+                    {uploadResult && (
+                      <div className="mt-4 rounded-md bg-success-bg p-4">
+                        <p className="text-sm font-medium text-success-fg">
+                          {uploadResult.recordsIngested} registros cargados
+                          {uploadResult.evaluationQueued && " — reglas en evaluacion"}
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
