@@ -11,11 +11,22 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Plus, Database, Upload, Trash2, Copy, Check } from "lucide-react";
 import { monitorsApi } from "@/lib/api/monitors";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
+import { SourceConfigFields, sourceConfigValuesToInput } from "@/components/monitors/source-config-fields";
 import type { Monitor, SourceType, APIMode, APIAuthType, CreateSourceConfig } from "@/lib/types";
 
 export default function MonitorsPage() {
@@ -55,32 +66,7 @@ export default function MonitorsPage() {
   async function createMonitor(e: React.FormEvent) {
     e.preventDefault();
     try {
-      let sourceConfig: CreateSourceConfig | undefined;
-
-      if (newMonitor.sourceType === "csv" || newMonitor.sourceType === "txt") {
-        sourceConfig = {
-          delimiter: newMonitor.delimiter || undefined,
-          hasHeaderRow: newMonitor.hasHeaderRow,
-        };
-      } else if (newMonitor.sourceType === "excel") {
-        sourceConfig = newMonitor.sheetName ? { sheetName: newMonitor.sheetName } : undefined;
-      } else if (newMonitor.sourceType === "json") {
-        sourceConfig = newMonitor.rootPath ? { rootPath: newMonitor.rootPath } : undefined;
-      } else if (newMonitor.sourceType === "api") {
-        sourceConfig =
-          newMonitor.apiMode === "pull"
-            ? {
-                mode: "pull",
-                pullUrl: newMonitor.pullUrl,
-                pullMethod: newMonitor.pullMethod,
-                pullAuthType: newMonitor.pullAuthType,
-                pullAuthHeaderName: newMonitor.pullAuthHeaderName || undefined,
-                pullAuthValue: newMonitor.pullAuthValue || undefined,
-                pullIntervalMinutes: Number(newMonitor.pullIntervalMinutes) || 60,
-                rootPath: newMonitor.rootPath || undefined,
-              }
-            : { mode: "push", rootPath: newMonitor.rootPath || undefined };
-      }
+      const sourceConfig = sourceConfigValuesToInput(newMonitor.sourceType, newMonitor) as CreateSourceConfig | undefined;
 
       const result = await monitorsApi.create({
         name: newMonitor.name,
@@ -107,7 +93,9 @@ export default function MonitorsPage() {
 
   async function copyPushToken() {
     if (!pushTokenReveal) return;
-    await navigator.clipboard.writeText(pushTokenReveal.token);
+    await navigator.clipboard.writeText(
+      `URL: ${pushTokenReveal.url}\nHeader: X-Ingest-Token: ${pushTokenReveal.token}`
+    );
     setTokenCopied(true);
   }
 
@@ -170,151 +158,11 @@ export default function MonitorsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {(newMonitor.sourceType === "csv" || newMonitor.sourceType === "txt") && (
-                  <div className="space-y-3 rounded-md border p-3">
-                    <div className="space-y-2">
-                      <Label>Delimitador</Label>
-                      <Input
-                        value={newMonitor.delimiter}
-                        onChange={(e) => setNewMonitor({ ...newMonitor, delimiter: e.target.value.slice(0, 1) })}
-                        placeholder={newMonitor.sourceType === "txt" ? "Tab (por defecto)" : "coma (por defecto)"}
-                        maxLength={1}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label>Primera fila es encabezado</Label>
-                      <Switch
-                        checked={newMonitor.hasHeaderRow}
-                        onCheckedChange={(v) => setNewMonitor({ ...newMonitor, hasHeaderRow: v })}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {newMonitor.sourceType === "excel" && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <Label>Nombre de la hoja</Label>
-                    <Input
-                      value={newMonitor.sheetName}
-                      onChange={(e) => setNewMonitor({ ...newMonitor, sheetName: e.target.value })}
-                      placeholder="Primera hoja (por defecto)"
-                    />
-                  </div>
-                )}
-
-                {newMonitor.sourceType === "json" && (
-                  <div className="space-y-2 rounded-md border p-3">
-                    <Label>Ruta raíz (opcional)</Label>
-                    <Input
-                      value={newMonitor.rootPath}
-                      onChange={(e) => setNewMonitor({ ...newMonitor, rootPath: e.target.value })}
-                      placeholder="ej. data.records — vacío usa la raíz del JSON"
-                    />
-                  </div>
-                )}
-
-                {newMonitor.sourceType === "api" && (
-                  <div className="space-y-3 rounded-md border p-3">
-                    <div className="space-y-2">
-                      <Label>Modo</Label>
-                      <Select
-                        value={newMonitor.apiMode}
-                        onValueChange={(v) => setNewMonitor({ ...newMonitor, apiMode: v as APIMode })}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="push">Push — el sistema externo nos envía datos</SelectItem>
-                          <SelectItem value="pull">Pull — consultamos una API externa por horario</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Ruta raíz (opcional)</Label>
-                      <Input
-                        value={newMonitor.rootPath}
-                        onChange={(e) => setNewMonitor({ ...newMonitor, rootPath: e.target.value })}
-                        placeholder="ej. data.records — si la API envuelve el array en un campo"
-                      />
-                    </div>
-
-                    {newMonitor.apiMode === "push" ? (
-                      <p className="text-xs text-muted-foreground">
-                        Al crear el monitor se genera una URL y un token — se muestran una sola vez.
-                      </p>
-                    ) : (
-                      <>
-                        <div className="space-y-2">
-                          <Label>URL a consultar</Label>
-                          <Input
-                            value={newMonitor.pullUrl}
-                            onChange={(e) => setNewMonitor({ ...newMonitor, pullUrl: e.target.value })}
-                            placeholder="https://api.ejemplo.com/transacciones"
-                            required
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-2">
-                            <Label>Método</Label>
-                            <Select
-                              value={newMonitor.pullMethod}
-                              onValueChange={(v) => setNewMonitor({ ...newMonitor, pullMethod: v })}
-                            >
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="GET">GET</SelectItem>
-                                <SelectItem value="POST">POST</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Cada (minutos)</Label>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={newMonitor.pullIntervalMinutes}
-                              onChange={(e) => setNewMonitor({ ...newMonitor, pullIntervalMinutes: e.target.value })}
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Autenticación</Label>
-                          <Select
-                            value={newMonitor.pullAuthType}
-                            onValueChange={(v) => setNewMonitor({ ...newMonitor, pullAuthType: v as APIAuthType })}
-                          >
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Ninguna</SelectItem>
-                              <SelectItem value="api_key_header">API key (header)</SelectItem>
-                              <SelectItem value="bearer">Bearer token</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {newMonitor.pullAuthType === "api_key_header" && (
-                          <div className="space-y-2">
-                            <Label>Nombre del header</Label>
-                            <Input
-                              value={newMonitor.pullAuthHeaderName}
-                              onChange={(e) => setNewMonitor({ ...newMonitor, pullAuthHeaderName: e.target.value })}
-                              placeholder="ej. X-API-Key"
-                            />
-                          </div>
-                        )}
-                        {newMonitor.pullAuthType !== "none" && (
-                          <div className="space-y-2">
-                            <Label>{newMonitor.pullAuthType === "bearer" ? "Token" : "Valor de la API key"}</Label>
-                            <Input
-                              type="password"
-                              value={newMonitor.pullAuthValue}
-                              onChange={(e) => setNewMonitor({ ...newMonitor, pullAuthValue: e.target.value })}
-                            />
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
+                <SourceConfigFields
+                  sourceType={newMonitor.sourceType}
+                  values={newMonitor}
+                  onChange={(patch) => setNewMonitor({ ...newMonitor, ...patch })}
+                />
 
                 <Button type="submit" className="w-full">Crear</Button>
               </form>
@@ -340,7 +188,7 @@ export default function MonitorsPage() {
                 </div>
                 <Button onClick={copyPushToken} className="w-full" variant="outline">
                   {tokenCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                  {tokenCopied ? "Token copiado" : "Copiar token"}
+                  {tokenCopied ? "URL y token copiados" : "Copiar URL y token"}
                 </Button>
               </div>
             </DialogContent>
@@ -390,9 +238,30 @@ export default function MonitorsPage() {
                           <Upload className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => deleteMonitor(monitor.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>¿Eliminar &quot;{monitor.name}&quot;?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Se elimina la definición del monitor y deja de recibir datos nuevos.
+                              Los {monitor.recordCount} registros ya ingeridos y las reglas asociadas
+                              <strong> no se borran</strong> — quedan huérfanos, sin un monitor que los
+                              vincule, por retención regulatoria. Esta acción no se puede deshacer desde aquí.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => deleteMonitor(monitor.id)}>
+                              Eliminar
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
                 </CardContent>

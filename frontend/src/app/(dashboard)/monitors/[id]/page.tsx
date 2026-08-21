@@ -12,12 +12,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Upload, FileUp, Table, ShieldCheck, Play, Pencil, Search } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Upload, FileUp, Table, ShieldCheck, Play, Pencil, Search, KeyRound, Copy, Check, AlertTriangle } from "lucide-react";
 import { monitorsApi } from "@/lib/api/monitors";
 import { rulesApi } from "@/lib/api/rules";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
-import type { Monitor, Rule, SchemaField } from "@/lib/types";
+import { SourceConfigFields, sourceConfigValuesToInput, type SourceConfigValues } from "@/components/monitors/source-config-fields";
+import { STATUS_CLASSES, STATUS_FG } from "@/lib/semantic-colors";
+import type { Monitor, Rule, SchemaField, CreateSourceConfig } from "@/lib/types";
 import Link from "next/link";
 
 export default function MonitorDetailPage() {
@@ -30,8 +43,16 @@ export default function MonitorDetailPage() {
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState<{ redFlagsGenerated: number } | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", description: "" });
+  const [editForm, setEditForm] = useState<{ name: string; description: string } & SourceConfigValues>({
+    name: "", description: "",
+    delimiter: "", hasHeaderRow: true, sheetName: "", rootPath: "",
+    apiMode: "push", pullUrl: "", pullMethod: "GET", pullAuthType: "none",
+    pullAuthHeaderName: "", pullAuthValue: "", pullIntervalMinutes: "60",
+  });
   const [searchTerm, setSearchTerm] = useState("");
+  const [rotatingToken, setRotatingToken] = useState(false);
+  const [tokenReveal, setTokenReveal] = useState<{ url: string; token: string } | null>(null);
+  const [tokenCopied, setTokenCopied] = useState(false);
   const { toastError } = useToast();
 
   useEffect(() => {
@@ -85,17 +106,54 @@ export default function MonitorDetailPage() {
 
   function openEdit() {
     if (!monitor) return;
-    setEditForm({ name: monitor.name, description: monitor.description || "" });
+    const cfg = monitor.sourceConfig;
+    setEditForm({
+      name: monitor.name,
+      description: monitor.description || "",
+      delimiter: cfg?.delimiter ?? "",
+      hasHeaderRow: cfg?.hasHeaderRow ?? true,
+      sheetName: cfg?.sheetName ?? "",
+      rootPath: cfg?.rootPath ?? "",
+      apiMode: cfg?.mode ?? "push",
+      pullUrl: cfg?.pullUrl ?? "",
+      pullMethod: cfg?.pullMethod ?? "GET",
+      pullAuthType: cfg?.pullAuthType ?? "none",
+      pullAuthHeaderName: cfg?.pullAuthHeaderName ?? "",
+      pullAuthValue: "",
+      pullIntervalMinutes: String(cfg?.pullIntervalMinutes ?? 60),
+    });
     setIsEditOpen(true);
   }
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault();
+    if (!monitor) return;
     try {
-      await monitorsApi.update(id, editForm);
+      const sourceConfig = sourceConfigValuesToInput(monitor.sourceType, editForm, { alwaysInclude: true }) as
+        | CreateSourceConfig
+        | undefined;
+      await monitorsApi.update(id, { name: editForm.name, description: editForm.description, sourceConfig });
       setIsEditOpen(false);
       loadMonitor();
     } catch { toastError("Error al actualizar monitor"); }
+  }
+
+  async function rotateToken() {
+    setRotatingToken(true);
+    try {
+      const result = await monitorsApi.rotatePushToken(id);
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+      setTokenReveal({ url: `${apiUrl}/ingest/${id}`, token: result.pushToken });
+      setTokenCopied(false);
+    } catch { toastError("Error al rotar el token"); } finally {
+      setRotatingToken(false);
+    }
+  }
+
+  async function copyTokenReveal() {
+    if (!tokenReveal) return;
+    await navigator.clipboard.writeText(`URL: ${tokenReveal.url}\nHeader: X-Ingest-Token: ${tokenReveal.token}`);
+    setTokenCopied(true);
   }
 
   async function handleEvaluate() {
@@ -136,8 +194,40 @@ export default function MonitorDetailPage() {
                   <Label>Descripción</Label>
                   <Textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
                 </div>
+                <SourceConfigFields
+                  sourceType={monitor.sourceType}
+                  values={editForm}
+                  onChange={(patch) => setEditForm({ ...editForm, ...patch })}
+                  editing
+                />
                 <Button type="submit" className="w-full">Guardar</Button>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={!!tokenReveal} onOpenChange={(open) => !open && setTokenReveal(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nuevo token de ingesta</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Guarda esta URL y este token ahora — el token anterior ya dejó de funcionar y este no se
+                  vuelve a mostrar.
+                </p>
+                <div className="space-y-2">
+                  <Label>URL</Label>
+                  <Input readOnly value={tokenReveal?.url ?? ""} className="font-mono text-xs" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Header: X-Ingest-Token</Label>
+                  <Input readOnly value={tokenReveal?.token ?? ""} className="font-mono text-xs" />
+                </div>
+                <Button onClick={copyTokenReveal} className="w-full" variant="outline">
+                  {tokenCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                  {tokenCopied ? "URL y token copiados" : "Copiar URL y token"}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
           <Badge variant="outline">{monitor.sourceType.toUpperCase()}</Badge>
@@ -177,7 +267,18 @@ export default function MonitorDetailPage() {
             <Card>
               <CardContent className="pt-6">
                 {monitor.sourceType === "api" ? (
-                  monitor.sourceConfig?.mode === "pull" ? (
+                  !monitor.sourceConfig ? (
+                    <div className={`flex items-start gap-3 rounded-md border p-4 ${STATUS_CLASSES.warning}`}>
+                      <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${STATUS_FG.warning}`} />
+                      <div>
+                        <p className={`text-sm font-medium ${STATUS_FG.warning}`}>Monitor sin configurar</p>
+                        <p className={`mt-1 text-sm ${STATUS_FG.warning}`}>
+                          Este monitor es de tipo API pero no tiene un modo (push o pull) configurado, así que
+                          no puede recibir datos todavía. Usa &quot;Editar&quot; para configurarlo.
+                        </p>
+                      </div>
+                    </div>
+                  ) : monitor.sourceConfig.mode === "pull" ? (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between rounded-md border p-3">
                         <span className="text-sm text-muted-foreground">URL</span>
@@ -186,6 +287,12 @@ export default function MonitorDetailPage() {
                       <div className="flex items-center justify-between rounded-md border p-3">
                         <span className="text-sm text-muted-foreground">Cada</span>
                         <span className="text-sm">{monitor.sourceConfig?.pullIntervalMinutes ?? 60} minutos</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-md border p-3">
+                        <span className="text-sm text-muted-foreground">Próxima consulta</span>
+                        <span className="text-sm">
+                          {monitor.sourceConfig?.nextPullAt ? formatDate(monitor.sourceConfig.nextPullAt) : "Pendiente de programar"}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between rounded-md border p-3">
                         <span className="text-sm text-muted-foreground">Último intento</span>
@@ -205,10 +312,33 @@ export default function MonitorDetailPage() {
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Este monitor recibe datos por push. La URL y el token se mostraron una sola vez al crearlo —
-                      si los perdiste, elimina este monitor y crea uno nuevo (no se pueden volver a mostrar).
-                    </p>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Este monitor recibe datos por push. La URL y el token se mostraron una sola vez al crearlo —
+                        si los perdiste, rota el token para generar uno nuevo (el anterior deja de funcionar de inmediato).
+                      </p>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline" disabled={rotatingToken}>
+                            <KeyRound className="mr-2 h-4 w-4" />
+                            {rotatingToken ? "Rotando..." : "Rotar token"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>¿Rotar el token de ingesta?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              El token actual deja de funcionar de inmediato. El sistema externo que envía datos
+                              a este monitor necesitará el nuevo token para seguir funcionando.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={rotateToken}>Rotar</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   )
                 ) : (
                   <>

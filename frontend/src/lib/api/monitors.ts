@@ -9,8 +9,11 @@ export const monitorsApi = {
   create: (data: { name: string; description: string; sourceType: SourceType; sourceConfig?: CreateSourceConfig }) =>
     api.post<Monitor | { monitor: Monitor; pushToken: string }>("/monitors", data),
 
-  update: (id: string, data: Partial<Pick<Monitor, "name" | "description">>) =>
+  update: (id: string, data: { name?: string; description?: string; sourceConfig?: CreateSourceConfig }) =>
     api.put<{ message: string }>(`/monitors/${id}`, data),
+
+  rotatePushToken: (id: string) =>
+    api.post<{ pushToken: string }>(`/monitors/${id}/rotate-push-token`, {}),
 
   delete: (id: string) => api.delete<{ message: string }>(`/monitors/${id}`),
 
