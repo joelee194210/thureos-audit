@@ -13,17 +13,18 @@ import (
 )
 
 type Handlers struct {
-	Auth       *handlers.AuthHandler
-	Monitor    *handlers.MonitorHandler
-	Rule       *handlers.RuleHandler
-	Dashboard  *handlers.DashboardHandler
-	RedFlag    *handlers.RedFlagHandler
-	User       *handlers.UserHandler
-	MCC        *handlers.MCCHandler
-	Country    *handlers.CountryHandler
-	Activity   *handlers.ActivityHandler
-	Scheduler  interface{ Status() map[string]interface{} }
-	ConfigRepo *repository.SystemConfigRepository
+	Auth          *handlers.AuthHandler
+	Monitor       *handlers.MonitorHandler
+	Rule          *handlers.RuleHandler
+	Dashboard     *handlers.DashboardHandler
+	RedFlag       *handlers.RedFlagHandler
+	User          *handlers.UserHandler
+	MCC           *handlers.MCCHandler
+	Country       *handlers.CountryHandler
+	Activity      *handlers.ActivityHandler
+	Scheduler     interface{ Status() map[string]interface{} }
+	MonitorPuller interface{ Status() map[string]interface{} }
+	ConfigRepo    *repository.SystemConfigRepository
 }
 
 func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
@@ -76,6 +77,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	monitors.Put("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Update)
 	monitors.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Delete)
 	monitors.Post("/:id/upload", middleware.RequireComplianceOrAbove(), h.Monitor.UploadData)
+	monitors.Post("/:id/rotate-push-token", middleware.RequireComplianceOrAbove(), h.Monitor.RotatePushToken)
 	monitors.Post("/:id/evaluate", middleware.RequireComplianceOrAbove(), h.Monitor.Evaluate)
 	monitors.Get("/:id/data", h.Monitor.GetData)
 
@@ -166,6 +168,10 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 		if h.Scheduler != nil {
 			schedulerStatus = h.Scheduler.Status()
 		}
+		monitorPullerStatus := map[string]interface{}{"running": false}
+		if h.MonitorPuller != nil {
+			monitorPullerStatus = h.MonitorPuller.Status()
+		}
 		return c.JSON(fiber.Map{
 			"port":           cfg.Port,
 			"mongoConnected": true,
@@ -177,6 +183,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 			"workers":        2,
 			"maxRetries":     3,
 			"scheduler":      schedulerStatus,
+			"monitorPuller":  monitorPullerStatus,
 		})
 	})
 

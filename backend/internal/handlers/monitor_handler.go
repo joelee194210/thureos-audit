@@ -113,6 +113,9 @@ func validateSourceConfig(sourceType models.SourceType, cfg *models.SourceConfig
 		if cfg.PullAuthType == models.APIAuthAPIKey && strings.TrimSpace(cfg.PullAuthHeaderName) == "" {
 			return fmt.Errorf("api_key_header auth requires sourceConfig.pullAuthHeaderName")
 		}
+		if cfg.PullMethod != "" && cfg.PullMethod != fiber.MethodGet && cfg.PullMethod != fiber.MethodPost {
+			return fmt.Errorf("sourceConfig.pullMethod must be GET or POST")
+		}
 	}
 	return nil
 }
@@ -148,18 +151,51 @@ func (h *MonitorHandler) Update(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
 	}
 
-	var body map[string]interface{}
-	if err := c.BodyParser(&body); err != nil {
+	var req models.UpdateMonitorRequest
+	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	// Only allow updating name and description
 	update := bson.M{}
-	if v, ok := body["name"]; ok {
-		update["name"] = v
+	if req.Name != nil {
+		update["name"] = *req.Name
 	}
-	if v, ok := body["description"]; ok {
-		update["description"] = v
+	if req.Description != nil {
+		update["description"] = *req.Description
+	}
+
+	if req.SourceConfig != nil {
+		monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+		}
+
+		newConfig := req.SourceConfig.ToSourceConfig()
+		if err := validateSourceConfig(monitor.SourceType, newConfig); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// Server-controlled fields aren't in SourceConfigInput at all, so
+		// carry them over from the existing config — otherwise every edit
+		// would silently wipe the push token or pull history.
+		if monitor.SourceConfig != nil {
+			newConfig.PushToken = monitor.SourceConfig.PushToken
+			newConfig.NextPullAt = monitor.SourceConfig.NextPullAt
+			newConfig.LastPullAt = monitor.SourceConfig.LastPullAt
+			newConfig.LastPullStatus = monitor.SourceConfig.LastPullStatus
+			newConfig.LastPullError = monitor.SourceConfig.LastPullError
+
+			// PullAuthValue is json:"-" on the response shape (it's a
+			// secret, so it's never sent back to the client), which means
+			// the edit form can never echo it — an empty value here isn't
+			// "the user cleared it", it's "the client never had it to send
+			// in the first place". Treat blank as "leave unchanged", same
+			// as the AI-config API key field.
+			if newConfig.PullAuthValue == "" {
+				newConfig.PullAuthValue = monitor.SourceConfig.PullAuthValue
+			}
+		}
+		update["source_config"] = newConfig
 	}
 
 	if len(update) == 0 {
@@ -171,6 +207,36 @@ func (h *MonitorHandler) Update(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "monitor updated"})
+}
+
+// RotatePushToken issues a new PushToken for an api+push monitor,
+// immediately invalidating the old one. Same one-time-visibility rule as
+// creation: PushToken has json:"-" on Monitor, so this response is the
+// only place the new value is ever shown.
+func (h *MonitorHandler) RotatePushToken(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+	if monitor.SourceType != models.SourceAPI || monitor.SourceConfig == nil || monitor.SourceConfig.Mode != models.APIModePush {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitor is not configured for API push"})
+	}
+
+	token, err := generatePushToken()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "generating push token: " + err.Error()})
+	}
+
+	if err := h.monitorRepo.Update(c.Context(), id, bson.M{"source_config.push_token": token}); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"pushToken": token})
 }
 
 func (h *MonitorHandler) Delete(c *fiber.Ctx) error {

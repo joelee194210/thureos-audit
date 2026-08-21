@@ -118,17 +118,18 @@ func main() {
 
 	// Initialize handlers
 	h := &router.Handlers{
-		Auth:       handlers.NewAuthHandler(authService, activityLogRepo),
-		Monitor:    handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
-		Rule:       handlers.NewRuleHandler(ruleRepo, monitorRepo, aiRulesService, ruleEngine),
-		Dashboard:  handlers.NewDashboardHandler(dashboardRepo, dashboardService),
-		RedFlag:    handlers.NewRedFlagHandler(redFlagRepo, redFlagLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo),
-		User:       handlers.NewUserHandler(userRepo, activityLogRepo),
-		MCC:        handlers.NewMCCHandler(mccRepo, activityLogRepo),
-		Country:    handlers.NewCountryHandler(countryRepo),
-		Activity:   handlers.NewActivityHandler(activityLogRepo),
-		Scheduler:  scheduler,
-		ConfigRepo: systemConfigRepo,
+		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
+		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
+		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, aiRulesService, ruleEngine),
+		Dashboard:     handlers.NewDashboardHandler(dashboardRepo, dashboardService),
+		RedFlag:       handlers.NewRedFlagHandler(redFlagRepo, redFlagLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo),
+		User:          handlers.NewUserHandler(userRepo, activityLogRepo),
+		MCC:           handlers.NewMCCHandler(mccRepo, activityLogRepo),
+		Country:       handlers.NewCountryHandler(countryRepo),
+		Activity:      handlers.NewActivityHandler(activityLogRepo),
+		Scheduler:     scheduler,
+		MonitorPuller: monitorPuller,
+		ConfigRepo:    systemConfigRepo,
 	}
 
 	// Create Fiber app

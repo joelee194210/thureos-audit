@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
@@ -42,7 +43,15 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	hasHeaderRow := true
 	if monitor.SourceConfig != nil {
 		if monitor.SourceConfig.Delimiter != "" {
-			delimiter = rune(monitor.SourceConfig.Delimiter[0])
+			// DecodeRuneInString, not Delimiter[0]: indexing a Go string
+			// takes the first byte, not the first UTF-8 rune. A multibyte
+			// delimiter like "§" would silently become an unrelated rune
+			// that never matches anything in the file, so every line would
+			// parse as one column with no error raised.
+			r, size := utf8.DecodeRuneInString(monitor.SourceConfig.Delimiter)
+			if r != utf8.RuneError || size != 0 {
+				delimiter = r
+			}
 		}
 		if monitor.SourceConfig.HasHeaderRow != nil {
 			hasHeaderRow = *monitor.SourceConfig.HasHeaderRow
@@ -135,12 +144,20 @@ func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monit
 
 	extracted, err := extractRootPath(parsed, rootPath)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("extracting rootPath: %w", err)
+	}
+
+	// A bare top-level `null` (or a rootPath resolving to null) is treated
+	// as zero records rather than an error — matches the pre-rootPath
+	// behavior of unmarshaling into a nil slice, and "no data yet" is a
+	// legitimate response from a real API, not a malformed one.
+	if extracted == nil {
+		return 0, nil
 	}
 
 	records, err := toRecordSlice(extracted)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("interpreting JSON records: %w", err)
 	}
 
 	if len(records) == 0 {

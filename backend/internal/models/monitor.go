@@ -139,3 +139,18 @@ type CreateMonitorRequest struct {
 	SourceType   SourceType         `json:"sourceType"`
 	SourceConfig *SourceConfigInput `json:"sourceConfig,omitempty"`
 }
+
+// UpdateMonitorRequest is the client-facing shape for editing a monitor.
+// SourceType is deliberately absent — it's fixed at creation, since
+// switching it could leave an already-detected Schema (and any ingested
+// data) inconsistent with the new source. When SourceConfig is present, it
+// REPLACES the stored config wholesale (the edit form always sends the
+// complete set of fields for the monitor's source type, same as creation),
+// except for the server-controlled fields SourceConfigInput can't carry
+// (PushToken, NextPullAt, LastPull*), which the handler preserves from the
+// existing monitor.
+type UpdateMonitorRequest struct {
+	Name         *string            `json:"name,omitempty"`
+	Description  *string            `json:"description,omitempty"`
+	SourceConfig *SourceConfigInput `json:"sourceConfig,omitempty"`
+}
