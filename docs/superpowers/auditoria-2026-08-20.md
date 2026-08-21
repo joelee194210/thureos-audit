@@ -49,10 +49,15 @@ el límite por IP, y eso sí: no existía ningún `limiter`.
 Añadido `middleware.AuthRateLimiter`, que envuelve el limitador que ya trae Fiber,
 sobre las dos rutas públicas:
 
-| Ruta | Cupo por IP |
-|---|---|
-| `POST /api/v1/auth/login` | 10 intentos / 5 min |
-| `POST /api/v1/auth/register` | 5 intentos / 1 h |
+| Ruta | Cupo por IP | Qué cuenta |
+|---|---|---|
+| `POST /api/v1/auth/login` | 10 / 5 min | sólo los intentos **fallidos** |
+| `POST /api/v1/auth/register` | 5 / 1 h | **todas** las peticiones, altas correctas incluidas |
+
+La asimetría es deliberada. En el login lo que se encarece es adivinar contraseñas,
+así que un inicio de sesión correcto no consume cupo. En el registro lo que se frena
+es justamente la creación masiva de cuentas, que devuelve 201: ahí las peticiones
+correctas son el ataque, y contarlas es el punto.
 
 Verificado en ejecución contra el servidor real: los intentos 1–10 de login responden
 401 y el 11 corta con 429; el registro corta en el sexto. `/health` y las rutas
@@ -68,10 +73,18 @@ protegidas no se ven afectadas.
   ya se importaba, así que no hay dependencia directa nueva, pero arrastra
   `tinylib/msgp` y `philhofer/fwd` a `go.mod` y `go.sum`.
 - **`c.IP()` es el par del socket.** `fiber.Config` no declara proxies de confianza,
-  lo cual es correcto en un solo host. **Detrás de un proxy inverso todos los usuarios
-  compartirían cupo y se bloquearían entre sí**; configurar `TrustedProxies` es lo
-  primero que hay que hacer si aparece uno. Leer `X-Forwarded-For` sin esa
-  configuración sería peor: se falsifica con una cabecera.
+  lo cual es correcto en un solo host. Detrás de un proxy inverso habría que configurar
+  `TrustedProxies` antes que nada; leer `X-Forwarded-For` sin eso sería peor, porque se
+  falsifica con una cabecera.
+
+  **Pero el problema de la IP compartida no espera a que haya un proxy.** Una oficina
+  con NAT presenta una sola IP pública para todo el mundo, que es el despliegue probable
+  de una plataforma de cumplimiento. Por eso los inicios de sesión correctos no consumen
+  cupo: si lo hicieran, diez analistas entrando bien dejarían fuera al undécimo. Con la
+  configuración actual sólo se acumulan los fallos, así que hacen falta diez errores de
+  contraseña en cinco minutos entre todo el equipo para agotar el cupo. Si un equipo
+  grande empieza a ver 429 legítimos, la palanca es subir `LoginMaxAttempts`, no
+  desactivar el límite.
 
 El mensaje de cuenta bloqueada se deja como está —revela que la cuenta existe y a qué
 hora se recupera el acceso—. Es enumeración de usuarios, pero esto es un panel interno

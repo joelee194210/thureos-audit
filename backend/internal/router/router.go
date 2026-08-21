@@ -49,10 +49,10 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	// credenciales y la creación masiva de cuentas tengan coste.
 	auth := api.Group("/auth")
 	auth.Post("/register",
-		middleware.AuthRateLimiter(middleware.RegisterMaxAttempts, middleware.RegisterWindow),
+		middleware.RegisterRateLimiter(),
 		h.Auth.Register)
 	auth.Post("/login",
-		middleware.AuthRateLimiter(middleware.LoginMaxAttempts, middleware.LoginWindow),
+		middleware.LoginRateLimiter(),
 		h.Auth.Login)
 
 	// Protected routes
