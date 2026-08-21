@@ -9,7 +9,45 @@ export interface User {
   createdAt: string;
 }
 
-export type SourceType = "csv" | "excel" | "json" | "api";
+export type SourceType = "csv" | "excel" | "json" | "txt" | "api";
+
+export type APIMode = "push" | "pull";
+export type APIAuthType = "none" | "api_key_header" | "bearer";
+
+// Lo que devuelve el backend en Monitor.sourceConfig — sin pushToken ni
+// pullAuthValue, que nunca se serializan (json:"-" en el backend).
+export interface SourceConfig {
+  delimiter?: string;
+  hasHeaderRow?: boolean;
+  sheetName?: string;
+  rootPath?: string;
+  mode?: APIMode;
+  pullUrl?: string;
+  pullMethod?: string;
+  pullAuthType?: APIAuthType;
+  pullAuthHeaderName?: string;
+  pullIntervalMinutes?: number;
+  nextPullAt?: string;
+  lastPullAt?: string;
+  lastPullStatus?: "ok" | "error";
+  lastPullError?: string;
+}
+
+// Lo que se envía al crear un monitor — sí incluye pullAuthValue, que es
+// de solo-escritura (el backend lo acepta pero nunca lo devuelve).
+export interface CreateSourceConfig {
+  delimiter?: string;
+  hasHeaderRow?: boolean;
+  sheetName?: string;
+  rootPath?: string;
+  mode?: APIMode;
+  pullUrl?: string;
+  pullMethod?: string;
+  pullAuthType?: APIAuthType;
+  pullAuthHeaderName?: string;
+  pullAuthValue?: string;
+  pullIntervalMinutes?: number;
+}
 
 export interface SchemaField {
   name: string;
@@ -23,10 +61,9 @@ export interface Monitor {
   name: string;
   description: string;
   sourceType: SourceType;
+  sourceConfig?: SourceConfig;
   schema: SchemaField[];
   collectionId: string;
-  apiEndpoint?: string;
-  schedule?: string;
   ownerId: string;
   recordCount: number;
   lastIngested?: string;
@@ -41,7 +78,7 @@ export type Operator =
   | "starts_with" | "ends_with";
 
 export type Severity = "low" | "medium" | "high" | "critical";
-export type ActionType = "alert" | "flag" | "block" | "log";
+export type ActionType = "red_flag" | "flag" | "block" | "log";
 
 export interface Condition {
   field: string;
@@ -102,10 +139,10 @@ export interface Rule {
   updatedAt: string;
 }
 
-export type AlertStatus = "new" | "acknowledged" | "resolved" | "dismissed";
-export type AlertType = "row" | "aggregate";
+export type RedFlagStatus = "new" | "acknowledged" | "resolved" | "dismissed";
+export type RedFlagType = "row" | "aggregate";
 
-export interface Alert {
+export interface RedFlag {
   id: string;
   fingerprint: string;
   monitorId: string;
@@ -113,9 +150,9 @@ export interface Alert {
   ruleName: string;
   monitorName: string;
   severity: Severity;
-  status: AlertStatus;
+  status: RedFlagStatus;
   message: string;
-  alertType: AlertType;
+  redFlagType: RedFlagType;
   matchedData: Record<string, unknown>;
   matchedRecords?: Record<string, unknown>[];
   matchCount: number;
@@ -132,7 +169,7 @@ export interface Alert {
 
 export type WidgetType =
   | "bar_chart" | "line_chart" | "pie_chart" | "area_chart"
-  | "table" | "stat" | "alert_list" | "timeline";
+  | "table" | "stat" | "red_flag_list" | "timeline";
 
 export type AggregationType = "count" | "sum" | "avg" | "min" | "max" | "distinct";
 
@@ -190,21 +227,21 @@ export interface Country {
 
 export type ActionCategory = "investigation" | "false_positive" | "escalation" | "corrective_action" | "other";
 
-export interface AlertLog {
+export interface RedFlagLog {
   id: string;
-  alertId: string;
-  previousStatus: AlertStatus;
-  newStatus: AlertStatus;
+  redFlagId: string;
+  previousStatus: RedFlagStatus;
+  newStatus: RedFlagStatus;
   userId: string;
   userName: string;
   userEmail: string;
   category: ActionCategory;
   notes: string;
-  alertSnapshot: Alert;
+  redFlagSnapshot: RedFlag;
   createdAt: string;
 }
 
-export type ActivityType = "login" | "alert_action" | "rule_create" | "rule_update" | "rule_delete" | "rule_execute" | "upload" | "user_manage" | "mcc_update";
+export type ActivityType = "login" | "red_flag_action" | "rule_create" | "rule_update" | "rule_delete" | "rule_execute" | "upload" | "user_manage" | "mcc_update";
 
 export interface ActivityLogEntry {
   id: string;

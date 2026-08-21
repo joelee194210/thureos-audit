@@ -1,13 +1,13 @@
 import { api } from "./client";
-import type { Monitor, SchemaField } from "@/lib/types";
+import type { Monitor, SchemaField, SourceType, CreateSourceConfig } from "@/lib/types";
 
 export const monitorsApi = {
   list: () => api.get<Monitor[]>("/monitors"),
 
   get: (id: string) => api.get<Monitor>(`/monitors/${id}`),
 
-  create: (data: { name: string; description: string; sourceType: string }) =>
-    api.post<Monitor>("/monitors", data),
+  create: (data: { name: string; description: string; sourceType: SourceType; sourceConfig?: CreateSourceConfig }) =>
+    api.post<Monitor | { monitor: Monitor; pushToken: string }>("/monitors", data),
 
   update: (id: string, data: Partial<Pick<Monitor, "name" | "description">>) =>
     api.put<{ message: string }>(`/monitors/${id}`, data),
@@ -30,7 +30,7 @@ export const monitorsApi = {
 
   evaluate: (id: string) =>
     api.post<{
-      alertsGenerated: number;
-      alerts: unknown[];
+      redFlagsGenerated: number;
+      redFlags: unknown[];
     }>(`/monitors/${id}/evaluate`, {}),
 };
