@@ -111,20 +111,36 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	return count, nil
 }
 
-// IngestJSON parses a JSON array and stores data
-func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
-	data, err := io.ReadAll(file)
+// IngestJSON parses a JSON document, optionally drilling into a nested
+// array via SourceConfig.RootPath, detects schema, and stores data.
+// Takes io.Reader (not multipart.File) so it can be reused for HTTP
+// request/response bodies from API push and pull ingestion, not just
+// uploaded files — multipart.File already satisfies io.Reader, so existing
+// callers (UploadData) need no changes.
+func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monitor, file io.Reader) (int, error) {
+	raw, err := io.ReadAll(file)
 	if err != nil {
 		return 0, fmt.Errorf("reading JSON: %w", err)
 	}
 
-	var records []map[string]interface{}
-	if err := json.Unmarshal(data, &records); err != nil {
-		var single map[string]interface{}
-		if err2 := json.Unmarshal(data, &single); err2 != nil {
-			return 0, fmt.Errorf("parsing JSON: %w", err)
-		}
-		records = []map[string]interface{}{single}
+	var parsed interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return 0, fmt.Errorf("parsing JSON: %w", err)
+	}
+
+	rootPath := ""
+	if monitor.SourceConfig != nil {
+		rootPath = monitor.SourceConfig.RootPath
+	}
+
+	extracted, err := extractRootPath(parsed, rootPath)
+	if err != nil {
+		return 0, err
+	}
+
+	records, err := toRecordSlice(extracted)
+	if err != nil {
+		return 0, err
 	}
 
 	if len(records) == 0 {
@@ -156,6 +172,51 @@ func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monit
 	return count, nil
 }
 
+// extractRootPath navigates a parsed JSON value by dot-separated path
+// (e.g. "data.records") and returns the value found there. An empty path
+// returns v unchanged — this is the default, matching today's behavior of
+// treating the JSON body itself as the records.
+func extractRootPath(v interface{}, path string) (interface{}, error) {
+	if path == "" {
+		return v, nil
+	}
+	current := v
+	for _, key := range strings.Split(path, ".") {
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("rootPath %q: expected an object before key %q, got %T", path, key, current)
+		}
+		val, exists := m[key]
+		if !exists {
+			return nil, fmt.Errorf("rootPath %q: key %q not found", path, key)
+		}
+		current = val
+	}
+	return current, nil
+}
+
+// toRecordSlice coerces a parsed JSON value into a slice of records. Matches
+// the pre-existing IngestJSON fallback: an array of objects ingests as-is,
+// a single bare object ingests as one record.
+func toRecordSlice(v interface{}) ([]map[string]interface{}, error) {
+	switch val := v.(type) {
+	case []interface{}:
+		records := make([]map[string]interface{}, 0, len(val))
+		for _, item := range val {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("expected an array of objects, got an element of type %T", item)
+			}
+			records = append(records, m)
+		}
+		return records, nil
+	case map[string]interface{}:
+		return []map[string]interface{}{val}, nil
+	default:
+		return nil, fmt.Errorf("expected a JSON array or object at the root (or at rootPath), got %T", v)
+	}
+}
+
 // IngestExcel parses an XLSX file and stores data
 func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
 	f, err := excelize.OpenReader(file)
@@ -165,6 +226,9 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	defer f.Close()
 
 	sheetName := f.GetSheetName(0)
+	if monitor.SourceConfig != nil && monitor.SourceConfig.SheetName != "" {
+		sheetName = monitor.SourceConfig.SheetName
+	}
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
 		return 0, fmt.Errorf("reading Excel rows: %w", err)
