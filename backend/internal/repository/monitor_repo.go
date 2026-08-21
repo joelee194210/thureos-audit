@@ -84,6 +84,26 @@ func (r *MonitorRepository) Delete(ctx context.Context, id primitive.ObjectID) e
 	return err
 }
 
+// FindPullMonitors returns all API-source monitors configured for pull mode.
+// The caller filters by NextPullAt to decide which are actually due —
+// same split as RuleRepository.FindScheduled + Scheduler.checkAndFireRules.
+func (r *MonitorRepository) FindPullMonitors(ctx context.Context) ([]models.Monitor, error) {
+	cursor, err := r.col.Find(ctx, bson.M{
+		"source_type":        models.SourceAPI,
+		"source_config.mode": models.APIModePull,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var monitors []models.Monitor
+	if err := cursor.All(ctx, &monitors); err != nil {
+		return nil, err
+	}
+	return monitors, nil
+}
+
 // GetDataCollection returns the dynamic collection for a monitor's data
 func (r *MonitorRepository) GetDataCollection(collectionID string) *mongo.Collection {
 	return r.db.Collection("data_" + collectionID)

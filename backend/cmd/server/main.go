@@ -110,6 +110,12 @@ func main() {
 	defer schedulerCancel()
 	go scheduler.Start(schedulerCtx)
 
+	// Initialize monitor puller (API pull-mode monitors)
+	monitorPuller := services.NewMonitorPuller(monitorRepo, ingestionService, jobQueue)
+	pullerCtx, pullerCancel := context.WithCancel(context.Background())
+	defer pullerCancel()
+	go monitorPuller.Start(pullerCtx)
+
 	// Initialize handlers
 	h := &router.Handlers{
 		Auth:       handlers.NewAuthHandler(authService, activityLogRepo),
