@@ -51,6 +51,7 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 		AggregateConditions: req.AggregateConditions,
 		Actions:             req.Actions,
 		Severity:            req.Severity,
+		AIGenerated:         req.AIGenerated,
 		CreatedBy:           userID,
 	}
 

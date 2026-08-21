@@ -1,5 +1,14 @@
 import { api } from "./client";
-import type { Rule, RuleSchedule, AIRuleSuggestion, RedFlag, ConditionGroup, AggregateCondition, ActionType, Severity } from "@/lib/types";
+import type {
+  Rule,
+  RuleSchedule,
+  AIRuleSuggestion,
+  RedFlag,
+  ConditionGroup,
+  AggregateCondition,
+  ActionType,
+  Severity,
+} from "@/lib/types";
 
 export const rulesApi = {
   list: (monitorId?: string) => {
@@ -21,6 +30,7 @@ export const rulesApi = {
     fatfTypology?: string;
     thresholdJustification?: string;
     regulatoryBasis?: string;
+    aiGenerated?: boolean;
   }) => api.post<Rule>("/rules", data),
 
   update: (id: string, data: Partial<Rule>) =>
@@ -29,8 +39,14 @@ export const rulesApi = {
   delete: (id: string) => api.delete<{ message: string }>(`/rules/${id}`),
 
   execute: (id: string) =>
-    api.post<{ redFlagsGenerated: number; redFlags: RedFlag[] }>(`/rules/${id}/execute`),
+    api.post<{ redFlagsGenerated: number; redFlags: RedFlag[] }>(
+      `/rules/${id}/execute`,
+    ),
 
-  generateAI: (data: { monitorId: string; prompt: string; dataSample?: string }) =>
+  generateAI: (data: {
+    monitorId: string;
+    prompt: string;
+    dataSample?: string;
+  }) =>
     api.post<{ suggestions: AIRuleSuggestion[] }>("/rules/ai-generate", data),
 };

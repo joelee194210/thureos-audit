@@ -165,6 +165,7 @@ type CreateRuleRequest struct {
 	FatfTypology           string               `json:"fatfTypology,omitempty"`
 	ThresholdJustification string               `json:"thresholdJustification,omitempty"`
 	RegulatoryBasis        string               `json:"regulatoryBasis,omitempty"`
+	AIGenerated            bool                 `json:"aiGenerated,omitempty"`
 }
 
 type AIRuleRequest struct {

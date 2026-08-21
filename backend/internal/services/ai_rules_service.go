@@ -25,12 +25,17 @@ type AIRuleSuggestion struct {
 }
 
 // systemPrompt is shared across all providers — the contract stays the same.
+// The product has no language switcher anywhere (UI, settings, user prefs
+// are all Spanish-only), so "match the system's language" means Spanish,
+// full stop — there's no other language to match.
 const systemPrompt = `You are a data monitoring rules expert. Given a data schema and optional sample data, generate monitoring rules that detect anomalies, suspicious patterns, or business-critical conditions.
+
+Write every "name", "description", and "reasoning" value in Spanish — the product this feeds into has no language switcher and is Spanish-only throughout. Field names, operators, and JSON keys stay in English exactly as specified below.
 
 Return ONLY a JSON array of rule suggestions. Each rule must follow this exact structure:
 {
-  "name": "Rule name",
-  "description": "What this rule detects",
+  "name": "Nombre de la regla, en español",
+  "description": "Qué detecta esta regla, en español",
   "conditionGroup": {
     "logic": "AND" or "OR",
     "conditions": [
@@ -39,7 +44,7 @@ Return ONLY a JSON array of rule suggestions. Each rule must follow this exact s
   },
   "severity": "low|medium|high|critical",
   "actions": ["red_flag", "flag", "log"],
-  "reasoning": "Why this rule is important"
+  "reasoning": "Por qué esta regla es importante, en español"
 }
 
 Available operators: eq, neq, gt, lt, gte, lte, contains, regex, in, not_in, between, is_null, is_not_null, starts_with, ends_with

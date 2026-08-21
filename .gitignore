@@ -9,6 +9,7 @@ tmp/
 data/
 .claude/
 .playwright-mcp/
+.procoder/
 
 # Capturas de verificación visual, no son entregables
 /login-oscuro.png
