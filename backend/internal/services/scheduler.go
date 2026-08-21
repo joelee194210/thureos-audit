@@ -117,19 +117,19 @@ func (s *Scheduler) evaluateRuleWithBacklog(ctx context.Context, rule models.Rul
 		startDate = yesterday
 	}
 
-	totalAlerts := 0
+	totalRedFlags := 0
 	daysProcessed := 0
 
 	// Process day by day
 	for day := startDate; !day.After(yesterday); day = day.Add(24 * time.Hour) {
 		dayEnd := day.Add(24 * time.Hour)
-		alerts, err := s.ruleEngine.EvaluateRuleForDateRange(ctx, monitor, rule, day, dayEnd)
+		redFlags, err := s.ruleEngine.EvaluateRuleForDateRange(ctx, monitor, rule, day, dayEnd)
 		if err != nil {
 			log.Printf("Scheduler: error evaluating rule %s for %s: %v",
 				rule.ID.Hex(), day.Format("2006-01-02"), err)
 			continue
 		}
-		totalAlerts += len(alerts)
+		totalRedFlags += len(redFlags)
 		daysProcessed++
 	}
 
@@ -141,8 +141,8 @@ func (s *Scheduler) evaluateRuleWithBacklog(ctx context.Context, rule models.Rul
 		log.Printf("Scheduler: error updating schedule state for rule %s: %v", rule.ID.Hex(), err)
 	}
 
-	log.Printf("Scheduler: rule '%s' — %d days processed, %d alerts generated, next run: %s",
-		rule.Name, daysProcessed, totalAlerts, nextRun.Format("2006-01-02 15:04"))
+	log.Printf("Scheduler: rule '%s' — %d days processed, %d red flags generated, next run: %s",
+		rule.Name, daysProcessed, totalRedFlags, nextRun.Format("2006-01-02 15:04"))
 }
 
 // CalculateNextRun parses a cron expression and returns the next scheduled time

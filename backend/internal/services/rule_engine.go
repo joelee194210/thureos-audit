@@ -17,20 +17,20 @@ import (
 
 type RuleEngine struct {
 	ruleRepo    *repository.RuleRepository
-	alertRepo   *repository.AlertRepository
+	redFlagRepo *repository.RedFlagRepository
 	monitorRepo *repository.MonitorRepository
 	execLogRepo *repository.RuleExecutionLogRepository
 }
 
 func NewRuleEngine(
 	ruleRepo *repository.RuleRepository,
-	alertRepo *repository.AlertRepository,
+	redFlagRepo *repository.RedFlagRepository,
 	monitorRepo *repository.MonitorRepository,
 	execLogRepo ...*repository.RuleExecutionLogRepository,
 ) *RuleEngine {
 	e := &RuleEngine{
 		ruleRepo:    ruleRepo,
-		alertRepo:   alertRepo,
+		redFlagRepo: redFlagRepo,
 		monitorRepo: monitorRepo,
 	}
 	if len(execLogRepo) > 0 {
@@ -40,17 +40,17 @@ func NewRuleEngine(
 }
 
 // EvaluateRules runs all active rules for a monitor against its data
-func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor) ([]models.Alert, error) {
+func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor) ([]models.RedFlag, error) {
 	rules, err := e.ruleRepo.FindActiveByMonitor(ctx, monitor.ID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching rules: %w", err)
 	}
 
-	var alerts []models.Alert
+	var redFlags []models.RedFlag
 
 	for _, rule := range rules {
 		ruleStart := time.Now()
-		ruleAlertCount := 0
+		ruleRedFlagCount := 0
 
 		// Evaluate standard row-level conditions
 		if len(rule.ConditionGroup.Conditions) > 0 {
@@ -69,28 +69,28 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 					records[i] = map[string]interface{}(matches[i])
 				}
 				today := time.Now()
-				alert := models.Alert{
-					Fingerprint:    models.RowAlertFingerprint(rule.ID, monitor.ID, today),
+				redFlag := models.RedFlag{
+					Fingerprint:    models.RowRedFlagFingerprint(rule.ID, monitor.ID, today),
 					MonitorID:      monitor.ID,
 					RuleID:         rule.ID,
 					RuleName:       rule.Name,
 					MonitorName:    monitor.Name,
 					Severity:       rule.Severity,
-					AlertType:      models.AlertTypeRow,
+					RedFlagType:    models.RedFlagTypeRow,
 					Message:        fmt.Sprintf("Rule '%s' matched %d records", rule.Name, len(matches)),
 					MatchedData:    matches[0],
 					MatchedRecords: records,
 					MatchCount:     len(matches),
 				}
-				isNew, err := e.alertRepo.Upsert(ctx, &alert)
+				isNew, err := e.redFlagRepo.Upsert(ctx, &redFlag)
 				if err != nil {
-					log.Printf("ERROR upserting alert for rule %s: %v", rule.ID.Hex(), err)
+					log.Printf("ERROR upserting red flag for rule %s: %v", rule.ID.Hex(), err)
 				} else {
-					alerts = append(alerts, alert)
+					redFlags = append(redFlags, redFlag)
 					if isNew {
 						if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
-						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
-					}
+							log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
+						}
 					}
 				}
 			}
@@ -98,22 +98,22 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 
 		// Evaluate aggregate conditions (SUM/COUNT/AVG over time windows)
 		for _, aggCond := range rule.AggregateConditions {
-			aggAlerts, err := e.evaluateAggregateCondition(ctx, monitor, rule, aggCond)
+			aggRedFlags, err := e.evaluateAggregateCondition(ctx, monitor, rule, aggCond)
 			if err != nil {
 				log.Printf("ERROR aggregate condition for rule %s field=%s: %v", rule.ID.Hex(), aggCond.Field, err)
 				continue
 			}
-			for i := range aggAlerts {
-				isNew, err := e.alertRepo.Upsert(ctx, &aggAlerts[i])
+			for i := range aggRedFlags {
+				isNew, err := e.redFlagRepo.Upsert(ctx, &aggRedFlags[i])
 				if err != nil {
-					log.Printf("ERROR upserting aggregate alert for rule %s: %v", rule.ID.Hex(), err)
+					log.Printf("ERROR upserting aggregate red flag for rule %s: %v", rule.ID.Hex(), err)
 				} else {
-					alerts = append(alerts, aggAlerts[i])
-					ruleAlertCount++
+					redFlags = append(redFlags, aggRedFlags[i])
+					ruleRedFlagCount++
 					if isNew {
 						if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
-						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
-					}
+							log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
+						}
 					}
 				}
 			}
@@ -122,14 +122,14 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 		// Log rule execution for audit trail
 		if e.execLogRepo != nil {
 			execLog := &models.RuleExecutionLog{
-				RuleID:          rule.ID,
-				RuleName:        rule.Name,
-				MonitorID:       monitor.ID,
-				MonitorName:     monitor.Name,
-				AlertsGenerated: ruleAlertCount,
-				DurationMs:      time.Since(ruleStart).Milliseconds(),
-				Trigger:         "upload",
-				Success:         true,
+				RuleID:            rule.ID,
+				RuleName:          rule.Name,
+				MonitorID:         monitor.ID,
+				MonitorName:       monitor.Name,
+				RedFlagsGenerated: ruleRedFlagCount,
+				DurationMs:        time.Since(ruleStart).Milliseconds(),
+				Trigger:           "upload",
+				Success:           true,
 			}
 			if err := e.execLogRepo.Create(ctx, execLog); err != nil {
 				log.Printf("WARNING: failed to log rule execution: %v", err)
@@ -137,7 +137,7 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 		}
 	}
 
-	return alerts, nil
+	return redFlags, nil
 }
 
 // EvaluateRecord checks a single record against a rule
@@ -319,7 +319,7 @@ func (e *RuleEngine) evaluateAggregateCondition(
 	monitor *models.Monitor,
 	rule models.Rule,
 	cond models.AggregateCondition,
-) ([]models.Alert, error) {
+) ([]models.RedFlag, error) {
 	pipeline := buildAggregatePipeline(cond)
 
 	results, err := e.monitorRepo.AggregateData(ctx, monitor.CollectionID, pipeline)
@@ -328,7 +328,7 @@ func (e *RuleEngine) evaluateAggregateCondition(
 	}
 
 	today := time.Now()
-	var alerts []models.Alert
+	var redFlags []models.RedFlag
 	for _, result := range results {
 		aggValue := toFloat(result["aggValue"])
 		if !compareThreshold(aggValue, cond.Operator, cond.Threshold) {
@@ -340,14 +340,14 @@ func (e *RuleEngine) evaluateAggregateCondition(
 		if c, ok := result["count"]; ok {
 			count = int(toFloat(c))
 		}
-		alert := models.Alert{
-			Fingerprint:  models.AggAlertFingerprint(rule.ID, monitor.ID, today, groupKey),
+		redFlag := models.RedFlag{
+			Fingerprint:  models.AggRedFlagFingerprint(rule.ID, monitor.ID, today, groupKey),
 			MonitorID:    monitor.ID,
 			RuleID:       rule.ID,
 			RuleName:     rule.Name,
 			MonitorName:  monitor.Name,
 			Severity:     rule.Severity,
-			AlertType:    models.AlertTypeAggregate,
+			RedFlagType:  models.RedFlagTypeAggregate,
 			AggField:     cond.Field,
 			AggFunction:  string(cond.Function),
 			AggValue:     aggValue,
@@ -362,9 +362,9 @@ func (e *RuleEngine) evaluateAggregateCondition(
 			MatchedData: result,
 			MatchCount:  count,
 		}
-		alerts = append(alerts, alert)
+		redFlags = append(redFlags, redFlag)
 	}
-	return alerts, nil
+	return redFlags, nil
 }
 
 // buildAggregatePipeline creates a MongoDB aggregation pipeline for an AggregateCondition.
@@ -483,8 +483,8 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 	monitor *models.Monitor,
 	rule models.Rule,
 	dayStart, dayEnd time.Time,
-) ([]models.Alert, error) {
-	var alerts []models.Alert
+) ([]models.RedFlag, error) {
+	var redFlags []models.RedFlag
 
 	// Date filter scoped to _ingested_at
 	dateFilter := bson.M{
@@ -512,24 +512,24 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 			for i := 0; i < limit; i++ {
 				records[i] = map[string]interface{}(matches[i])
 			}
-			alert := models.Alert{
-				Fingerprint:    models.RowAlertFingerprint(rule.ID, monitor.ID, dayStart),
+			redFlag := models.RedFlag{
+				Fingerprint:    models.RowRedFlagFingerprint(rule.ID, monitor.ID, dayStart),
 				MonitorID:      monitor.ID,
 				RuleID:         rule.ID,
 				RuleName:       rule.Name,
 				MonitorName:    monitor.Name,
 				Severity:       rule.Severity,
-				AlertType:      models.AlertTypeRow,
+				RedFlagType:    models.RedFlagTypeRow,
 				Message:        fmt.Sprintf("Scheduled rule '%s' matched %d records (%s)", rule.Name, len(matches), dayStart.Format("2006-01-02")),
 				MatchedData:    matches[0],
 				MatchedRecords: records,
 				MatchCount:     len(matches),
 			}
-			isNew, err := e.alertRepo.Upsert(ctx, &alert)
+			isNew, err := e.redFlagRepo.Upsert(ctx, &redFlag)
 			if err != nil {
-				log.Printf("ERROR upserting scheduled alert for rule %s: %v", rule.ID.Hex(), err)
+				log.Printf("ERROR upserting scheduled red flag for rule %s: %v", rule.ID.Hex(), err)
 			} else {
-				alerts = append(alerts, alert)
+				redFlags = append(redFlags, redFlag)
 				if isNew {
 					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
 						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
@@ -541,17 +541,17 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 
 	// Evaluate aggregate conditions with date-scoped pipeline
 	for _, aggCond := range rule.AggregateConditions {
-		aggAlerts, err := e.evaluateAggregateConditionDateScoped(ctx, monitor, rule, aggCond, dayStart, dayEnd)
+		aggRedFlags, err := e.evaluateAggregateConditionDateScoped(ctx, monitor, rule, aggCond, dayStart, dayEnd)
 		if err != nil {
 			log.Printf("ERROR aggregate condition (date-scoped) for rule %s: %v", rule.ID.Hex(), err)
 			continue
 		}
-		for i := range aggAlerts {
-			isNew, err := e.alertRepo.Upsert(ctx, &aggAlerts[i])
+		for i := range aggRedFlags {
+			isNew, err := e.redFlagRepo.Upsert(ctx, &aggRedFlags[i])
 			if err != nil {
-				log.Printf("ERROR upserting aggregate alert for rule %s: %v", rule.ID.Hex(), err)
+				log.Printf("ERROR upserting aggregate red flag for rule %s: %v", rule.ID.Hex(), err)
 			} else {
-				alerts = append(alerts, aggAlerts[i])
+				redFlags = append(redFlags, aggRedFlags[i])
 				if isNew {
 					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
 						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
@@ -561,7 +561,7 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 		}
 	}
 
-	return alerts, nil
+	return redFlags, nil
 }
 
 // EvaluateRuleNow evaluates a single rule against today's data (real-time execution).
@@ -569,7 +569,7 @@ func (e *RuleEngine) EvaluateRuleNow(
 	ctx context.Context,
 	monitor *models.Monitor,
 	rule models.Rule,
-) ([]models.Alert, error) {
+) ([]models.RedFlag, error) {
 	now := time.Now()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	dayEnd := dayStart.Add(24 * time.Hour)
@@ -583,7 +583,7 @@ func (e *RuleEngine) evaluateAggregateConditionDateScoped(
 	rule models.Rule,
 	cond models.AggregateCondition,
 	dayStart, dayEnd time.Time,
-) ([]models.Alert, error) {
+) ([]models.RedFlag, error) {
 	pipeline := buildAggregatePipelineDateScoped(cond, dayStart, dayEnd)
 
 	results, err := e.monitorRepo.AggregateData(ctx, monitor.CollectionID, pipeline)
@@ -591,7 +591,7 @@ func (e *RuleEngine) evaluateAggregateConditionDateScoped(
 		return nil, fmt.Errorf("aggregate evaluation (date-scoped): %w", err)
 	}
 
-	var alerts []models.Alert
+	var redFlags []models.RedFlag
 	for _, result := range results {
 		aggValue := toFloat(result["aggValue"])
 		if !compareThreshold(aggValue, cond.Operator, cond.Threshold) {
@@ -603,14 +603,14 @@ func (e *RuleEngine) evaluateAggregateConditionDateScoped(
 		if c, ok := result["count"]; ok {
 			count = int(toFloat(c))
 		}
-		alert := models.Alert{
-			Fingerprint:  models.AggAlertFingerprint(rule.ID, monitor.ID, dayStart, groupKey),
+		redFlag := models.RedFlag{
+			Fingerprint:  models.AggRedFlagFingerprint(rule.ID, monitor.ID, dayStart, groupKey),
 			MonitorID:    monitor.ID,
 			RuleID:       rule.ID,
 			RuleName:     rule.Name,
 			MonitorName:  monitor.Name,
 			Severity:     rule.Severity,
-			AlertType:    models.AlertTypeAggregate,
+			RedFlagType:  models.RedFlagTypeAggregate,
 			AggField:     cond.Field,
 			AggFunction:  string(cond.Function),
 			AggValue:     aggValue,
@@ -625,9 +625,9 @@ func (e *RuleEngine) evaluateAggregateConditionDateScoped(
 			MatchedData: result,
 			MatchCount:  count,
 		}
-		alerts = append(alerts, alert)
+		redFlags = append(redFlags, redFlag)
 	}
-	return alerts, nil
+	return redFlags, nil
 }
 
 // buildAggregatePipelineDateScoped creates a pipeline filtered by _ingested_at date range

@@ -38,8 +38,8 @@ func main() {
 	userRepo := repository.NewUserRepository(mongo)
 	monitorRepo := repository.NewMonitorRepository(mongo)
 	ruleRepo := repository.NewRuleRepository(mongo)
-	alertRepo := repository.NewAlertRepository(mongo)
-	alertLogRepo := repository.NewAlertLogRepository(mongo)
+	redFlagRepo := repository.NewRedFlagRepository(mongo)
+	redFlagLogRepo := repository.NewRedFlagLogRepository(mongo)
 	dashboardRepo := repository.NewDashboardRepository(mongo)
 	mccRepo := repository.NewMCCRepository(mongo)
 	countryRepo := repository.NewCountryRepository(mongo)
@@ -82,7 +82,7 @@ func main() {
 	// Initialize services
 	authService := services.NewAuthService(userRepo, cfg)
 	ingestionService := services.NewIngestionService(monitorRepo)
-	ruleEngine := services.NewRuleEngine(ruleRepo, alertRepo, monitorRepo, execLogRepo)
+	ruleEngine := services.NewRuleEngine(ruleRepo, redFlagRepo, monitorRepo, execLogRepo)
 	aiRulesService := services.NewAIRulesService(systemConfigRepo)
 	dashboardService := services.NewDashboardService(dashboardRepo, monitorRepo, ruleRepo)
 
@@ -97,11 +97,11 @@ func main() {
 		go worker.Start(workerCtx)
 	}
 
-	// Clean up duplicate alerts from before deduplication was added
-	if deleted, err := alertRepo.DeleteDuplicates(context.Background()); err != nil {
+	// Clean up duplicate red flags from before deduplication was added
+	if deleted, err := redFlagRepo.DeleteDuplicates(context.Background()); err != nil {
 		log.Printf("Warning: duplicate cleanup failed: %v", err)
 	} else if deleted > 0 {
-		log.Printf("Cleaned up %d duplicate alerts", deleted)
+		log.Printf("Cleaned up %d duplicate red flags", deleted)
 	}
 
 	// Initialize scheduler
@@ -116,7 +116,7 @@ func main() {
 		Monitor:    handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
 		Rule:       handlers.NewRuleHandler(ruleRepo, monitorRepo, aiRulesService, ruleEngine),
 		Dashboard:  handlers.NewDashboardHandler(dashboardRepo, dashboardService),
-		Alert:      handlers.NewAlertHandler(alertRepo, alertLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo),
+		RedFlag:    handlers.NewRedFlagHandler(redFlagRepo, redFlagLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo),
 		User:       handlers.NewUserHandler(userRepo, activityLogRepo),
 		MCC:        handlers.NewMCCHandler(mccRepo, activityLogRepo),
 		Country:    handlers.NewCountryHandler(countryRepo),

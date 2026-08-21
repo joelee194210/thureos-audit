@@ -85,7 +85,7 @@ func (w *Worker) process(ctx context.Context, workerID int, job *EvalJob) {
 		return
 	}
 
-	alerts, err := w.ruleEngine.EvaluateRules(ctx, monitor)
+	redFlags, err := w.ruleEngine.EvaluateRules(ctx, monitor)
 	if err != nil {
 		log.Printf("Worker %d: evaluation failed for %s: %v", workerID, monitor.Name, err)
 
@@ -103,7 +103,7 @@ func (w *Worker) process(ctx context.Context, workerID int, job *EvalJob) {
 		return
 	}
 
-	if len(alerts) > 0 {
-		log.Printf("Worker %d: %d alerts triggered for monitor %s", workerID, len(alerts), monitor.Name)
+	if len(redFlags) > 0 {
+		log.Printf("Worker %d: %d red flags triggered for monitor %s", workerID, len(redFlags), monitor.Name)
 	}
 }

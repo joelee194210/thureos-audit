@@ -22,7 +22,7 @@ func NewActivityHandler(activityRepo *repository.ActivityLogRepository) *Activit
 // validActions is the allowlist of known activity types for query filtering.
 var validActions = map[string]bool{
 	string(models.ActivityLogin):       true,
-	string(models.ActivityAlertAction): true,
+	string(models.ActivityRedFlagAction): true,
 	string(models.ActivityRuleCreate):  true,
 	string(models.ActivityRuleUpdate):  true,
 	string(models.ActivityRuleDelete):  true,

@@ -45,10 +45,10 @@ const (
 type ActionType string
 
 const (
-	ActionAlert ActionType = "alert"
-	ActionFlag  ActionType = "flag"
-	ActionBlock ActionType = "block"
-	ActionLog   ActionType = "log"
+	ActionRedFlag ActionType = "red_flag"
+	ActionFlag    ActionType = "flag"
+	ActionBlock   ActionType = "block"
+	ActionLog     ActionType = "log"
 )
 
 type Condition struct {
@@ -71,13 +71,13 @@ const (
 // AggregateCondition evaluates an aggregate (SUM, COUNT, etc.) over a time window.
 // Example: SUM of "monto" grouped by "nombrecliente" in last "30d" > 50000
 type AggregateCondition struct {
-	Field      string      `bson:"field" json:"field"`           // numeric field to aggregate
-	Function   AggFunction `bson:"function" json:"function"`     // sum, count, avg, min, max
-	GroupBy    string      `bson:"group_by" json:"groupBy"`      // field to group by (e.g. client)
-	TimeField  string      `bson:"time_field" json:"timeField"`  // date field for the window
+	Field      string      `bson:"field" json:"field"`            // numeric field to aggregate
+	Function   AggFunction `bson:"function" json:"function"`      // sum, count, avg, min, max
+	GroupBy    string      `bson:"group_by" json:"groupBy"`       // field to group by (e.g. client)
+	TimeField  string      `bson:"time_field" json:"timeField"`   // date field for the window
 	TimeWindow string      `bson:"time_window" json:"timeWindow"` // duration: "24h", "7d", "30d"
-	Operator   Operator    `bson:"operator" json:"operator"`     // comparison: gt, gte, lt, etc.
-	Threshold  float64     `bson:"threshold" json:"threshold"`   // value to compare against
+	Operator   Operator    `bson:"operator" json:"operator"`      // comparison: gt, gte, lt, etc.
+	Threshold  float64     `bson:"threshold" json:"threshold"`    // value to compare against
 }
 
 type ConditionGroup struct {
@@ -168,7 +168,7 @@ type CreateRuleRequest struct {
 }
 
 type AIRuleRequest struct {
-	MonitorID   string `json:"monitorId"`
-	Prompt      string `json:"prompt"`
-	DataSample  string `json:"dataSample,omitempty"`
+	MonitorID  string `json:"monitorId"`
+	Prompt     string `json:"prompt"`
+	DataSample string `json:"dataSample,omitempty"`
 }

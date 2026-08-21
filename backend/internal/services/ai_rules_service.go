@@ -16,12 +16,12 @@ import (
 
 // AIRuleSuggestion represents a single AI-generated rule suggestion.
 type AIRuleSuggestion struct {
-	Name           string               `json:"name"`
-	Description    string               `json:"description"`
+	Name           string                `json:"name"`
+	Description    string                `json:"description"`
 	ConditionGroup models.ConditionGroup `json:"conditionGroup"`
-	Severity       models.Severity      `json:"severity"`
-	Actions        []models.ActionType  `json:"actions"`
-	Reasoning      string               `json:"reasoning"`
+	Severity       models.Severity       `json:"severity"`
+	Actions        []models.ActionType   `json:"actions"`
+	Reasoning      string                `json:"reasoning"`
 }
 
 // systemPrompt is shared across all providers — the contract stays the same.
@@ -38,7 +38,7 @@ Return ONLY a JSON array of rule suggestions. Each rule must follow this exact s
     ]
   },
   "severity": "low|medium|high|critical",
-  "actions": ["alert", "flag", "log"],
+  "actions": ["red_flag", "flag", "log"],
   "reasoning": "Why this rule is important"
 }
 
@@ -125,8 +125,8 @@ func callAnthropic(ctx context.Context, ai models.AIConfig, userMessage string) 
 
 // deepSeekRequest / deepSeekResponse follow the OpenAI-compatible format.
 type deepSeekRequest struct {
-	Model    string              `json:"model"`
-	Messages []deepSeekMessage   `json:"messages"`
+	Model     string            `json:"model"`
+	Messages  []deepSeekMessage `json:"messages"`
 	MaxTokens int               `json:"max_tokens"`
 }
 

@@ -15,18 +15,18 @@ const (
 	WidgetAreaChart   WidgetType = "area_chart"
 	WidgetTable       WidgetType = "table"
 	WidgetStat        WidgetType = "stat"
-	WidgetAlertList   WidgetType = "alert_list"
+	WidgetRedFlagList WidgetType = "red_flag_list"
 	WidgetTimeline    WidgetType = "timeline"
 )
 
 type AggregationType string
 
 const (
-	AggCount   AggregationType = "count"
-	AggSum     AggregationType = "sum"
-	AggAvg     AggregationType = "avg"
-	AggMin     AggregationType = "min"
-	AggMax     AggregationType = "max"
+	AggCount    AggregationType = "count"
+	AggSum      AggregationType = "sum"
+	AggAvg      AggregationType = "avg"
+	AggMin      AggregationType = "min"
+	AggMax      AggregationType = "max"
 	AggDistinct AggregationType = "distinct"
 )
 

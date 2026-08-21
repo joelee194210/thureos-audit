@@ -114,14 +114,14 @@ func (h *RuleHandler) Get(c *fiber.Ctx) error {
 
 // updateRuleRequest mirrors the JSON body for rule updates with proper BSON mapping.
 type updateRuleRequest struct {
-	Name                *string                    `json:"name" bson:"name,omitempty"`
-	Description         *string                    `json:"description" bson:"description,omitempty"`
-	Severity            *models.Severity           `json:"severity" bson:"severity,omitempty"`
-	Active              *bool                      `json:"active" bson:"active,omitempty"`
-	Actions             []models.ActionType        `json:"actions" bson:"actions,omitempty"`
-	ConditionGroup      *models.ConditionGroup     `json:"conditionGroup" bson:"condition_group,omitempty"`
+	Name                *string                     `json:"name" bson:"name,omitempty"`
+	Description         *string                     `json:"description" bson:"description,omitempty"`
+	Severity            *models.Severity            `json:"severity" bson:"severity,omitempty"`
+	Active              *bool                       `json:"active" bson:"active,omitempty"`
+	Actions             []models.ActionType         `json:"actions" bson:"actions,omitempty"`
+	ConditionGroup      *models.ConditionGroup      `json:"conditionGroup" bson:"condition_group,omitempty"`
 	AggregateConditions []models.AggregateCondition `json:"aggregateConditions" bson:"aggregate_conditions,omitempty"`
-	Schedule            *models.RuleSchedule       `json:"schedule" bson:"schedule,omitempty"`
+	Schedule            *models.RuleSchedule        `json:"schedule" bson:"schedule,omitempty"`
 }
 
 func (h *RuleHandler) Update(c *fiber.Ctx) error {
@@ -211,14 +211,14 @@ func (h *RuleHandler) Execute(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 	}
 
-	alerts, err := h.ruleEngine.EvaluateRuleNow(c.Context(), monitor, *rule)
+	redFlags, err := h.ruleEngine.EvaluateRuleNow(c.Context(), monitor, *rule)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	return c.JSON(fiber.Map{
-		"alertsGenerated": len(alerts),
-		"alerts":          alerts,
+		"redFlagsGenerated": len(redFlags),
+		"redFlags":          redFlags,
 	})
 }
 
