@@ -59,9 +59,23 @@ así que un inicio de sesión correcto no consume cupo. En el registro lo que se
 es justamente la creación masiva de cuentas, que devuelve 201: ahí las peticiones
 correctas son el ataque, y contarlas es el punto.
 
-Verificado en ejecución contra el servidor real: los intentos 1–10 de login responden
-401 y el 11 corta con 429; el registro corta en el sexto. `/health` y las rutas
-protegidas no se ven afectadas.
+Verificado en ejecución contra el servidor real, con un usuario temporal creado y
+borrado para la prueba:
+
+| Prueba | Resultado |
+|---|---|
+| 15 inicios de sesión **correctos** seguidos | 15 × 200 — ninguno consume cupo |
+| 12 intentos **fallidos** | 10 × 401, luego 429 |
+| Inicio correcto con el cupo ya agotado | 429 |
+| Registro, 7 intentos | 5 pasan, el sexto corta |
+| `/health` y rutas protegidas | intactas |
+
+La tercera fila es el matiz que conviene tener presente: no acumular cupo no es lo
+mismo que quedar exento. Una vez que los fallos agotan la ventana, esa IP queda
+cortada durante los cinco minutos aunque quien llegue después traiga la contraseña
+correcta, porque el limitador responde antes de que la petición alcance el handler.
+Es el comportamiento que se quiere frente a un ataque, y el coste que se paga si el
+ataque viene desde la misma IP que los usuarios legítimos.
 
 **Tres decisiones y sus contrapartidas**, todas deliberadas:
 
