@@ -90,16 +90,23 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 		allRows = append(allRows, row)
 	}
 
+	// Real exports routinely have blank or repeated header cells (unlabeled
+	// trailing columns, copy-pasted headers). Without deduping, two columns
+	// sanitizing to the same field name collide when written into the same
+	// BSON document — the second silently overwrites the first, so a monitor
+	// can report N detected columns while actually storing fewer.
+	fieldNames := dedupeFieldNames(headers)
+
 	if len(monitor.Schema) == 0 {
-		monitor.Schema = detectSchemaFromCSV(headers, allRows)
+		monitor.Schema = detectSchemaFromCSV(fieldNames, allRows)
 	}
 
 	documents := make([]interface{}, 0, len(allRows))
 	for _, row := range allRows {
 		doc := bson.M{"_ingested_at": time.Now()}
-		for i, header := range headers {
+		for i, name := range fieldNames {
 			if i < len(row) {
-				doc[sanitizeFieldName(header)] = parseValue(row[i], monitor.Schema, header)
+				doc[name] = parseValue(row[i], monitor.Schema, name)
 			}
 		}
 		documents = append(documents, doc)
@@ -258,16 +265,18 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	headers := rows[0]
 	dataRows := rows[1:]
 
+	fieldNames := dedupeFieldNames(headers)
+
 	if len(monitor.Schema) == 0 {
-		monitor.Schema = detectSchemaFromCSV(headers, dataRows)
+		monitor.Schema = detectSchemaFromCSV(fieldNames, dataRows)
 	}
 
 	documents := make([]interface{}, 0, len(dataRows))
 	for _, row := range dataRows {
 		doc := bson.M{"_ingested_at": time.Now()}
-		for i, header := range headers {
+		for i, name := range fieldNames {
 			if i < len(row) {
-				doc[sanitizeFieldName(header)] = parseValue(row[i], monitor.Schema, header)
+				doc[name] = parseValue(row[i], monitor.Schema, name)
 			}
 		}
 		documents = append(documents, doc)
@@ -290,9 +299,11 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 
 // Schema detection helpers
 
-func detectSchemaFromCSV(headers []string, rows [][]string) []models.SchemaField {
-	schema := make([]models.SchemaField, len(headers))
-	for i, h := range headers {
+// detectSchemaFromCSV expects fieldNames already sanitized and deduped
+// (see dedupeFieldNames) — it does not re-derive names from raw headers.
+func detectSchemaFromCSV(fieldNames []string, rows [][]string) []models.SchemaField {
+	schema := make([]models.SchemaField, len(fieldNames))
+	for i, name := range fieldNames {
 		fieldType := models.FieldString
 		sample := ""
 
@@ -305,13 +316,34 @@ func detectSchemaFromCSV(headers []string, rows [][]string) []models.SchemaField
 		}
 
 		schema[i] = models.SchemaField{
-			Name:     sanitizeFieldName(h),
+			Name:     name,
 			Type:     fieldType,
 			Required: true,
 			Sample:   sample,
 		}
 	}
 	return schema
+}
+
+// dedupeFieldNames sanitizes each header and disambiguates collisions
+// (blank or repeated header cells are common in real exports) by suffixing
+// repeats with _2, _3, ... — otherwise two columns writing to the same BSON
+// key would silently overwrite each other when the document is built.
+func dedupeFieldNames(headers []string) []string {
+	seen := make(map[string]int, len(headers))
+	names := make([]string, len(headers))
+	for i, h := range headers {
+		name := sanitizeFieldName(h)
+		if name == "" {
+			name = fmt.Sprintf("col_%d", i+1)
+		}
+		seen[name]++
+		if n := seen[name]; n > 1 {
+			name = fmt.Sprintf("%s_%d", name, n)
+		}
+		names[i] = name
+	}
+	return names
 }
 
 func detectSchemaFromJSON(records []map[string]interface{}) []models.SchemaField {
@@ -363,9 +395,12 @@ func inferType(value string) models.FieldType {
 	return models.FieldString
 }
 
+// parseValue expects fieldName already resolved to its final schema field
+// name (see dedupeFieldNames) — it matches schema entries exactly, without
+// re-sanitizing, so it still finds duplicate-derived names like "928_2".
 func parseValue(value string, schema []models.SchemaField, fieldName string) interface{} {
 	for _, field := range schema {
-		if field.Name == sanitizeFieldName(fieldName) {
+		if field.Name == fieldName {
 			switch field.Type {
 			case models.FieldNumber:
 				if f, err := strconv.ParseFloat(value, 64); err == nil {
