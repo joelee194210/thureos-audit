@@ -10,7 +10,7 @@ import (
 	"github.com/thureos/compliance/internal/config"
 	"github.com/thureos/compliance/internal/middleware"
 	"github.com/thureos/compliance/internal/models"
-	"github.com/thureos/compliance/internal/repository"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -20,12 +20,22 @@ const (
 	MinPasswordLength = 12
 )
 
+// userStore es la superficie del repositorio de usuarios que necesita este
+// servicio. Se declara aquí, en el consumidor, para poder ejercitar el flujo
+// de autenticación sin Mongo. *repository.UserRepository la satisface.
+type userStore interface {
+	Create(ctx context.Context, user *models.User) error
+	FindByEmail(ctx context.Context, email string) (*models.User, error)
+	IncrementFailedLogin(ctx context.Context, id primitive.ObjectID, maxAttempts int, lockoutDuration time.Duration) error
+	ResetFailedLogin(ctx context.Context, id primitive.ObjectID) error
+}
+
 type AuthService struct {
-	userRepo *repository.UserRepository
+	userRepo userStore
 	cfg      *config.Config
 }
 
-func NewAuthService(userRepo *repository.UserRepository, cfg *config.Config) *AuthService {
+func NewAuthService(userRepo userStore, cfg *config.Config) *AuthService {
 	return &AuthService{userRepo: userRepo, cfg: cfg}
 }
 
@@ -106,9 +116,20 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 	}
 
 	// Check lockout — after too many failed attempts the account is temporarily locked
-	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
-		return nil, fmt.Errorf("cuenta bloqueada temporalmente, intenta de nuevo después de %s",
-			user.LockedUntil.Format("15:04"))
+	if user.LockedUntil != nil {
+		if time.Now().Before(*user.LockedUntil) {
+			return nil, fmt.Errorf("cuenta bloqueada temporalmente, intenta de nuevo después de %s",
+				user.LockedUntil.Format("15:04"))
+		}
+		// El bloqueo venció: hay que devolverle al usuario sus intentos. Sin
+		// esto el contador sigue en el umbral y el próximo fallo dispara un
+		// bloqueo nuevo de inmediato, de modo que una petición cada
+		// LockoutDuration deja a esa persona fuera del sistema para siempre.
+		if resetErr := s.userRepo.ResetFailedLogin(ctx, user.ID); resetErr != nil {
+			fmt.Printf("WARNING: failed to clear expired lockout for %s: %v\n", user.Email, resetErr)
+		}
+		user.FailedLoginAttempts = 0
+		user.LockedUntil = nil
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {

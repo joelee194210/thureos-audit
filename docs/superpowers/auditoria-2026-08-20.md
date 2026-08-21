@@ -37,9 +37,67 @@ un secreto público del repositorio. Ahora, mediante la variable nueva `APP_ENV`
 
 Los tres casos están verificados en ejecución.
 
-### F3 · Sin rate limiting ni bloqueo de cuenta — *pendiente*
-No existe `limiter` en el backend. `/api/v1/auth/login` acepta intentos ilimitados.
-Relevante para una plataforma de cumplimiento.
+### F3 · Sin rate limiting por IP — **[resuelto]**
+
+**El enunciado original de este hallazgo era incorrecto.** Decía «sin rate limiting
+ni bloqueo de cuenta»; la segunda mitad es falsa. El bloqueo por cuenta ya estaba
+implementado de extremo a extremo —`MaxFailedAttempts = 5` y `LockoutDuration = 15m`
+en `auth_service.go`, campos `failed_login_attempts` y `locked_until` en el modelo,
+`IncrementFailedLogin` y `ResetFailedLogin` en el repositorio—. Lo que faltaba era
+el límite por IP, y eso sí: no existía ningún `limiter`.
+
+Añadido `middleware.AuthRateLimiter`, que envuelve el limitador que ya trae Fiber,
+sobre las dos rutas públicas:
+
+| Ruta | Cupo por IP |
+|---|---|
+| `POST /api/v1/auth/login` | 10 intentos / 5 min |
+| `POST /api/v1/auth/register` | 5 intentos / 1 h |
+
+Verificado en ejecución contra el servidor real: los intentos 1–10 de login responden
+401 y el 11 corta con 429; el registro corta en el sexto. `/health` y las rutas
+protegidas no se ven afectadas.
+
+**Tres decisiones y sus contrapartidas**, todas deliberadas:
+
+- **Almacén en memoria, no Redis.** Redis es opcional en esta aplicación: `main.go`
+  advierte y continúa si falla. Un limitador que dependiera de él podría dejar el
+  login inaccesible por una caída de la caché. La contrapartida es que **el cupo es
+  por proceso**: detrás de más de una instancia hay que revisarlo.
+- **Una dependencia indirecta nueva.** El limitador vive dentro del módulo Fiber que
+  ya se importaba, así que no hay dependencia directa nueva, pero arrastra
+  `tinylib/msgp` y `philhofer/fwd` a `go.mod` y `go.sum`.
+- **`c.IP()` es el par del socket.** `fiber.Config` no declara proxies de confianza,
+  lo cual es correcto en un solo host. **Detrás de un proxy inverso todos los usuarios
+  compartirían cupo y se bloquearían entre sí**; configurar `TrustedProxies` es lo
+  primero que hay que hacer si aparece uno. Leer `X-Forwarded-For` sin esa
+  configuración sería peor: se falsifica con una cabecera.
+
+El mensaje de cuenta bloqueada se deja como está —revela que la cuenta existe y a qué
+hora se recupera el acceso—. Es enumeración de usuarios, pero esto es un panel interno
+de cumplimiento, no un servicio público: el dato vale poco al atacante y mucho a quien
+se quedó fuera.
+
+### B1 · El bloqueo de cuenta se podía usar como arma — **[resuelto]**
+
+Encontrado al implementar F3. `ResetFailedLogin` se invocaba en un único sitio: tras
+un login correcto. Nada limpiaba el contador cuando el bloqueo **expiraba**, así que
+seguía en el umbral:
+
+```
+cuenta bloqueada → pasan 15 min → un intento fallido
+  → $inc deja el contador en 6 → 6 >= 5 → otros 15 min de bloqueo
+```
+
+Cualquiera que conociera el correo de un usuario lo mantenía fuera del sistema
+indefinidamente con **una petición cada cuarto de hora**. El límite por IP no lo
+arregla: el ataque no necesita volumen. En una plataforma de cumplimiento, dejar
+fuera a un analista a voluntad pesa más que la fuerza bruta que el bloqueo frenaba.
+
+Corregido distinguiendo bloqueo vigente de bloqueo vencido: al vencer se limpian
+contador y `locked_until` antes de evaluar la contraseña. Verificado contra Mongo
+real —un usuario con 5 intentos y bloqueo vencido queda en 1 intento y sin bloqueo
+tras un fallo, donde antes quedaba en 6 y bloqueado de nuevo—.
 
 ### F4 · 16 archivos Go sin formatear — *pendiente*
 `gofmt -l backend/` los lista. No afecta a la ejecución.
@@ -48,9 +106,16 @@ Relevante para una plataforma de cumplimiento.
 `package.json` declara `"lint": "next lint"` pero no existe `eslint.config.*`. El script
 abre un asistente interactivo: inutilizable en CI.
 
-### F6 · Sin cobertura de pruebas — *pendiente*
-Vitest y `@testing-library/react` instalados, cero archivos de test. Backend igual.
-`rule_engine.go` (718 líneas) es el núcleo del producto y no tiene una sola prueba.
+### F6 · Sin cobertura de pruebas — *pendiente, con la primera mella*
+Vitest y `@testing-library/react` instalados, cero archivos de test en el frontend.
+`rule_engine.go` (718 líneas) es el núcleo del producto y sigue sin una sola prueba.
+
+El backend ya no está a cero: F3 y B1 trajeron los **primeros tests en Go del
+repositorio**, cuatro casos que corren con `go test ./...` sin Mongo, sin Redis y sin
+levantar nada. Para poder ejercitar el flujo de login sin base de datos se declaró
+`userStore`, una interfaz de cuatro métodos en el consumidor
+(`internal/services/auth_service.go`); `*repository.UserRepository` la satisface tal
+cual y `main.go` no cambió. Ese es el patrón a repetir para atacar `rule_engine.go`.
 
 ### F7 · Puerto por defecto del cliente API incorrecto — **[resuelto]**
 `frontend/src/lib/api/client.ts` caía a `http://localhost:8082/api/v1`, pero el backend

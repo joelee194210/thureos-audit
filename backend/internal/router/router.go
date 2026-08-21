@@ -13,17 +13,17 @@ import (
 )
 
 type Handlers struct {
-	Auth         *handlers.AuthHandler
-	Monitor      *handlers.MonitorHandler
-	Rule         *handlers.RuleHandler
-	Dashboard    *handlers.DashboardHandler
-	Alert        *handlers.AlertHandler
-	User         *handlers.UserHandler
-	MCC          *handlers.MCCHandler
-	Country      *handlers.CountryHandler
-	Activity     *handlers.ActivityHandler
-	Scheduler    interface{ Status() map[string]interface{} }
-	ConfigRepo   *repository.SystemConfigRepository
+	Auth       *handlers.AuthHandler
+	Monitor    *handlers.MonitorHandler
+	Rule       *handlers.RuleHandler
+	Dashboard  *handlers.DashboardHandler
+	Alert      *handlers.AlertHandler
+	User       *handlers.UserHandler
+	MCC        *handlers.MCCHandler
+	Country    *handlers.CountryHandler
+	Activity   *handlers.ActivityHandler
+	Scheduler  interface{ Status() map[string]interface{} }
+	ConfigRepo *repository.SystemConfigRepository
 }
 
 func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
@@ -45,9 +45,15 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	api := app.Group("/api/v1")
 
 	// Public routes
+	// Endpoints públicos: limitados por IP para que la fuerza bruta contra
+	// credenciales y la creación masiva de cuentas tengan coste.
 	auth := api.Group("/auth")
-	auth.Post("/register", h.Auth.Register)
-	auth.Post("/login", h.Auth.Login)
+	auth.Post("/register",
+		middleware.AuthRateLimiter(middleware.RegisterMaxAttempts, middleware.RegisterWindow),
+		h.Auth.Register)
+	auth.Post("/login",
+		middleware.AuthRateLimiter(middleware.LoginMaxAttempts, middleware.LoginWindow),
+		h.Auth.Login)
 
 	// Protected routes
 	protected := api.Group("", middleware.AuthRequired(cfg))
@@ -173,11 +179,11 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load AI config"})
 		}
 		return c.JSON(fiber.Map{
-			"provider":       string(aiCfg.AI.Provider),
-			"model":          aiCfg.AI.Model,
-			"apiKeyMasked":   models.MaskAPIKey(aiCfg.AI.APIKey),
-			"apiKeySet":      aiCfg.AI.APIKey != "",
-			"baseUrl":        aiCfg.AI.BaseURL,
+			"provider":        string(aiCfg.AI.Provider),
+			"model":           aiCfg.AI.Model,
+			"apiKeyMasked":    models.MaskAPIKey(aiCfg.AI.APIKey),
+			"apiKeySet":       aiCfg.AI.APIKey != "",
+			"baseUrl":         aiCfg.AI.BaseURL,
 			"availableModels": models.AIProviderModels,
 		})
 	})
