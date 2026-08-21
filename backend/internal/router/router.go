@@ -17,7 +17,7 @@ type Handlers struct {
 	Monitor    *handlers.MonitorHandler
 	Rule       *handlers.RuleHandler
 	Dashboard  *handlers.DashboardHandler
-	Alert      *handlers.AlertHandler
+	RedFlag    *handlers.RedFlagHandler
 	User       *handlers.UserHandler
 	MCC        *handlers.MCCHandler
 	Country    *handlers.CountryHandler
@@ -54,6 +54,11 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	auth.Post("/login",
 		middleware.LoginRateLimiter(),
 		h.Auth.Login)
+
+	// Public ingest endpoint for API+push monitors — authenticated by a
+	// per-monitor secret token (X-Ingest-Token header), not JWT. An
+	// external system pushing data has no user session.
+	api.Post("/ingest/:monitorId", h.Monitor.IngestPush)
 
 	// Protected routes
 	protected := api.Group("", middleware.AuthRequired(cfg))
@@ -95,16 +100,16 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	dashboards.Delete("/:id/widgets/:widgetId", middleware.RequireComplianceOrAbove(), h.Dashboard.DeleteWidget)
 	dashboards.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Dashboard.Delete)
 
-	// Alerts
-	alerts := protected.Group("/alerts")
-	alerts.Get("/", h.Alert.List)
-	alerts.Get("/stats", h.Alert.Stats)
-	alerts.Get("/calendar", h.Alert.Calendar)
-	alerts.Get("/date/:date", h.Alert.ByDate)
-	alerts.Get("/:id", h.Alert.Get)
-	alerts.Get("/:id/records", h.Alert.GetRecords)
-	alerts.Get("/:id/logs", h.Alert.GetLogs)
-	alerts.Patch("/:id/status", middleware.RequireComplianceOrAbove(), h.Alert.UpdateStatus)
+	// Red flags
+	redFlags := protected.Group("/red-flags")
+	redFlags.Get("/", h.RedFlag.List)
+	redFlags.Get("/stats", h.RedFlag.Stats)
+	redFlags.Get("/calendar", h.RedFlag.Calendar)
+	redFlags.Get("/date/:date", h.RedFlag.ByDate)
+	redFlags.Get("/:id", h.RedFlag.Get)
+	redFlags.Get("/:id/records", h.RedFlag.GetRecords)
+	redFlags.Get("/:id/logs", h.RedFlag.GetLogs)
+	redFlags.Patch("/:id/status", middleware.RequireComplianceOrAbove(), h.RedFlag.UpdateStatus)
 
 	// MCCs (catalog)
 	mccs := protected.Group("/mccs")

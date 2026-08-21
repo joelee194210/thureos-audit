@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 
 	"github.com/gofiber/fiber/v2"
@@ -260,5 +262,45 @@ func (h *MonitorHandler) GetData(c *fiber.Ctx) error {
 		"data":   data,
 		"total":  monitor.RecordCount,
 		"schema": monitor.Schema,
+	})
+}
+
+// IngestPush receives data pushed by an external system for an API+push
+// monitor. Public route (no JWT) — authenticated by a per-monitor secret
+// token instead, since an external system has no user session.
+func (h *MonitorHandler) IngestPush(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("monitorId"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+
+	if monitor.SourceType != models.SourceAPI || monitor.SourceConfig == nil || monitor.SourceConfig.Mode != models.APIModePush {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitor is not configured for API push"})
+	}
+
+	token := c.Get("X-Ingest-Token")
+	if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(monitor.SourceConfig.PushToken)) != 1 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid or missing ingest token"})
+	}
+
+	count, err := h.ingestionService.IngestJSON(c.Context(), monitor, bytes.NewReader(c.Body()))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	queued := false
+	if h.jobQueue != nil {
+		err = h.jobQueue.Enqueue(c.Context(), services.EvalJob{MonitorID: id.Hex()})
+		queued = err == nil
+	}
+
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"recordsIngested":  count,
+		"evaluationQueued": queued,
 	})
 }
