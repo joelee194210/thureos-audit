@@ -275,12 +275,13 @@ func (h *MonitorHandler) IngestPush(c *fiber.Ctx) error {
 	}
 
 	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
-	if err != nil {
+	if err != nil || monitor.SourceType != models.SourceAPI || monitor.SourceConfig == nil || monitor.SourceConfig.Mode != models.APIModePush {
+		// Same response whether the monitor doesn't exist or isn't
+		// configured for API push: an unauthenticated caller must not be
+		// able to distinguish "no such monitor" from "wrong kind of
+		// monitor" — that would be an existence/config oracle probeable
+		// without any credentials.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
-	}
-
-	if monitor.SourceType != models.SourceAPI || monitor.SourceConfig == nil || monitor.SourceConfig.Mode != models.APIModePush {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitor is not configured for API push"})
 	}
 
 	token := c.Get("X-Ingest-Token")
