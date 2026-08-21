@@ -58,7 +58,10 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	// Public ingest endpoint for API+push monitors — authenticated by a
 	// per-monitor secret token (X-Ingest-Token header), not JWT. An
 	// external system pushing data has no user session.
-	api.Post("/ingest/:monitorId", h.Monitor.IngestPush)
+	api.Post("/ingest/:monitorId",
+		middleware.IngestRateLimiter(),
+		middleware.IngestBodySizeLimit(10*1024*1024),
+		h.Monitor.IngestPush)
 
 	// Protected routes
 	protected := api.Group("", middleware.AuthRequired(cfg))

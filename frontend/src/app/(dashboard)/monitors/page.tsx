@@ -77,8 +77,9 @@ export default function MonitorsPage() {
                 pullAuthHeaderName: newMonitor.pullAuthHeaderName || undefined,
                 pullAuthValue: newMonitor.pullAuthValue || undefined,
                 pullIntervalMinutes: Number(newMonitor.pullIntervalMinutes) || 60,
+                rootPath: newMonitor.rootPath || undefined,
               }
-            : { mode: "push" };
+            : { mode: "push", rootPath: newMonitor.rootPath || undefined };
       }
 
       const result = await monitorsApi.create({
@@ -226,6 +227,15 @@ export default function MonitorsPage() {
                           <SelectItem value="pull">Pull — consultamos una API externa por horario</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Ruta raíz (opcional)</Label>
+                      <Input
+                        value={newMonitor.rootPath}
+                        onChange={(e) => setNewMonitor({ ...newMonitor, rootPath: e.target.value })}
+                        placeholder="ej. data.records — si la API envuelve el array en un campo"
+                      />
                     </div>
 
                     {newMonitor.apiMode === "push" ? (

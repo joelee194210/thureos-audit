@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
@@ -52,6 +54,10 @@ func (h *MonitorHandler) Create(c *fiber.Ctx) error {
 		OwnerID:      userID,
 	}
 
+	if err := validateSourceConfig(monitor.SourceType, monitor.SourceConfig); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	var pushToken string
 	if monitor.SourceType == models.SourceAPI && monitor.SourceConfig != nil && monitor.SourceConfig.Mode == models.APIModePush {
 		token, err := generatePushToken()
@@ -83,6 +89,32 @@ func generatePushToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+// validateSourceConfig rejects monitor configurations that can never
+// receive data — the exact class of bug this feature exists to prevent
+// (a monitor that saves successfully but has no working ingestion path).
+// Non-api source types have no required SourceConfig fields, so nil/empty
+// configs are always valid for them.
+func validateSourceConfig(sourceType models.SourceType, cfg *models.SourceConfig) error {
+	if sourceType != models.SourceAPI {
+		return nil
+	}
+	if cfg == nil || cfg.Mode == "" {
+		return fmt.Errorf("api monitors require sourceConfig.mode (\"push\" or \"pull\")")
+	}
+	if cfg.Mode != models.APIModePush && cfg.Mode != models.APIModePull {
+		return fmt.Errorf("sourceConfig.mode must be \"push\" or \"pull\"")
+	}
+	if cfg.Mode == models.APIModePull {
+		if strings.TrimSpace(cfg.PullURL) == "" {
+			return fmt.Errorf("pull mode requires sourceConfig.pullUrl")
+		}
+		if cfg.PullAuthType == models.APIAuthAPIKey && strings.TrimSpace(cfg.PullAuthHeaderName) == "" {
+			return fmt.Errorf("api_key_header auth requires sourceConfig.pullAuthHeaderName")
+		}
+	}
+	return nil
 }
 
 func (h *MonitorHandler) List(c *fiber.Ctx) error {

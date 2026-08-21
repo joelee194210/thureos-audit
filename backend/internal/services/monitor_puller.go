@@ -174,7 +174,13 @@ func (p *MonitorPuller) pullOne(ctx context.Context, monitor models.Monitor) {
 	}
 
 	if p.jobQueue != nil {
-		_ = p.jobQueue.Enqueue(ctx, EvalJob{MonitorID: monitor.ID.Hex()})
+		if err := p.jobQueue.Enqueue(ctx, EvalJob{MonitorID: monitor.ID.Hex()}); err != nil {
+			// Data landed in Mongo but rule evaluation was never queued — this
+			// must be visible, not a silent "ok", or we've reintroduced the
+			// exact failure class this feature was built to eliminate.
+			p.recordResult(ctx, monitor, count, fmt.Errorf("ingested %d records but failed to queue rule evaluation: %w", count, err))
+			return
+		}
 	}
 
 	p.recordResult(ctx, monitor, count, nil)

@@ -53,3 +53,45 @@ func authRateLimiter(max int, window time.Duration, skipSuccessful bool) fiber.H
 		},
 	})
 }
+
+// Cupo del endpoint público de ingesta push. No hay objetivo de fuerza
+// bruta aquí (el token tiene 256 bits de entropía, es inviable de
+// adivinar) — esto acota el radio de disponibilidad de un endpoint
+// público sin límite de frecuencia propio.
+const (
+	IngestMaxRequests = 60
+	IngestWindow      = time.Minute
+)
+
+// IngestRateLimiter limita por IP las peticiones al endpoint de ingesta
+// push, para que no sea un vector de agotamiento de recursos sin cota.
+func IngestRateLimiter() fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        IngestMaxRequests,
+		Expiration: IngestWindow,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "too many requests",
+			})
+		},
+	})
+}
+
+// IngestBodySizeLimit rejects requests whose Content-Length exceeds
+// maxBytes before IngestJSON parses the body or any Mongo work happens. It
+// does NOT prevent the allocation itself: this app does not set
+// StreamRequestBody, so fasthttp has already buffered the full body (up to
+// the app-wide 50MB BodyLimit, see cmd/server/main.go) before any
+// middleware runs. It also can't see a chunked request that omits
+// Content-Length. Defense in depth for a public endpoint — not a hard
+// memory bound.
+func IngestBodySizeLimit(maxBytes int) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if c.Request().Header.ContentLength() > maxBytes {
+			return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{
+				"error": "request body too large",
+			})
+		}
+		return c.Next()
+	}
+}
