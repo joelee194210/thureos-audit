@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -14,6 +15,11 @@ import (
 	"github.com/thureos/compliance/internal/repository"
 	"go.mongodb.org/mongo-driver/bson"
 )
+
+// maxPullResponseBytes caps how much of an external API's response body we
+// read into memory — a misconfigured or malicious external API could
+// otherwise return an unbounded body and exhaust memory.
+const maxPullResponseBytes = 10 * 1024 * 1024 // 10MB
 
 // MonitorPuller periodically fetches data from external APIs for monitors
 // configured with SourceType "api" and SourceConfig.Mode "pull". Same
@@ -34,8 +40,42 @@ func NewMonitorPuller(monitorRepo *repository.MonitorRepository, ingestionServic
 		monitorRepo:      monitorRepo,
 		ingestionService: ingestionService,
 		jobQueue:         jobQueue,
-		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		httpClient:       newSafeHTTPClient(),
 	}
+}
+
+// newSafeHTTPClient returns an http.Client whose DialContext refuses to
+// connect to private, loopback, or link-local addresses (including the
+// 169.254.169.254 cloud metadata range) — PullURL is user-configured, so
+// without this check the puller is a textbook SSRF vector into internal
+// infrastructure. The check runs at dial time against the resolved IP, not
+// just against the hostname, so a DNS answer that changes between lookup
+// and connect (DNS rebinding) can't bypass it.
+func newSafeHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, fmt.Errorf("resolving %s: %w", host, err)
+			}
+			for _, ip := range ips {
+				if isPrivateOrReservedIP(ip) {
+					return nil, fmt.Errorf("refusing to connect to private/reserved address %s", ip)
+				}
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		},
+	}
+	return &http.Client{Timeout: 30 * time.Second, Transport: transport}
+}
+
+func isPrivateOrReservedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
 
 // Start launches the puller. Blocks until ctx is cancelled — call with `go`.
@@ -74,6 +114,18 @@ func (p *MonitorPuller) checkAndPull(ctx context.Context) {
 	now := time.Now()
 	for _, m := range monitors {
 		if m.SourceConfig.NextPullAt != nil && now.Before(*m.SourceConfig.NextPullAt) {
+			continue
+		}
+		// Reclama el slot ANTES de lanzar el pull: avanza NextPullAt de
+		// inmediato (no solo al terminar, en recordResult) para que el
+		// siguiente tick de cron no vuelva a seleccionar este monitor
+		// mientras el pull en curso todavía no respondió. recordResult
+		// vuelve a escribir NextPullAt al final con el valor correcto
+		// basado en el momento real de finalización, sobrescribiendo
+		// este reclamo optimista.
+		claimedNext := p.nextPullTime(m)
+		if err := p.monitorRepo.Update(ctx, m.ID, bson.M{"source_config.next_pull_at": claimedNext}); err != nil {
+			log.Printf("Monitor puller: failed to claim pull slot for monitor %s: %v", m.ID.Hex(), err)
 			continue
 		}
 		go func(monitor models.Monitor) {
@@ -115,7 +167,7 @@ func (p *MonitorPuller) pullOne(ctx context.Context, monitor models.Monitor) {
 		return
 	}
 
-	count, err := p.ingestionService.IngestJSON(ctx, &monitor, resp.Body)
+	count, err := p.ingestionService.IngestJSON(ctx, &monitor, io.LimitReader(resp.Body, maxPullResponseBytes))
 	if err != nil {
 		p.recordResult(ctx, monitor, 0, fmt.Errorf("ingesting response: %w", err))
 		return
