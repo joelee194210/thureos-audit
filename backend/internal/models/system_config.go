@@ -95,11 +95,19 @@ func (n NotificationConfig) WebhooksEnabled() bool {
 	return false
 }
 
+// WatchmanConfig es la URL del servicio de screening de sanciones (Moov
+// Watchman) — ya desplegado y operado fuera de esta app (VPS + cron de
+// actualización de listas); acá solo se configura contra qué URL hablarle.
+type WatchmanConfig struct {
+	URL string `bson:"url" json:"url"`
+}
+
 // SystemConfig is a singleton document storing system-wide settings.
 type SystemConfig struct {
 	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	AI            AIConfig           `bson:"ai" json:"ai"`
 	Notifications NotificationConfig `bson:"notifications" json:"notifications"`
+	Watchman      WatchmanConfig     `bson:"watchman" json:"watchman"`
 	UpdatedAt     time.Time          `bson:"updated_at" json:"updatedAt"`
 	UpdatedBy     string             `bson:"updated_by" json:"updatedBy"`
 }

@@ -148,6 +148,10 @@ type Rule struct {
 	LastTriggered          *time.Time           `bson:"last_triggered,omitempty" json:"lastTriggered,omitempty"`
 	Schedule               RuleSchedule         `bson:"schedule,omitempty" json:"schedule,omitempty"`
 	TemplateID             string               `bson:"template_id,omitempty" json:"templateId,omitempty"`
+	// ScreeningFields son los nombres de columnas del schema del monitor
+	// cuyo valor se screenea contra Watchman cuando la regla dispara —
+	// vacío significa que esta regla no dispara screening.
+	ScreeningFields        []string             `bson:"screening_fields,omitempty" json:"screeningFields,omitempty"`
 	FatfTypology           string               `bson:"fatf_typology,omitempty" json:"fatfTypology,omitempty"`
 	ThresholdJustification string               `bson:"threshold_justification,omitempty" json:"thresholdJustification,omitempty"`
 	RegulatoryBasis        string               `bson:"regulatory_basis,omitempty" json:"regulatoryBasis,omitempty"`
@@ -171,6 +175,7 @@ type CreateRuleRequest struct {
 	ThresholdJustification string               `json:"thresholdJustification,omitempty"`
 	RegulatoryBasis        string               `json:"regulatoryBasis,omitempty"`
 	AIGenerated            bool                 `json:"aiGenerated,omitempty"`
+	ScreeningFields        []string             `json:"screeningFields,omitempty"`
 }
 
 type AIRuleRequest struct {

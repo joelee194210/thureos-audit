@@ -140,6 +140,7 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 		Actions:             req.Actions,
 		Severity:            req.Severity,
 		AIGenerated:         req.AIGenerated,
+		ScreeningFields:     req.ScreeningFields,
 		CreatedBy:           userID,
 	}
 
@@ -211,6 +212,7 @@ type updateRuleRequest struct {
 	ConditionGroup      *models.ConditionGroup      `json:"conditionGroup" bson:"condition_group,omitempty"`
 	AggregateConditions []models.AggregateCondition `json:"aggregateConditions" bson:"aggregate_conditions,omitempty"`
 	Schedule            *models.RuleSchedule        `json:"schedule" bson:"schedule,omitempty"`
+	ScreeningFields     []string                    `json:"screeningFields" bson:"screening_fields,omitempty"`
 }
 
 func (h *RuleHandler) Update(c *fiber.Ctx) error {
@@ -257,6 +259,9 @@ func (h *RuleHandler) Update(c *fiber.Ctx) error {
 			sched.NextRun = &nextRun
 		}
 		update["schedule"] = sched
+	}
+	if req.ScreeningFields != nil {
+		update["screening_fields"] = req.ScreeningFields
 	}
 
 	if len(update) == 0 {
