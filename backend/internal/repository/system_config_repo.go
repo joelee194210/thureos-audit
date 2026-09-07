@@ -41,6 +41,7 @@ func (r *SystemConfigRepository) Upsert(ctx context.Context, cfg *models.SystemC
 		"$set": bson.M{
 			"ai":            cfg.AI,
 			"notifications": cfg.Notifications,
+			"watchman":      cfg.Watchman,
 			"updated_at":    cfg.UpdatedAt,
 			"updated_by":    cfg.UpdatedBy,
 		},
