@@ -48,6 +48,7 @@ import type { Dashboard, WidgetType } from "@/lib/types";
 import { mccApi } from "@/lib/api/mcc";
 import { useToast } from "@/lib/use-toast";
 import { TemplateGallery } from "@/components/rules/template-gallery";
+import { EffectivenessTable } from "@/components/rules/effectiveness-table";
 import { formatDate, cn } from "@/lib/utils";
 import { RISK_CLASSES } from "@/lib/semantic-colors";
 import type {
@@ -1013,6 +1014,16 @@ function RulesContent() {
     return filtered;
   }, [rules, filterMonitorId, activeTab]);
 
+  // Para la pestaña de efectividad: mismo filtro por monitor, sin el split
+  // diario/rango (la efectividad importa para cualquier tipo de regla).
+  const rulesForEffectiveness = useMemo(
+    () =>
+      rules.filter(
+        (r) => filterMonitorId === "all" || r.monitorId === filterMonitorId,
+      ),
+    [rules, filterMonitorId],
+  );
+
   const dailyCount = useMemo(
     () =>
       rules.filter(
@@ -1816,6 +1827,7 @@ function RulesContent() {
             <TabsTrigger value="schedule">
               Programacion ({rules.filter((r) => r.schedule?.enabled).length})
             </TabsTrigger>
+            <TabsTrigger value="effectiveness">Efectividad</TabsTrigger>
           </TabsList>
 
           <TabsContent value={activeTab} className="mt-0">
@@ -2130,6 +2142,10 @@ function RulesContent() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="effectiveness" className="mt-0">
+            <EffectivenessTable rules={rulesForEffectiveness} />
           </TabsContent>
         </Tabs>
       </div>
