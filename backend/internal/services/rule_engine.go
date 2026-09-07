@@ -22,6 +22,7 @@ type RuleEngine struct {
 	reportRepo  *repository.RedFlagReportRepository
 	execLogRepo *repository.RuleExecutionLogRepository
 	notifier    *NotificationService
+	screening   *ScreeningService
 }
 
 func NewRuleEngine(
@@ -47,6 +48,23 @@ func NewRuleEngine(
 // romper los constructores existentes ni los tests).
 func (e *RuleEngine) SetNotifier(n *NotificationService) {
 	e.notifier = n
+}
+
+// SetScreeningService conecta el servicio de screening (opcional, para no
+// romper los constructores existentes ni los tests).
+func (e *RuleEngine) SetScreeningService(s *ScreeningService) {
+	e.screening = s
+}
+
+// triggerScreening dispara el screening de los campos configurados en la
+// regla, solo para red flags NUEVOS — mismo criterio que triggerNotification
+// (evita re-screenear en cada re-trigger del mismo patrón). Corre en su
+// propia goroutine, igual que el reporte y la notificación.
+func (e *RuleEngine) triggerScreening(rf models.RedFlag, rule models.Rule, isNew bool) {
+	if e.screening == nil || !isNew || len(rule.ScreeningFields) == 0 {
+		return
+	}
+	go e.screening.ScreenRuleFields(context.Background(), rf.ID, rule.ScreeningFields, rf.MatchedData)
 }
 
 // triggerNotification encola el aviso de una bandera roja NUEVA; el
@@ -135,6 +153,7 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 						}
 						e.triggerReportGeneration(redFlag)
 						e.triggerNotification(redFlag, isNew)
+						e.triggerScreening(redFlag, rule, isNew)
 					}
 				}
 			}
@@ -160,6 +179,7 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 						}
 						e.triggerReportGeneration(aggRedFlags[i])
 						e.triggerNotification(aggRedFlags[i], isNew)
+						e.triggerScreening(aggRedFlags[i], rule, isNew)
 					}
 				}
 			}
@@ -560,6 +580,7 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 			}
 			e.triggerReportGeneration(candidate)
 			e.triggerNotification(candidate, isNew)
+			e.triggerScreening(candidate, rule, isNew)
 		}
 	}
 	return redFlags, nil
