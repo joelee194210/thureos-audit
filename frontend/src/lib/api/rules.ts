@@ -70,7 +70,28 @@ export const rulesApi = {
 
   effectivenessByTemplate: () =>
     api.get<TemplateEffectiveness[]>("/rule-templates/effectiveness"),
+
+  // Backtest: qué habría generado la regla contra el histórico ya
+  // ingerido del monitor, sin guardar nada — para juzgar señal vs. ruido
+  // antes de activarla.
+  backtest: (
+    monitorId: string,
+    data: {
+      conditionGroup: ConditionGroup;
+      aggregateConditions?: AggregateCondition[];
+      severity: Severity;
+    },
+  ) =>
+    api.post<BacktestResult>(
+      `/monitors/${monitorId}/rules/backtest`,
+      data,
+    ),
 };
+
+export interface BacktestResult {
+  matchCount: number;
+  sample: RedFlag[];
+}
 
 export interface EffectivenessStats {
   total: number;

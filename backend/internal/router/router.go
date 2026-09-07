@@ -106,6 +106,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	templateAPI.Get("/", h.RuleTemplate.List)
 	templateAPI.Get("/effectiveness", h.RuleTemplate.Effectiveness)
 	monitors.Post("/:id/rules/from-template", middleware.RequireComplianceOrAbove(), h.RuleTemplate.Instantiate)
+	monitors.Post("/:id/rules/backtest", middleware.RequireComplianceOrAbove(), h.Rule.Backtest)
 
 	// Dashboards
 	dashboards := protected.Group("/dashboards")

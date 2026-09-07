@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
@@ -48,6 +50,72 @@ func (h *RuleHandler) Effectiveness(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(services.ComputeEffectiveness(flags))
+}
+
+// maxBacktestSample caps how many candidate matches Backtest returns in
+// full — a preview only needs enough to judge signal vs. noise, not the
+// whole set.
+const maxBacktestSample = 20
+
+// backtestRuleRequest mirrors the parts of CreateRuleRequest a backtest
+// needs to run the matcher — no MonitorID (viene del path), nada de lo
+// que solo aplica a una regla ya persistida (schedule, actions).
+type backtestRuleRequest struct {
+	ConditionGroup      models.ConditionGroup       `json:"conditionGroup"`
+	AggregateConditions []models.AggregateCondition `json:"aggregateConditions,omitempty"`
+	Severity            models.Severity             `json:"severity"`
+	From                *time.Time                  `json:"from,omitempty"`
+	To                  *time.Time                  `json:"to,omitempty"`
+}
+
+// Backtest reporta qué habría generado una regla (sin guardarla) contra
+// los datos ya ingeridos de un monitor — para juzgar señal vs. ruido
+// antes de activarla. No persiste nada: ni red flag, ni notificación, ni
+// trigger_count.
+func (h *RuleHandler) Backtest(c *fiber.Ctx) error {
+	monitorID, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+	monitor, err := h.monitorRepo.FindByID(c.Context(), monitorID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor no encontrado"})
+	}
+
+	var req backtestRuleRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if len(req.ConditionGroup.Conditions) == 0 && len(req.AggregateConditions) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "la regla necesita al menos una condición para probar"})
+	}
+
+	rule := models.Rule{
+		MonitorID:           monitorID,
+		ConditionGroup:      req.ConditionGroup,
+		AggregateConditions: req.AggregateConditions,
+		Severity:            req.Severity,
+	}
+
+	from := time.Time{} // todo el histórico ingerido, por defecto
+	if req.From != nil {
+		from = *req.From
+	}
+	to := time.Now()
+	if req.To != nil {
+		to = *req.To
+	}
+
+	candidates := h.ruleEngine.BacktestRule(c.Context(), monitor, rule, from, to)
+
+	sample := candidates
+	if len(sample) > maxBacktestSample {
+		sample = sample[:maxBacktestSample]
+	}
+	return c.JSON(fiber.Map{
+		"matchCount": len(candidates),
+		"sample":     sample,
+	})
 }
 
 func (h *RuleHandler) Create(c *fiber.Ctx) error {
