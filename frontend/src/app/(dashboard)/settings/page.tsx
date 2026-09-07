@@ -13,10 +13,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings, Server, Database, Brain, CheckCircle, XCircle, Clock, Save, Loader2, Sun, Moon, Palette } from "lucide-react";
+import {
+  Settings,
+  Server,
+  Database,
+  Brain,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Save,
+  Loader2,
+  Sun,
+  Moon,
+  Palette,
+} from "lucide-react";
 import { api } from "@/lib/api/client";
 import { settingsApi, type AIConfigResponse } from "@/lib/api/settings";
 import { useToast } from "@/lib/use-toast";
+import { NotificationsCard } from "@/components/settings/notifications-card";
 import { useTheme } from "@/components/theme-provider";
 
 interface SystemSettings {
@@ -35,11 +49,6 @@ interface SystemSettings {
   };
 }
 
-const providerLabels: Record<string, string> = {
-  anthropic: "Anthropic (Claude)",
-  deepseek: "DeepSeek",
-};
-
 function StatusDot({ ok }: { ok: boolean }) {
   return ok ? (
     <CheckCircle className="h-4 w-4 text-success-fg" />
@@ -48,7 +57,15 @@ function StatusDot({ ok }: { ok: boolean }) {
   );
 }
 
-function InfoRow({ label, value, status }: { label: string; value: string; status?: boolean }) {
+function InfoRow({
+  label,
+  value,
+  status,
+}: {
+  label: string;
+  value: string;
+  status?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between rounded-md border p-3">
       <span className="text-sm text-muted-foreground">{label}</span>
@@ -109,7 +126,9 @@ export default function SettingsPage() {
       const sys = await api.get<SystemSettings>("/settings");
       setSettings(sys);
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Error al guardar configuracion");
+      toastError(
+        err instanceof Error ? err.message : "Error al guardar configuracion",
+      );
     } finally {
       setAiSaving(false);
     }
@@ -172,7 +191,8 @@ export default function SettingsPage() {
                 <div>
                   <p className="text-sm font-medium">Tema</p>
                   <p className="text-sm text-muted-foreground">
-                    {theme === "dark" ? "Oscuro" : "Claro"} — se recuerda en este navegador
+                    {theme === "dark" ? "Oscuro" : "Claro"} — se recuerda en
+                    este navegador
                   </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={toggleTheme}>
@@ -190,6 +210,9 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Notificaciones de banderas rojas (SMTP/Resend + webhooks) */}
+          <NotificationsCard />
+
           {/* AI Configuration — EDITABLE */}
           <Card>
             <CardHeader>
@@ -201,12 +224,17 @@ export default function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="ai-provider">Proveedor</Label>
-                  <Select value={aiProvider} onValueChange={handleProviderChange}>
+                  <Select
+                    value={aiProvider}
+                    onValueChange={handleProviderChange}
+                  >
                     <SelectTrigger id="ai-provider">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
+                      <SelectItem value="anthropic">
+                        Anthropic (Claude)
+                      </SelectItem>
                       <SelectItem value="deepseek">DeepSeek</SelectItem>
                     </SelectContent>
                   </Select>
@@ -220,7 +248,9 @@ export default function SettingsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {availableModels.map((m) => (
-                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -233,14 +263,19 @@ export default function SettingsPage() {
                   <Input
                     id="ai-key"
                     type="password"
-                    placeholder={aiConfig?.apiKeySet ? aiConfig.apiKeyMasked : "Ingresa tu API key"}
+                    placeholder={
+                      aiConfig?.apiKeySet
+                        ? aiConfig.apiKeyMasked
+                        : "Ingresa tu API key"
+                    }
                     value={aiApiKey}
                     onChange={(e) => setAiApiKey(e.target.value)}
                   />
                 </div>
                 {aiConfig?.apiKeySet && !aiApiKey && (
                   <p className="text-xs text-muted-foreground">
-                    Key actual: {aiConfig.apiKeyMasked} — deja vacio para mantenerla
+                    Key actual: {aiConfig.apiKeyMasked} — deja vacio para
+                    mantenerla
                   </p>
                 )}
               </div>
@@ -248,7 +283,9 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between pt-2">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <StatusDot ok={aiConfig?.apiKeySet ?? false} />
-                  {aiConfig?.apiKeySet ? "API Key configurada" : "API Key no configurada"}
+                  {aiConfig?.apiKeySet
+                    ? "API Key configurada"
+                    : "API Key no configurada"}
                 </div>
                 <Button onClick={saveAIConfig} disabled={aiSaving} size="sm">
                   {aiSaving ? (
@@ -271,9 +308,18 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <InfoRow label="Puerto" value={settings.port} />
-              <InfoRow label="Workers de evaluacion" value={String(settings.workers)} />
-              <InfoRow label="Max reintentos (dead queue)" value={String(settings.maxRetries)} />
-              <InfoRow label="Origenes permitidos" value={settings.allowedOrigins} />
+              <InfoRow
+                label="Workers de evaluacion"
+                value={String(settings.workers)}
+              />
+              <InfoRow
+                label="Max reintentos (dead queue)"
+                value={String(settings.maxRetries)}
+              />
+              <InfoRow
+                label="Origenes permitidos"
+                value={settings.allowedOrigins}
+              />
             </CardContent>
           </Card>
 
@@ -285,8 +331,16 @@ export default function SettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <InfoRow label="MongoDB" value={settings.mongoConnected ? "Conectado" : "Desconectado"} status={settings.mongoConnected} />
-              <InfoRow label="Redis" value={settings.redisConnected ? "Conectado" : "Desconectado"} status={settings.redisConnected} />
+              <InfoRow
+                label="MongoDB"
+                value={settings.mongoConnected ? "Conectado" : "Desconectado"}
+                status={settings.mongoConnected}
+              />
+              <InfoRow
+                label="Redis"
+                value={settings.redisConnected ? "Conectado" : "Desconectado"}
+                status={settings.redisConnected}
+              />
             </CardContent>
           </Card>
 
@@ -318,7 +372,10 @@ export default function SettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <InfoRow label="API URL" value={process.env.NEXT_PUBLIC_API_URL || "No configurada"} />
+              <InfoRow
+                label="API URL"
+                value={process.env.NEXT_PUBLIC_API_URL || "No configurada"}
+              />
               <InfoRow label="Version" value="1.0.0" />
             </CardContent>
           </Card>

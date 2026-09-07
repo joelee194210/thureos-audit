@@ -81,9 +81,11 @@ func isPrivateOrReservedIP(ip net.IP) bool {
 // Start launches the puller. Blocks until ctx is cancelled — call with `go`.
 func (p *MonitorPuller) Start(ctx context.Context) {
 	p.cron = cron.New()
-	p.cron.AddFunc("* * * * *", func() {
+	if _, err := p.cron.AddFunc("* * * * *", func() {
 		p.checkAndPull(ctx)
-	})
+	}); err != nil {
+		log.Printf("monitor puller: registrando chequeo de pull: %v", err)
+	}
 
 	p.mu.Lock()
 	p.running = true
@@ -159,7 +161,7 @@ func (p *MonitorPuller) pullOne(ctx context.Context, monitor models.Monitor) {
 		p.recordResult(ctx, monitor, 0, fmt.Errorf("requesting %s: %w", cfg.PullURL, err))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

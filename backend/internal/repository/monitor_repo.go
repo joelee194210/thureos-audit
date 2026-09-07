@@ -50,7 +50,7 @@ func (r *MonitorRepository) FindAll(ctx context.Context) ([]models.Monitor, erro
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var monitors []models.Monitor
 	if err := cursor.All(ctx, &monitors); err != nil {
@@ -64,7 +64,7 @@ func (r *MonitorRepository) FindByOwner(ctx context.Context, ownerID primitive.O
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var monitors []models.Monitor
 	if err := cursor.All(ctx, &monitors); err != nil {
@@ -95,7 +95,7 @@ func (r *MonitorRepository) FindPullMonitors(ctx context.Context) ([]models.Moni
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var monitors []models.Monitor
 	if err := cursor.All(ctx, &monitors); err != nil {
@@ -134,7 +134,7 @@ func (r *MonitorRepository) QueryData(ctx context.Context, collectionID string, 
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var results []bson.M
 	if err := cursor.All(ctx, &results); err != nil {
@@ -163,7 +163,7 @@ func (r *MonitorRepository) QueryDataPaginated(ctx context.Context, collectionID
 	if err != nil {
 		return nil, 0, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var results []bson.M
 	if err := cursor.All(ctx, &results); err != nil {
@@ -210,10 +210,10 @@ func (r *MonitorRepository) GetIngestionHistory(ctx context.Context) ([]Ingestio
 
 		var results []bson.M
 		if err := cursor.All(ctx, &results); err != nil {
-			cursor.Close(ctx)
+			_ = cursor.Close(ctx)
 			continue
 		}
-		cursor.Close(ctx)
+		_ = cursor.Close(ctx)
 
 		for _, r := range results {
 			date, _ := r["_id"].(string)
@@ -243,7 +243,7 @@ func (r *MonitorRepository) AggregateData(ctx context.Context, collectionID stri
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var results []bson.M
 	if err := cursor.All(ctx, &results); err != nil {

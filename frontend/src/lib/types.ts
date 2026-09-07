@@ -72,10 +72,21 @@ export interface Monitor {
 }
 
 export type Operator =
-  | "eq" | "neq" | "gt" | "lt" | "gte" | "lte"
-  | "contains" | "regex" | "in" | "not_in"
-  | "between" | "is_null" | "is_not_null"
-  | "starts_with" | "ends_with";
+  | "eq"
+  | "neq"
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte"
+  | "contains"
+  | "regex"
+  | "in"
+  | "not_in"
+  | "between"
+  | "is_null"
+  | "is_not_null"
+  | "starts_with"
+  | "ends_with";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 export type ActionType = "red_flag" | "flag" | "block" | "log";
@@ -104,8 +115,14 @@ export interface AggregateCondition {
 }
 
 export type SchedulePreset =
-  | "" | "daily_6am" | "daily_8am" | "daily_12pm" | "daily_6pm"
-  | "weekly_mon_8am" | "weekly_fri_6pm" | "monthly_1st_6am";
+  | ""
+  | "daily_6am"
+  | "daily_8am"
+  | "daily_12pm"
+  | "daily_6pm"
+  | "weekly_mon_8am"
+  | "weekly_fri_6pm"
+  | "monthly_1st_6am";
 
 export interface RuleSchedule {
   enabled: boolean;
@@ -139,7 +156,8 @@ export interface Rule {
   updatedAt: string;
 }
 
-export type RedFlagStatus = "new" | "acknowledged" | "resolved" | "dismissed";
+export type RedFlagStatus =
+  "new" | "acknowledged" | "escalated" | "resolved" | "dismissed";
 export type RedFlagType = "row" | "aggregate";
 
 export interface RedFlag {
@@ -163,15 +181,39 @@ export interface RedFlag {
   groupByValue?: string;
   threshold?: number;
   acknowledgedBy?: string;
+  assigneeId?: string;
+  priority?: number;
+  slaDueAt?: string;
+  disposition?: "false_positive" | "confirmed_ros" | "no_action";
+  closedAt?: string;
+  closedBy?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type WidgetType =
-  | "bar_chart" | "line_chart" | "pie_chart" | "area_chart"
-  | "table" | "stat" | "red_flag_list" | "timeline";
+export type RedFlagDisposition =
+  "false_positive" | "confirmed_ros" | "no_action";
 
-export type AggregationType = "count" | "sum" | "avg" | "min" | "max" | "distinct";
+export const CASE_LABELS: Record<string, string> = {
+  new: "Nueva",
+  acknowledged: "En investigación",
+  escalated: "Escalada",
+  resolved: "Cerrada (resuelta)",
+  dismissed: "Cerrada (descartada)",
+};
+
+export type WidgetType =
+  | "bar_chart"
+  | "line_chart"
+  | "pie_chart"
+  | "area_chart"
+  | "table"
+  | "stat"
+  | "red_flag_list"
+  | "timeline";
+
+export type AggregationType =
+  "count" | "sum" | "avg" | "min" | "max" | "distinct";
 
 export interface Widget {
   id: string;
@@ -195,7 +237,15 @@ export interface Dashboard {
   createdAt: string;
 }
 
-export type MCCNetwork = "visa" | "mastercard" | "unionpay" | "amex" | "discover" | "diners" | "jcb" | "all";
+export type MCCNetwork =
+  | "visa"
+  | "mastercard"
+  | "unionpay"
+  | "amex"
+  | "discover"
+  | "diners"
+  | "jcb"
+  | "all";
 export type MCCRiskLevel = "high" | "medium" | "low";
 
 export interface MCC {
@@ -225,7 +275,12 @@ export interface Country {
   createdAt: string;
 }
 
-export type ActionCategory = "investigation" | "false_positive" | "escalation" | "corrective_action" | "other";
+export type ActionCategory =
+  | "investigation"
+  | "false_positive"
+  | "escalation"
+  | "corrective_action"
+  | "other";
 
 export interface RedFlagLog {
   id: string;
@@ -241,7 +296,16 @@ export interface RedFlagLog {
   createdAt: string;
 }
 
-export type ActivityType = "login" | "red_flag_action" | "rule_create" | "rule_update" | "rule_delete" | "rule_execute" | "upload" | "user_manage" | "mcc_update";
+export type ActivityType =
+  | "login"
+  | "red_flag_action"
+  | "rule_create"
+  | "rule_update"
+  | "rule_delete"
+  | "rule_execute"
+  | "upload"
+  | "user_manage"
+  | "mcc_update";
 
 export interface ActivityLogEntry {
   id: string;

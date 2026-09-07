@@ -109,6 +109,12 @@ func (r *RedFlagRepository) Upsert(ctx context.Context, redFlag *models.RedFlag)
 	isNew := result.UpsertedCount > 0
 	if isNew && result.UpsertedID != nil {
 		redFlag.ID = result.UpsertedID.(primitive.ObjectID)
+		// setOnInsert los fija en Mongo pero no en este struct — sin esto,
+		// cualquier caller que use el valor devuelto (la respuesta de
+		// /rules/:id/execute, el informe PDF automático) ve CreatedAt en
+		// cero y Status vacío pese a que ya quedaron bien guardados.
+		redFlag.CreatedAt = now
+		redFlag.Status = models.RedFlagNew
 	}
 	return isNew, nil
 }
@@ -142,7 +148,7 @@ func (r *RedFlagRepository) DeleteDuplicates(ctx context.Context) (int64, error)
 	if err != nil {
 		return 0, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var totalDeleted int64
 	for cursor.Next(ctx) {
@@ -191,7 +197,7 @@ func (r *RedFlagRepository) FindRecent(ctx context.Context, limit int64) ([]mode
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var redFlags []models.RedFlag
 	if err := cursor.All(ctx, &redFlags); err != nil {
@@ -209,7 +215,7 @@ func (r *RedFlagRepository) FindByMonitor(ctx context.Context, monitorID primiti
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var redFlags []models.RedFlag
 	if err := cursor.All(ctx, &redFlags); err != nil {
@@ -251,7 +257,7 @@ func (r *RedFlagRepository) FindByDateRange(ctx context.Context, from, to time.T
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var redFlags []models.RedFlag
 	if err := cursor.All(ctx, &redFlags); err != nil {
@@ -291,7 +297,7 @@ func (r *RedFlagRepository) CountByDay(ctx context.Context, year, month int) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var results []bson.M
 	if err := cursor.All(ctx, &results); err != nil {

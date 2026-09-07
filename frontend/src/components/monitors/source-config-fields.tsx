@@ -1,11 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { SourceType, APIMode, APIAuthType } from "@/lib/types";
+import { monitorsApi } from "@/lib/api/monitors";
+import { useToast } from "@/lib/use-toast";
+import { STATUS_FG } from "@/lib/semantic-colors";
+import type {
+  SourceType,
+  APIMode,
+  APIAuthType,
+  SchemaField,
+} from "@/lib/types";
 
 // Delimitadores comunes en archivos de logs y exportes bancarios — evita que
 // el usuario tenga que adivinar el caracter exacto o pegarlo a mano.
@@ -28,7 +45,8 @@ function isPresetDelimiter(delimiter: string) {
 // "" es ambiguo entre "por defecto" y "elegí Otro pero no he tecleado nada
 // todavía". customMode desambigua ese segundo caso.
 function delimiterSelectValue(delimiter: string, customMode: boolean) {
-  if (delimiter) return isPresetDelimiter(delimiter) ? delimiter : DELIMITER_CUSTOM;
+  if (delimiter)
+    return isPresetDelimiter(delimiter) ? delimiter : DELIMITER_CUSTOM;
   return customMode ? DELIMITER_CUSTOM : DELIMITER_DEFAULT;
 }
 
@@ -52,11 +70,116 @@ interface SourceConfigFieldsProps {
   onChange: (patch: Partial<SourceConfigValues>) => void;
   /** En edición no se puede volver a elegir modo push/pull ni ver el token — ya existe. */
   editing?: boolean;
+  /** Se llama con el schema vigente (o null si no hay uno vigente) para que el padre lo mande al crear. */
+  onSchemaDetected?: (schema: SchemaField[] | null) => void;
 }
 
-export function SourceConfigFields({ sourceType, values, onChange, editing }: SourceConfigFieldsProps) {
-  const [customMode, setCustomMode] = useState(() => !!values.delimiter && !isPresetDelimiter(values.delimiter));
-  const isCustomDelimiter = delimiterSelectValue(values.delimiter, customMode) === DELIMITER_CUSTOM;
+// Campos que, si cambian después de detectar, invalidan el schema detectado
+// porque pueden cambiar la forma de la respuesta.
+interface DetectionSnapshot {
+  apiMode: APIMode;
+  pullUrl: string;
+  rootPath: string;
+  pullAuthType: APIAuthType;
+  pullAuthHeaderName: string;
+  pullAuthValue: string;
+}
+
+function snapshotOf(values: SourceConfigValues): DetectionSnapshot {
+  return {
+    apiMode: values.apiMode,
+    pullUrl: values.pullUrl,
+    rootPath: values.rootPath,
+    pullAuthType: values.pullAuthType,
+    pullAuthHeaderName: values.pullAuthHeaderName,
+    pullAuthValue: values.pullAuthValue,
+  };
+}
+
+function sameSnapshot(a: DetectionSnapshot, b: DetectionSnapshot) {
+  return (
+    a.apiMode === b.apiMode &&
+    a.pullUrl === b.pullUrl &&
+    a.rootPath === b.rootPath &&
+    a.pullAuthType === b.pullAuthType &&
+    a.pullAuthHeaderName === b.pullAuthHeaderName &&
+    a.pullAuthValue === b.pullAuthValue
+  );
+}
+
+const SCHEMA_FIELD_TYPES: { value: SchemaField["type"]; label: string }[] = [
+  { value: "string", label: "Texto" },
+  { value: "number", label: "Número" },
+  { value: "date", label: "Fecha" },
+  { value: "boolean", label: "Booleano" },
+];
+
+export function SourceConfigFields({
+  sourceType,
+  values,
+  onChange,
+  editing,
+  onSchemaDetected,
+}: SourceConfigFieldsProps) {
+  const [customMode, setCustomMode] = useState(
+    () => !!values.delimiter && !isPresetDelimiter(values.delimiter),
+  );
+  const isCustomDelimiter =
+    delimiterSelectValue(values.delimiter, customMode) === DELIMITER_CUSTOM;
+  const { toastError } = useToast();
+
+  const [detecting, setDetecting] = useState(false);
+  const [detectedSchema, setDetectedSchema] = useState<SchemaField[] | null>(
+    null,
+  );
+  const [sampleCount, setSampleCount] = useState<number | null>(null);
+  const [stale, setStale] = useState(false);
+  const detectionSnapshotRef = useRef<DetectionSnapshot | null>(null);
+
+  // La config actual difiere de la que se usó para detectar — el schema detectado ya no aplica.
+  useEffect(() => {
+    if (!detectedSchema || stale || !detectionSnapshotRef.current) return;
+    if (!sameSnapshot(detectionSnapshotRef.current, snapshotOf(values))) {
+      setStale(true);
+      onSchemaDetected?.(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    values.apiMode,
+    values.pullUrl,
+    values.rootPath,
+    values.pullAuthType,
+    values.pullAuthHeaderName,
+    values.pullAuthValue,
+  ]);
+
+  async function handleDetectSchema() {
+    setDetecting(true);
+    try {
+      const sourceConfig = sourceConfigValuesToInput("api", values);
+      const result = await monitorsApi.detectSchema("api", sourceConfig ?? {});
+      setDetectedSchema(result.schema);
+      setSampleCount(result.sampleCount);
+      setStale(false);
+      detectionSnapshotRef.current = snapshotOf(values);
+      onSchemaDetected?.(result.schema);
+    } catch (err) {
+      toastError(
+        err instanceof Error ? err.message : "Error al detectar campos",
+      );
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  function updateDetectedFieldType(index: number, type: SchemaField["type"]) {
+    if (!detectedSchema) return;
+    const next = detectedSchema.map((f, i) =>
+      i === index ? { ...f, type } : f,
+    );
+    setDetectedSchema(next);
+    if (!stale) onSchemaDetected?.(next);
+  }
 
   return (
     <>
@@ -67,18 +190,31 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
             <Select
               value={delimiterSelectValue(values.delimiter, customMode)}
               onValueChange={(v) => {
-                if (v === DELIMITER_DEFAULT) { setCustomMode(false); onChange({ delimiter: "" }); }
-                else if (v === DELIMITER_CUSTOM) { setCustomMode(true); if (!isCustomDelimiter) onChange({ delimiter: "" }); }
-                else { setCustomMode(false); onChange({ delimiter: v }); }
+                if (v === DELIMITER_DEFAULT) {
+                  setCustomMode(false);
+                  onChange({ delimiter: "" });
+                } else if (v === DELIMITER_CUSTOM) {
+                  setCustomMode(true);
+                  if (!isCustomDelimiter) onChange({ delimiter: "" });
+                } else {
+                  setCustomMode(false);
+                  onChange({ delimiter: v });
+                }
               }}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={DELIMITER_DEFAULT}>
-                  {sourceType === "txt" ? "Tab (por defecto)" : "Coma (por defecto)"}
+                  {sourceType === "txt"
+                    ? "Tab (por defecto)"
+                    : "Coma (por defecto)"}
                 </SelectItem>
                 {DELIMITER_PRESETS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
                 ))}
                 <SelectItem value={DELIMITER_CUSTOM}>Otro…</SelectItem>
               </SelectContent>
@@ -86,7 +222,9 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
             {isCustomDelimiter && (
               <Input
                 value={values.delimiter}
-                onChange={(e) => onChange({ delimiter: e.target.value.slice(0, 1) })}
+                onChange={(e) =>
+                  onChange({ delimiter: e.target.value.slice(0, 1) })
+                }
                 placeholder="Un solo caracter, ej. §"
                 maxLength={1}
               />
@@ -130,8 +268,10 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
             <div className="space-y-2">
               <Label>Modo</Label>
               <p className="text-sm text-muted-foreground">
-                {values.apiMode === "push" ? "Push — el sistema externo nos envía datos" : "Pull — consultamos una API externa por horario"}
-                {" "}(no se puede cambiar después de crear el monitor)
+                {values.apiMode === "push"
+                  ? "Push — el sistema externo nos envía datos"
+                  : "Pull — consultamos una API externa por horario"}{" "}
+                (no se puede cambiar después de crear el monitor)
               </p>
             </div>
           ) : (
@@ -141,10 +281,16 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
                 value={values.apiMode}
                 onValueChange={(v) => onChange({ apiMode: v as APIMode })}
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="push">Push — el sistema externo nos envía datos</SelectItem>
-                  <SelectItem value="pull">Pull — consultamos una API externa por horario</SelectItem>
+                  <SelectItem value="push">
+                    Push — el sistema externo nos envía datos
+                  </SelectItem>
+                  <SelectItem value="pull">
+                    Pull — consultamos una API externa por horario
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -160,11 +306,12 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
           </div>
 
           {values.apiMode === "push" ? (
-            !editing && (
-              <p className="text-xs text-muted-foreground">
-                Al crear el monitor se genera una URL y un token — se muestran una sola vez.
-              </p>
-            )
+            <p className="text-xs text-muted-foreground">
+              {!editing &&
+                "Al crear el monitor se genera una URL y un token — se muestran una sola vez. "}
+              En modo push el schema no se puede detectar de antemano: se
+              detecta con el primer envío que llegue.
+            </p>
           ) : (
             <>
               <div className="space-y-2">
@@ -183,7 +330,9 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
                     value={values.pullMethod}
                     onValueChange={(v) => onChange({ pullMethod: v })}
                   >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="GET">GET</SelectItem>
                       <SelectItem value="POST">POST</SelectItem>
@@ -196,7 +345,9 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
                     type="number"
                     min={1}
                     value={values.pullIntervalMinutes}
-                    onChange={(e) => onChange({ pullIntervalMinutes: e.target.value })}
+                    onChange={(e) =>
+                      onChange({ pullIntervalMinutes: e.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -204,12 +355,18 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
                 <Label>Autenticación</Label>
                 <Select
                   value={values.pullAuthType}
-                  onValueChange={(v) => onChange({ pullAuthType: v as APIAuthType })}
+                  onValueChange={(v) =>
+                    onChange({ pullAuthType: v as APIAuthType })
+                  }
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Ninguna</SelectItem>
-                    <SelectItem value="api_key_header">API key (header)</SelectItem>
+                    <SelectItem value="api_key_header">
+                      API key (header)
+                    </SelectItem>
                     <SelectItem value="bearer">Bearer token</SelectItem>
                   </SelectContent>
                 </Select>
@@ -219,20 +376,95 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
                   <Label>Nombre del header</Label>
                   <Input
                     value={values.pullAuthHeaderName}
-                    onChange={(e) => onChange({ pullAuthHeaderName: e.target.value })}
+                    onChange={(e) =>
+                      onChange({ pullAuthHeaderName: e.target.value })
+                    }
                     placeholder="ej. X-API-Key"
                   />
                 </div>
               )}
               {values.pullAuthType !== "none" && (
                 <div className="space-y-2">
-                  <Label>{values.pullAuthType === "bearer" ? "Token" : "Valor de la API key"}</Label>
+                  <Label>
+                    {values.pullAuthType === "bearer"
+                      ? "Token"
+                      : "Valor de la API key"}
+                  </Label>
                   <Input
                     type="password"
                     value={values.pullAuthValue}
-                    onChange={(e) => onChange({ pullAuthValue: e.target.value })}
-                    placeholder={editing ? "Dejar en blanco para no cambiarlo" : undefined}
+                    onChange={(e) =>
+                      onChange({ pullAuthValue: e.target.value })
+                    }
+                    placeholder={
+                      editing ? "Dejar en blanco para no cambiarlo" : undefined
+                    }
                   />
+                </div>
+              )}
+
+              {!editing && (
+                <div className="space-y-2 border-t pt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDetectSchema}
+                    disabled={detecting || !values.pullUrl}
+                  >
+                    {detecting && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {detecting ? "Detectando…" : "Detectar campos"}
+                  </Button>
+
+                  {stale && detectedSchema && (
+                    <p className={`text-xs ${STATUS_FG.warning}`}>
+                      La configuración cambió — volvé a detectar campos para que
+                      el schema coincida.
+                    </p>
+                  )}
+
+                  {detectedSchema && !stale && (
+                    <div className="space-y-2 rounded-md border p-2">
+                      <Badge variant="outline">
+                        Detectado con {sampleCount} registro
+                        {sampleCount === 1 ? "" : "s"} de muestra
+                      </Badge>
+                      <div className="space-y-1">
+                        {detectedSchema.map((field, i) => (
+                          <div
+                            key={field.name}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate font-mono text-sm">
+                              {field.name}
+                            </span>
+                            <Select
+                              value={field.type}
+                              onValueChange={(v) =>
+                                updateDetectedFieldType(
+                                  i,
+                                  v as SchemaField["type"],
+                                )
+                              }
+                            >
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SCHEMA_FIELD_TYPES.map((t) => (
+                                  <SelectItem key={t.value} value={t.value}>
+                                    {t.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -250,7 +482,7 @@ export function SourceConfigFields({ sourceType, values, onChange, editing }: So
 export function sourceConfigValuesToInput(
   sourceType: SourceType,
   values: SourceConfigValues,
-  opts?: { alwaysInclude?: boolean }
+  opts?: { alwaysInclude?: boolean },
 ) {
   if (sourceType === "csv" || sourceType === "txt") {
     return {

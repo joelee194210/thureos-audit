@@ -29,7 +29,13 @@ const guillocheStyle: React.CSSProperties = {
  * izquierda + panel institucional de marca a la derecha (solo desktop).
  * Firma visual común con thureos-main, el otro producto de la familia.
  */
-export function AuthShell({ eyebrow, title, description, children, footer }: AuthShellProps) {
+export function AuthShell({
+  eyebrow,
+  title,
+  description,
+  children,
+  footer,
+}: AuthShellProps) {
   return (
     <div className="grid min-h-screen md:grid-cols-2 lg:grid-cols-[1.32fr_1fr]">
       <div className="relative flex flex-col bg-background">
@@ -48,7 +54,9 @@ export function AuthShell({ eyebrow, title, description, children, footer }: Aut
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
                 {title}
               </h1>
-              <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {description}
+              </p>
 
               <div className="mt-8">{children}</div>
 
@@ -71,7 +79,10 @@ export function AuthShell({ eyebrow, title, description, children, footer }: Aut
         <div className="absolute inset-y-0 left-0 w-px bg-[linear-gradient(to_bottom,transparent,color-mix(in_srgb,var(--thu-blue-300)_40%,transparent),transparent)]" />
 
         <div className="relative px-10 lg:px-14">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em]" style={{ color: "var(--thu-navy-300)" }}>
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.28em]"
+            style={{ color: "var(--thu-navy-300)" }}
+          >
             Plataforma de cumplimiento
           </p>
           <h2 className="mt-5 max-w-sm text-[1.9rem] font-semibold leading-[1.08] tracking-tight text-white lg:text-[2.4rem] lg:leading-[1.05] xl:text-[2.6rem]">

@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
+	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,10 +24,106 @@ import (
 
 type IngestionService struct {
 	monitorRepo *repository.MonitorRepository
+	// httpClient backs DetectAPISchema. Defaults to the same SSRF-safe
+	// client monitor_puller.go uses for real pulls; tests in this package
+	// may swap it for a plain client to talk to an httptest server, which
+	// listens on loopback and would otherwise be refused by the SSRF guard.
+	httpClient *http.Client
 }
 
 func NewIngestionService(monitorRepo *repository.MonitorRepository) *IngestionService {
-	return &IngestionService{monitorRepo: monitorRepo}
+	return &IngestionService{monitorRepo: monitorRepo, httpClient: newSafeHTTPClient()}
+}
+
+// ErrPushModeSchemaDetection is returned by DetectAPISchema when asked to
+// probe a push-mode config — distinct from network/response errors so the
+// handler can map it to 400 instead of a gateway error status.
+var ErrPushModeSchemaDetection = errors.New("la detección automática solo está disponible para modo pull; en modo push, el schema se detecta con el primer envío")
+
+// maxSchemaDetectSampleRows caps how many records DetectAPISchema feeds into
+// detectSchemaFromJSON — a preview only needs enough rows to see the shape
+// of the data, not the whole response.
+const maxSchemaDetectSampleRows = 50
+
+// DetectAPISchema makes one live request to cfg's configured pull endpoint
+// and infers a schema from the response, without persisting anything —
+// callers use it to let a user confirm a schema before a monitor is created.
+func (s *IngestionService) DetectAPISchema(ctx context.Context, cfg models.SourceConfig) ([]models.SchemaField, int, error) {
+	if cfg.Mode != models.APIModePull {
+		return nil, 0, ErrPushModeSchemaDetection
+	}
+
+	method := cfg.PullMethod
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, cfg.PullURL, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("armando la petición de prueba: %w", err)
+	}
+
+	switch cfg.PullAuthType {
+	case models.APIAuthAPIKey:
+		req.Header.Set(cfg.PullAuthHeaderName, cfg.PullAuthValue)
+	case models.APIAuthBearer:
+		req.Header.Set("Authorization", "Bearer "+cfg.PullAuthValue)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("no se pudo contactar %s: %w", cfg.PullURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, 0, fmt.Errorf("el API externo respondió HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	// Read one byte past the cap: if it's present, the body was truncated
+	// and any JSON error below is an artifact of that, not of the API's
+	// actual response — the two need different messages.
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxPullResponseBytes+1))
+	if err != nil {
+		return nil, 0, fmt.Errorf("leyendo la respuesta del API: %w", err)
+	}
+	if len(raw) > maxPullResponseBytes {
+		return nil, 0, fmt.Errorf("la respuesta del API supera el límite de %d MB permitido para la detección de schema; probá acotarla con rootPath o un endpoint paginado", maxPullResponseBytes/(1024*1024))
+	}
+
+	// debt: interface{} es deliberado — la detección de schema debe aceptar
+	// JSON de forma arbitraria; no existe un struct concreto para payloads
+	// de terceros. Revisar -> si los monitores llegan a tener contratos de
+	// ingesta tipados.
+	var parsed interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, 0, fmt.Errorf("la respuesta del API no es JSON válido: %w", err)
+	}
+
+	extracted, err := extractRootPath(parsed, cfg.RootPath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("extrayendo rootPath: %w", err)
+	}
+
+	if extracted == nil {
+		return nil, 0, fmt.Errorf("la respuesta no tiene registros para inferir el schema")
+	}
+
+	records, err := toRecordSlice(extracted)
+	if err != nil {
+		return nil, 0, fmt.Errorf("interpretando los registros del API: %w", err)
+	}
+
+	if len(records) == 0 {
+		return nil, 0, fmt.Errorf("la respuesta no tiene registros para inferir el schema")
+	}
+
+	if len(records) > maxSchemaDetectSampleRows {
+		records = records[:maxSchemaDetectSampleRows]
+	}
+
+	return detectSchemaFromJSON(records), len(records), nil
 }
 
 // IngestCSV parses a CSV file, detects schema, and stores data
@@ -118,11 +218,13 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	}
 
 	now := time.Now()
-	s.monitorRepo.Update(ctx, monitor.ID, bson.M{
+	if err := s.monitorRepo.Update(ctx, monitor.ID, bson.M{
 		"schema":        monitor.Schema,
 		"record_count":  monitor.RecordCount + int64(count),
 		"last_ingested": now,
-	})
+	}); err != nil {
+		log.Printf("ingestion: actualizando estado del monitor: %v", err)
+	}
 
 	return count, nil
 }
@@ -139,6 +241,9 @@ func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monit
 		return 0, fmt.Errorf("reading JSON: %w", err)
 	}
 
+	// debt: interface{} es deliberado — aquí se ingesta JSON arbitrario del
+	// usuario antes de conocer el schema. Revisar -> solo si la ingesta pasa a
+	// payloads tipados.
 	var parsed interface{}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return 0, fmt.Errorf("parsing JSON: %w", err)
@@ -187,11 +292,13 @@ func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monit
 	}
 
 	now := time.Now()
-	s.monitorRepo.Update(ctx, monitor.ID, bson.M{
+	if err := s.monitorRepo.Update(ctx, monitor.ID, bson.M{
 		"schema":        monitor.Schema,
 		"record_count":  monitor.RecordCount + int64(count),
 		"last_ingested": now,
-	})
+	}); err != nil {
+		log.Printf("ingestion: actualizando estado del monitor: %v", err)
+	}
 
 	return count, nil
 }
@@ -247,7 +354,7 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	if err != nil {
 		return 0, fmt.Errorf("opening Excel: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sheetName := f.GetSheetName(0)
 	if monitor.SourceConfig != nil && monitor.SourceConfig.SheetName != "" {
@@ -288,11 +395,13 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	}
 
 	now := time.Now()
-	s.monitorRepo.Update(ctx, monitor.ID, bson.M{
+	if err := s.monitorRepo.Update(ctx, monitor.ID, bson.M{
 		"schema":        monitor.Schema,
 		"record_count":  monitor.RecordCount + int64(count),
 		"last_ingested": now,
-	})
+	}); err != nil {
+		log.Printf("ingestion: actualizando estado del monitor: %v", err)
+	}
 
 	return count, nil
 }
@@ -353,11 +462,21 @@ func detectSchemaFromJSON(records []map[string]interface{}) []models.SchemaField
 	for _, record := range records {
 		for key, val := range record {
 			if _, exists := fieldMap[key]; !exists {
-				switch val.(type) {
+				switch v := val.(type) {
 				case float64:
 					fieldMap[key] = models.FieldNumber
 				case bool:
 					fieldMap[key] = models.FieldBoolean
+				case string:
+					// JSON already distinguishes numbers/booleans by type, so a
+					// string value only needs the date check inferType also
+					// runs for CSV — a bare "string" default would otherwise
+					// misclassify every ISO date/timestamp field from an API.
+					if looksLikeDate(v) {
+						fieldMap[key] = models.FieldDate
+					} else {
+						fieldMap[key] = models.FieldString
+					}
 				default:
 					fieldMap[key] = models.FieldString
 				}
@@ -375,6 +494,14 @@ func detectSchemaFromJSON(records []map[string]interface{}) []models.SchemaField
 			Sample:   sampleMap[name],
 		})
 	}
+	// fieldMap's own key order can't be preserved (it isn't the records'
+	// original JSON key order — map decoding already lost that), and Go
+	// randomizes map iteration order on every range, so without an explicit
+	// sort this list would come back in a different order on every call.
+	// This is now a user-facing preview the user confirms and that gets
+	// stored verbatim, so a stable order matters here in a way it didn't
+	// before.
+	sort.Slice(schema, func(i, j int) bool { return schema[i].Name < schema[j].Name })
 	return schema
 }
 
@@ -382,10 +509,7 @@ func inferType(value string) models.FieldType {
 	if _, err := strconv.ParseFloat(value, 64); err == nil {
 		return models.FieldNumber
 	}
-	if _, err := time.Parse("2006-01-02", value); err == nil {
-		return models.FieldDate
-	}
-	if _, err := time.Parse(time.RFC3339, value); err == nil {
+	if looksLikeDate(value) {
 		return models.FieldDate
 	}
 	lower := strings.ToLower(value)
@@ -393,6 +517,20 @@ func inferType(value string) models.FieldType {
 		return models.FieldBoolean
 	}
 	return models.FieldString
+}
+
+// looksLikeDate is the shared date heuristic for both CSV/TXT/Excel string
+// cells (via inferType) and JSON string values (via detectSchemaFromJSON) —
+// JSON already tells number/bool apart by type, so only the date check needs
+// to be shared.
+func looksLikeDate(value string) bool {
+	if _, err := time.Parse("2006-01-02", value); err == nil {
+		return true
+	}
+	if _, err := time.Parse(time.RFC3339, value); err == nil {
+		return true
+	}
+	return false
 }
 
 // parseValue expects fieldName already resolved to its final schema field

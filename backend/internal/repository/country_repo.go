@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/thureos/compliance/internal/database"
@@ -30,16 +31,20 @@ func (r *CountryRepository) Seed(ctx context.Context, countries []models.Country
 	}
 
 	// Unique index on code
-	r.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+	if _, err := r.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "code", Value: 1}},
 		Options: options.Index().SetUnique(true),
-	})
+	}); err != nil {
+		log.Printf("countries: creando índice único de código: %v", err)
+	}
 	// Index for queries
-	r.collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
+	if _, err := r.collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "risk_level", Value: 1}}},
 		{Keys: bson.D{{Key: "active", Value: 1}}},
 		{Keys: bson.D{{Key: "region", Value: 1}}},
-	})
+	}); err != nil {
+		log.Printf("countries: creando índices: %v", err)
+	}
 
 	docs := make([]interface{}, len(countries))
 	for i, c := range countries {

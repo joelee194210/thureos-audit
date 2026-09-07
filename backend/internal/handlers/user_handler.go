@@ -3,12 +3,15 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
+	"github.com/thureos/compliance/internal/services"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserHandler struct {
@@ -26,6 +29,65 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(users)
+}
+
+func (h *UserHandler) Create(c *fiber.Ctx) error {
+	var body struct {
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if body.Email == "" || body.Name == "" || body.Password == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "email, name, and password are required"})
+	}
+
+	if !isValidRole(body.Role) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid role, must be admin, compliance, or viewer"})
+	}
+
+	if err := services.ValidatePasswordComplexity(body.Password); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if _, err := h.userRepo.FindByEmail(c.Context(), body.Email); err == nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "ya existe un usuario con ese correo"})
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "hashing password"})
+	}
+
+	now := time.Now()
+	user := &models.User{
+		Email:             body.Email,
+		Name:              body.Name,
+		Password:          string(hashed),
+		Role:              models.Role(body.Role),
+		PasswordChangedAt: &now,
+	}
+
+	if err := h.userRepo.Create(c.Context(), user); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	h.logActivity(c, models.ActivityUserManage,
+		fmt.Sprintf("Usuario %s creado con rol %s", user.Email, user.Role), user.ID.Hex())
+
+	return c.Status(fiber.StatusCreated).JSON(user)
+}
+
+func isValidRole(role string) bool {
+	switch models.Role(role) {
+	case models.RoleAdmin, models.RoleCompliance, models.RoleViewer:
+		return true
+	}
+	return false
 }
 
 func (h *UserHandler) Get(c *fiber.Ctx) error {
@@ -77,8 +139,7 @@ func (h *UserHandler) UpdateRole(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	validRoles := map[string]bool{"admin": true, "compliance": true, "viewer": true}
-	if !validRoles[body.Role] {
+	if !isValidRole(body.Role) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid role, must be admin, compliance, or viewer"})
 	}
 

@@ -46,7 +46,7 @@ func (r *RuleRepository) FindByMonitor(ctx context.Context, monitorID primitive.
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var rules []models.Rule
 	if err := cursor.All(ctx, &rules); err != nil {
@@ -63,7 +63,7 @@ func (r *RuleRepository) FindActiveByMonitor(ctx context.Context, monitorID prim
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var rules []models.Rule
 	if err := cursor.All(ctx, &rules); err != nil {
@@ -78,7 +78,7 @@ func (r *RuleRepository) FindAll(ctx context.Context) ([]models.Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var rules []models.Rule
 	if err := cursor.All(ctx, &rules); err != nil {
@@ -124,7 +124,7 @@ func (r *RuleRepository) FindScheduled(ctx context.Context) ([]models.Rule, erro
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var rules []models.Rule
 	if err := cursor.All(ctx, &rules); err != nil {

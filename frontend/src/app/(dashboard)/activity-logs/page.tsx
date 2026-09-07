@@ -4,8 +4,23 @@ import { useEffect, useState, useMemo } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollText, LogIn, Bell, FileText, Upload, Users, Loader2, CreditCard } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ScrollText,
+  LogIn,
+  Bell,
+  FileText,
+  Upload,
+  Users,
+  Loader2,
+  CreditCard,
+} from "lucide-react";
 import { activityLogsApi } from "@/lib/api/activity-logs";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
@@ -58,8 +73,6 @@ export default function ActivityLogsPage() {
   const [filterUser, setFilterUser] = useState<string>("all");
   const { toastError } = useToast();
 
-  useEffect(() => { loadLogs(); }, []);
-
   async function loadLogs() {
     setLoading(true);
     try {
@@ -71,6 +84,14 @@ export default function ActivityLogsPage() {
     }
   }
 
+  useEffect(() => {
+    // debt: loadLogs fija loading síncrono antes del fetch — el rule v7
+    // lo marca como setState en efecto. Revisar -> al migrar la bitácora a
+    // TanStack Query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadLogs();
+  }, []);
+
   const uniqueUsers = useMemo(() => {
     const map = new Map<string, string>();
     for (const log of logs) {
@@ -81,8 +102,10 @@ export default function ActivityLogsPage() {
 
   const filtered = useMemo(() => {
     let result = logs;
-    if (filterAction !== "all") result = result.filter((l) => l.action === filterAction);
-    if (filterUser !== "all") result = result.filter((l) => l.userId === filterUser);
+    if (filterAction !== "all")
+      result = result.filter((l) => l.action === filterAction);
+    if (filterUser !== "all")
+      result = result.filter((l) => l.userId === filterUser);
     return result;
   }, [logs, filterAction, filterUser]);
 
@@ -92,11 +115,15 @@ export default function ActivityLogsPage() {
       <div className="p-6 space-y-4">
         <div className="flex gap-3 flex-wrap">
           <Select value={filterAction} onValueChange={setFilterAction}>
-            <SelectTrigger className="w-48"><SelectValue placeholder="Tipo de acción" /></SelectTrigger>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Tipo de acción" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas las acciones</SelectItem>
               <SelectItem value="login">Inicio de sesión</SelectItem>
-              <SelectItem value="red_flag_action">Acción en bandera roja</SelectItem>
+              <SelectItem value="red_flag_action">
+                Acción en bandera roja
+              </SelectItem>
               <SelectItem value="rule_create">Regla creada</SelectItem>
               <SelectItem value="rule_update">Regla actualizada</SelectItem>
               <SelectItem value="rule_delete">Regla eliminada</SelectItem>
@@ -107,11 +134,15 @@ export default function ActivityLogsPage() {
             </SelectContent>
           </Select>
           <Select value={filterUser} onValueChange={setFilterUser}>
-            <SelectTrigger className="w-48"><SelectValue placeholder="Usuario" /></SelectTrigger>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Usuario" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los usuarios</SelectItem>
               {uniqueUsers.map(([id, name]) => (
-                <SelectItem key={id} value={id}>{name}</SelectItem>
+                <SelectItem key={id} value={id}>
+                  {name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -135,24 +166,33 @@ export default function ActivityLogsPage() {
           <div className="space-y-2">
             {filtered.map((log) => {
               const Icon = ACTION_ICONS[log.action] || ScrollText;
-              const colorClass = ACTION_COLORS[log.action] || "bg-surface-2 text-ink-muted";
+              const colorClass =
+                ACTION_COLORS[log.action] || "bg-surface-2 text-ink-muted";
               return (
                 <Card key={log.id}>
                   <CardContent className="flex items-center gap-4 p-4">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${colorClass}`}>
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${colorClass}`}
+                    >
                       <Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{log.userName}</span>
+                        <span className="font-medium text-sm">
+                          {log.userName}
+                        </span>
                         <Badge variant="outline" className="text-xs">
                           {ACTION_LABELS[log.action] || log.action}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">{log.detail}</p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {log.detail}
+                      </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-xs text-muted-foreground">{formatDate(log.createdAt)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(log.createdAt)}
+                      </p>
                       <p className="text-xs text-muted-foreground">{log.ip}</p>
                     </div>
                   </CardContent>

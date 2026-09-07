@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log"
 
 	"github.com/thureos/compliance/internal/database"
 	"github.com/thureos/compliance/internal/models"
@@ -28,17 +29,21 @@ func (r *MCCRepository) Seed(ctx context.Context, mccs []models.MCC) error {
 	}
 
 	// Create unique index on code
-	r.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+	if _, err := r.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "code", Value: 1}},
 		Options: options.Index().SetUnique(true),
-	})
+	}); err != nil {
+		log.Printf("mcc: creando índice único de código: %v", err)
+	}
 	// Text index for search
-	r.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+	if _, err := r.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
 			{Key: "description", Value: "text"},
 			{Key: "category", Value: "text"},
 		},
-	})
+	}); err != nil {
+		log.Printf("mcc: creando índice de texto: %v", err)
+	}
 
 	docs := make([]interface{}, len(mccs))
 	for i, m := range mccs {

@@ -22,11 +22,16 @@ import {
   Pencil,
   Check,
   X,
-  Plus,
 } from "lucide-react";
 import { countriesApi } from "@/lib/api/countries";
 import { cn } from "@/lib/utils";
-import { CATEGORY_CLASSES, RISK_BG, RISK_CLASSES, RISK_FG, STATUS_CLASSES } from "@/lib/semantic-colors";
+import {
+  CATEGORY_CLASSES,
+  RISK_BG,
+  RISK_CLASSES,
+  RISK_FG,
+  STATUS_CLASSES,
+} from "@/lib/semantic-colors";
 import type { Country, CountryRiskLevel } from "@/lib/types";
 
 const riskConfig: Record<
@@ -35,20 +40,17 @@ const riskConfig: Record<
 > = {
   high: {
     label: "Alto",
-    color:
-      `${RISK_CLASSES.high} border-transparent`,
+    color: `${RISK_CLASSES.high} border-transparent`,
     icon: ShieldAlert,
   },
   medium: {
     label: "Medio",
-    color:
-      `${RISK_CLASSES.medium} border-transparent`,
+    color: `${RISK_CLASSES.medium} border-transparent`,
     icon: Shield,
   },
   low: {
     label: "Bajo",
-    color:
-      `${RISK_CLASSES.low} border-transparent`,
+    color: `${RISK_CLASSES.low} border-transparent`,
     icon: ShieldCheck,
   },
 };
@@ -87,6 +89,10 @@ export default function CountriesPage() {
   }
 
   useEffect(() => {
+    // debt: loader async llamado desde el efecto de montaje — el rule
+    // v7 lo traza como setState síncrono aunque los cambios ocurren tras
+    // await. Revisar -> al migrar la carga de datos a TanStack Query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, []);
 
@@ -116,7 +122,7 @@ export default function CountriesPage() {
       low: countries.filter((c) => c.riskLevel === "low" && c.active).length,
       regions: regions.length,
     }),
-    [countries, regions]
+    [countries, regions],
   );
 
   // Group by region
@@ -235,7 +241,7 @@ export default function CountriesPage() {
                     }
                     className={cn(
                       "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                      selectedRisk === level ? cfg.color : "hover:bg-accent"
+                      selectedRisk === level ? cfg.color : "hover:bg-accent",
                     )}
                   >
                     {cfg.label}
@@ -251,7 +257,7 @@ export default function CountriesPage() {
                 "rounded-md border px-2.5 py-1 text-xs transition-colors",
                 !selectedRegion
                   ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent"
+                  : "hover:bg-accent",
               )}
             >
               Todas ({stats.total})
@@ -268,7 +274,7 @@ export default function CountriesPage() {
                     "rounded-md border px-2.5 py-1 text-xs transition-colors",
                     selectedRegion === r
                       ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
+                      : "hover:bg-accent",
                   )}
                 >
                   {r} ({count})
@@ -296,8 +302,7 @@ export default function CountriesPage() {
               {selectedRisk && (
                 <>
                   {" "}
-                  con riesgo{" "}
-                  <strong>{riskConfig[selectedRisk]?.label}</strong>
+                  con riesgo <strong>{riskConfig[selectedRisk]?.label}</strong>
                 </>
               )}
             </p>
@@ -403,7 +408,7 @@ export default function CountriesPage() {
                                     "rounded-full px-2 py-0.5 text-[10px] font-medium border",
                                     editForm.active
                                       ? STATUS_CLASSES.success
-                                      : STATUS_CLASSES.neutral
+                                      : STATUS_CLASSES.neutral,
                                   )}
                                 >
                                   {editForm.active ? "Activo" : "Inactivo"}
@@ -438,7 +443,7 @@ export default function CountriesPage() {
                             key={country.id}
                             className={cn(
                               "border-b last:border-0 hover:bg-muted/30 transition-colors",
-                              !country.active && "opacity-50"
+                              !country.active && "opacity-50",
                             )}
                           >
                             <td className="px-4 py-2 font-mono text-xs font-medium">
@@ -458,7 +463,7 @@ export default function CountriesPage() {
                               <span
                                 className={cn(
                                   "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium",
-                                  risk?.color
+                                  risk?.color,
                                 )}
                               >
                                 {risk?.label}
@@ -472,7 +477,7 @@ export default function CountriesPage() {
                                     className={cn(
                                       "inline-block rounded px-1.5 py-0.5 text-[8px] font-bold leading-none whitespace-nowrap",
                                       sourceColors[src] ??
-                                        "bg-surface-2 text-ink-muted"
+                                        "bg-surface-2 text-ink-muted",
                                     )}
                                   >
                                     {src}
@@ -494,7 +499,7 @@ export default function CountriesPage() {
                                   "rounded-full px-2 py-0.5 text-[10px] font-medium border",
                                   country.active
                                     ? STATUS_CLASSES.success
-                                    : STATUS_CLASSES.neutral
+                                    : STATUS_CLASSES.neutral,
                                 )}
                               >
                                 {country.active ? "Activo" : "Inactivo"}

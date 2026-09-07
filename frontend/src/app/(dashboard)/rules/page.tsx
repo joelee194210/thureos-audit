@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/layout/header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ import { dashboardsApi } from "@/lib/api/dashboards";
 import type { Dashboard, WidgetType } from "@/lib/types";
 import { mccApi } from "@/lib/api/mcc";
 import { useToast } from "@/lib/use-toast";
+import { TemplateGallery } from "@/components/rules/template-gallery";
 import { formatDate, cn } from "@/lib/utils";
 import { RISK_CLASSES } from "@/lib/semantic-colors";
 import type {
@@ -54,7 +55,6 @@ import type {
   Monitor,
   AIRuleSuggestion,
   Severity,
-  ConditionGroup,
   Condition,
   Operator,
   AggregateCondition,
@@ -205,6 +205,10 @@ function MCCPicker({
 
   useEffect(() => {
     if (!isOpen) return;
+    // debt: setLoading síncrono al abrir el modal — el spinner debe
+    // aparecer en el mismo frame de la apertura (loading arranca en false).
+    // Revisar -> al migrar la carga de MCC a TanStack Query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     Promise.all([mccApi.categories(), mccApi.list()])
       .then(([cats, all]) => {
@@ -424,6 +428,7 @@ function RulesContent() {
     monitorIdParam || "all",
   );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AIRuleSuggestion[]>([]);
@@ -920,7 +925,7 @@ function RulesContent() {
         setExecuteAllProgress((prev) => ({ ...prev, redFlags: totalRedFlags }));
       } catch (err) {
         failedCount++;
-        console.error(`Failed to execute rule ${rule.name}:`, err);
+        console.error("Failed to execute rule:", rule.name, err);
       }
     }
     setExecutingRuleId(null);
@@ -1146,10 +1151,15 @@ function RulesContent() {
               </DialogContent>
             </Dialog>
 
+            <Button variant="outline" onClick={() => setIsTemplatesOpen(true)}>
+              Desde plantilla
+            </Button>
+
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
               <DialogTrigger asChild>
                 <Button>
-                  <Plus className="h-4 w-4" /> Nueva regla
+                  <Plus className="h-4 Reglas" />
+                  Nueva regla
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
@@ -2769,6 +2779,16 @@ function RulesContent() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TemplateGallery
+        open={isTemplatesOpen}
+        onOpenChange={setIsTemplatesOpen}
+        monitors={monitors}
+        defaultMonitorId={
+          filterMonitorId !== "all" ? filterMonitorId : undefined
+        }
+        onCreated={loadRules}
+      />
     </>
   );
 }

@@ -1,4 +1,5 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
 
 class ApiClient {
   private token: string | null = null;
@@ -25,7 +26,10 @@ class ApiClient {
     }
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<T> {
     const token = this.getToken();
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string>),
@@ -53,7 +57,9 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "Request failed" }));
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Request failed" }));
       throw new Error(error.error || "Request failed");
     }
 
@@ -87,6 +93,26 @@ class ApiClient {
 
   delete<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: "DELETE" });
+  }
+
+  /** Descarga binaria (ej. un PDF ya generado). Devuelve null en 404. */
+  async getBlob(path: string): Promise<Blob | null> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_URL}${path}`, { headers });
+
+    if (response.status === 404) return null;
+    if (response.status === 401) {
+      this.clearToken();
+      if (typeof window !== "undefined") window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+    if (!response.ok) {
+      throw new Error("Request failed");
+    }
+    return response.blob();
   }
 
   upload<T>(path: string, file: File): Promise<T> {

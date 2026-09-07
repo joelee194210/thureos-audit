@@ -21,15 +21,15 @@ func NewActivityHandler(activityRepo *repository.ActivityLogRepository) *Activit
 
 // validActions is the allowlist of known activity types for query filtering.
 var validActions = map[string]bool{
-	string(models.ActivityLogin):       true,
+	string(models.ActivityLogin):         true,
 	string(models.ActivityRedFlagAction): true,
-	string(models.ActivityRuleCreate):  true,
-	string(models.ActivityRuleUpdate):  true,
-	string(models.ActivityRuleDelete):  true,
-	string(models.ActivityRuleExecute): true,
-	string(models.ActivityUpload):      true,
-	string(models.ActivityUserManage):  true,
-	string(models.ActivityMCCUpdate):   true,
+	string(models.ActivityRuleCreate):    true,
+	string(models.ActivityRuleUpdate):    true,
+	string(models.ActivityRuleDelete):    true,
+	string(models.ActivityRuleExecute):   true,
+	string(models.ActivityUpload):        true,
+	string(models.ActivityUserManage):    true,
+	string(models.ActivityMCCUpdate):     true,
 }
 
 func (h *ActivityHandler) List(c *fiber.Ctx) error {

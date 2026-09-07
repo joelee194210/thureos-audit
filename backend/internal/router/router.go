@@ -10,12 +10,14 @@ import (
 	"github.com/thureos/compliance/internal/middleware"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
+	"github.com/thureos/compliance/internal/services"
 )
 
 type Handlers struct {
 	Auth          *handlers.AuthHandler
 	Monitor       *handlers.MonitorHandler
 	Rule          *handlers.RuleHandler
+	RuleTemplate  *handlers.RuleTemplateHandler
 	Dashboard     *handlers.DashboardHandler
 	RedFlag       *handlers.RedFlagHandler
 	User          *handlers.UserHandler
@@ -25,6 +27,7 @@ type Handlers struct {
 	Scheduler     interface{ Status() map[string]interface{} }
 	MonitorPuller interface{ Status() map[string]interface{} }
 	ConfigRepo    *repository.SystemConfigRepository
+	Notifier      *services.NotificationService
 }
 
 func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
@@ -74,6 +77,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	monitors.Get("/", h.Monitor.List)
 	monitors.Get("/:id", h.Monitor.Get)
 	monitors.Post("/", middleware.RequireComplianceOrAbove(), h.Monitor.Create)
+	monitors.Post("/detect-schema", middleware.RequireComplianceOrAbove(), h.Monitor.DetectSchema)
 	monitors.Put("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Update)
 	monitors.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Delete)
 	monitors.Post("/:id/upload", middleware.RequireComplianceOrAbove(), h.Monitor.UploadData)
@@ -93,6 +97,12 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	rules.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Rule.Delete)
 	rules.Post("/:id/execute", middleware.RequireComplianceOrAbove(), h.Rule.Execute)
 	rules.Post("/ai-generate", middleware.RequireComplianceOrAbove(), h.Rule.GenerateAIRules)
+
+	// Tipologías AML: catálogo legible por cualquier sesión autenticada;
+	// instanciar es crear una regla, compliance o superior.
+	templateAPI := protected.Group("/rule-templates")
+	templateAPI.Get("/", h.RuleTemplate.List)
+	monitors.Post("/:id/rules/from-template", middleware.RequireComplianceOrAbove(), h.RuleTemplate.Instantiate)
 
 	// Dashboards
 	dashboards := protected.Group("/dashboards")
@@ -114,7 +124,15 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	redFlags.Get("/:id", h.RedFlag.Get)
 	redFlags.Get("/:id/records", h.RedFlag.GetRecords)
 	redFlags.Get("/:id/logs", h.RedFlag.GetLogs)
+	redFlags.Get("/:id/report", h.RedFlag.GetReport)
 	redFlags.Patch("/:id/status", middleware.RequireComplianceOrAbove(), h.RedFlag.UpdateStatus)
+
+	// Case management: estricto compliance+, notas legibles por cualquier
+	// sesión autenticada (viewer sigue al flujo).
+	redFlags.Post("/:id/assign", middleware.RequireComplianceOrAbove(), h.RedFlag.AssignCase)
+	redFlags.Post("/:id/transition", middleware.RequireComplianceOrAbove(), h.RedFlag.TransitionCase)
+	redFlags.Post("/:id/notes", middleware.RequireComplianceOrAbove(), h.RedFlag.AddCaseNote)
+	redFlags.Get("/:id/notes", h.RedFlag.ListCaseNotes)
 
 	// MCCs (catalog)
 	mccs := protected.Group("/mccs")
@@ -143,6 +161,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 
 	// Users (admin only)
 	users := protected.Group("/users", middleware.RequireRole(models.RoleAdmin))
+	users.Post("/", h.User.Create)
 	users.Get("/", h.User.List)
 	users.Get("/:id", h.User.Get)
 	users.Patch("/:id/role", h.User.UpdateRole)
@@ -151,6 +170,131 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 
 	// Settings (admin only)
 	settings := protected.Group("/settings", middleware.RequireRole(models.RoleAdmin))
+
+	// Notificaciones — GET devuelve la config con secretos enmascarados,
+	// PUT actualiza SMTP/Resend/webhooks, POST /test dispara una prueba.
+	settings.Get("/notifications", func(c *fiber.Ctx) error {
+		cfg, err := h.ConfigRepo.Get(c.Context())
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load config"})
+		}
+		n := cfg.Notifications
+		webhooks := make([]fiber.Map, 0, len(n.Webhooks))
+		for i, wh := range n.Webhooks {
+			webhooks = append(webhooks, fiber.Map{
+				"index":     i,
+				"url":       wh.URL,
+				"enabled":   wh.Enabled,
+				"secretSet": wh.Secret != "",
+			})
+		}
+		return c.JSON(fiber.Map{
+			"emailProvider": string(n.EmailProvider),
+			"smtp": fiber.Map{
+				"host":        n.SMTP.Host,
+				"port":        n.SMTP.Port,
+				"username":    n.SMTP.Username,
+				"from":        n.SMTP.From,
+				"passwordSet": n.SMTP.Password != "",
+			},
+			"resend": fiber.Map{
+				"from":      n.Resend.From,
+				"apiKeySet": n.Resend.APIKey != "",
+			},
+			"toEmails": n.ToEmails,
+			"webhooks": webhooks,
+		})
+	})
+
+	settings.Put("/notifications", func(c *fiber.Ctx) error {
+		var body struct {
+			EmailProvider string `json:"emailProvider"`
+			SMTP          struct {
+				Host     string  `json:"host"`
+				Port     int     `json:"port"`
+				Username string  `json:"username"`
+				Password *string `json:"password"`
+				From     string  `json:"from"`
+			} `json:"smtp"`
+			Resend struct {
+				From   string  `json:"from"`
+				APIKey *string `json:"apiKey"`
+			} `json:"resend"`
+			ToEmails []string `json:"toEmails"`
+			Webhooks []struct {
+				URL     string  `json:"url"`
+				Secret  *string `json:"secret"`
+				Enabled bool    `json:"enabled"`
+			} `json:"webhooks"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+
+		provider := models.EmailProvider(body.EmailProvider)
+		if provider != models.EmailProviderSMTP && provider != models.EmailProviderResend {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "emailProvider debe ser 'smtp' o 'resend'"})
+		}
+
+		current, err := h.ConfigRepo.Get(c.Context())
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load current config"})
+		}
+
+		n := models.NotificationConfig{
+			EmailProvider: provider,
+			SMTP: models.SMTPConfig{
+				Host:     body.SMTP.Host,
+				Port:     body.SMTP.Port,
+				Username: body.SMTP.Username,
+				From:     body.SMTP.From,
+			},
+			Resend: models.ResendConfig{
+				From: body.Resend.From,
+			},
+			ToEmails: body.ToEmails,
+		}
+		// Secretos: se preservan si el request no trae valor nuevo.
+		if body.SMTP.Password != nil && *body.SMTP.Password != "" {
+			n.SMTP.Password = *body.SMTP.Password
+		} else {
+			n.SMTP.Password = current.Notifications.SMTP.Password
+		}
+		if body.Resend.APIKey != nil && *body.Resend.APIKey != "" {
+			n.Resend.APIKey = *body.Resend.APIKey
+		} else {
+			n.Resend.APIKey = current.Notifications.Resend.APIKey
+		}
+		for i, wh := range body.Webhooks {
+			cfg := models.WebhookConfig{URL: wh.URL, Enabled: wh.Enabled}
+			if wh.Secret != nil && *wh.Secret != "" {
+				cfg.Secret = *wh.Secret
+			} else if i < len(current.Notifications.Webhooks) {
+				cfg.Secret = current.Notifications.Webhooks[i].Secret
+			}
+			n.Webhooks = append(n.Webhooks, cfg)
+		}
+
+		current.Notifications = n
+		current.UpdatedBy, _ = c.Locals("email").(string)
+		if err := h.ConfigRepo.Upsert(c.Context(), current); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"message": "notificaciones actualizadas"})
+	})
+
+	// Encola una notificación sintética por los canales configurados —
+	// para que el admin verifique SMTP/Resend/webhooks sin esperar una
+	// red flag real.
+	settings.Post("/notifications/test", func(c *fiber.Ctx) error {
+		if h.Notifier == nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "servicio de notificaciones no disponible"})
+		}
+		if err := h.Notifier.TriggerTest(c.Context()); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"message": "notificación de prueba encolada"})
+	})
 
 	settings.Get("/", func(c *fiber.Ctx) error {
 		aiCfg, _ := h.ConfigRepo.Get(c.Context())

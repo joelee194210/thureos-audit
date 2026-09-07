@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/thureos/compliance/internal/database"
@@ -22,10 +23,12 @@ func NewActivityLogRepository(db *database.MongoDB) *ActivityLogRepository {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	col.Indexes().CreateMany(ctx, []mongo.IndexModel{
+	if _, err := col.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "created_at", Value: -1}}},
 		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}},
-	})
+	}); err != nil {
+		log.Printf("activity_logs: creando índices: %v", err)
+	}
 
 	return &ActivityLogRepository{col: col}
 }
@@ -46,7 +49,7 @@ func (r *ActivityLogRepository) FindRecent(ctx context.Context, limit int64) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var logs []models.ActivityLog
 	if err := cursor.All(ctx, &logs); err != nil {
@@ -64,7 +67,7 @@ func (r *ActivityLogRepository) FindFiltered(ctx context.Context, filter bson.M,
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var logs []models.ActivityLog
 	if err := cursor.All(ctx, &logs); err != nil {

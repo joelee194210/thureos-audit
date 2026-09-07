@@ -13,6 +13,7 @@ type Worker struct {
 	queue       *JobQueue
 	ruleEngine  *RuleEngine
 	monitorRepo *repository.MonitorRepository
+	notifier    *NotificationService
 	concurrency int
 }
 
@@ -21,16 +22,21 @@ func NewWorker(
 	ruleEngine *RuleEngine,
 	monitorRepo *repository.MonitorRepository,
 	concurrency int,
+	notifier ...*NotificationService,
 ) *Worker {
 	if concurrency < 1 {
 		concurrency = 2
 	}
-	return &Worker{
+	w := &Worker{
 		queue:       queue,
 		ruleEngine:  ruleEngine,
 		monitorRepo: monitorRepo,
 		concurrency: concurrency,
 	}
+	if len(notifier) > 0 {
+		w.notifier = notifier[0]
+	}
+	return w
 }
 
 // Start launches worker goroutines that process the queue.
@@ -73,6 +79,11 @@ func (w *Worker) loop(ctx context.Context, workerID int) {
 }
 
 func (w *Worker) process(ctx context.Context, workerID int, job *EvalJob) {
+	if job.Kind == JobKindNotify {
+		w.processNotify(ctx, workerID, job)
+		return
+	}
+
 	monitorID, err := primitive.ObjectIDFromHex(job.MonitorID)
 	if err != nil {
 		log.Printf("Worker %d: invalid monitor ID %s", workerID, job.MonitorID)
@@ -91,7 +102,9 @@ func (w *Worker) process(ctx context.Context, workerID int, job *EvalJob) {
 
 		job.Retries++
 		if job.Retries >= MaxRetries {
-			w.queue.SendToDead(ctx, *job, err.Error())
+			if sendErr := w.queue.SendToDead(ctx, *job, err.Error()); sendErr != nil {
+				log.Printf("Worker %d: enviando job a la cola muerta: %v", workerID, sendErr)
+			}
 			log.Printf("Worker %d: job sent to dead queue after %d retries", workerID, job.Retries)
 			return
 		}
@@ -105,5 +118,27 @@ func (w *Worker) process(ctx context.Context, workerID int, job *EvalJob) {
 
 	if len(redFlags) > 0 {
 		log.Printf("Worker %d: %d red flags triggered for monitor %s", workerID, len(redFlags), monitor.Name)
+	}
+}
+
+// processNotify entrega una notificación con la misma política de
+// reintentos que la evaluación: MaxRetries y luego cola muerta.
+func (w *Worker) processNotify(ctx context.Context, workerID int, job *EvalJob) {
+	if w.notifier == nil || job.Notify == nil {
+		return
+	}
+	if err := w.notifier.ProcessNotification(ctx, job.Notify); err != nil {
+		log.Printf("Worker %d: notification for red flag %s failed: %v", workerID, job.Notify.RedFlagID, err)
+
+		job.Retries++
+		if job.Retries >= MaxRetries {
+			if sendErr := w.queue.SendToDead(ctx, *job, err.Error()); sendErr != nil {
+				log.Printf("Worker %d: enviando notificación a la cola muerta: %v", workerID, sendErr)
+			}
+			return
+		}
+		if enqErr := w.queue.Enqueue(ctx, *job); enqErr != nil {
+			log.Printf("Worker %d: re-enqueue de notificación falló: %v", workerID, enqErr)
+		}
 	}
 }

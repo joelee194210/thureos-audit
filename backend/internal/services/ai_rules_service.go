@@ -187,7 +187,7 @@ func callDeepSeek(ctx context.Context, ai models.AIConfig, userMessage string) (
 	if err != nil {
 		return "", fmt.Errorf("calling DeepSeek API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

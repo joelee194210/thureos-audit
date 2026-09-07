@@ -40,20 +40,25 @@ func (r *DashboardRepository) FindByID(ctx context.Context, id primitive.ObjectI
 	return &dashboard, nil
 }
 
-func (r *DashboardRepository) FindAccessible(ctx context.Context, userID primitive.ObjectID) ([]models.Dashboard, error) {
-	filter := bson.M{
-		"$or": []bson.M{
+// FindAccessible lists dashboards the user can see. isOrgRole mirrors
+// handlers.isOrgRole (admin/compliance see the whole platform, per
+// CLAUDE.md) — passing it here instead of a role string keeps this
+// package unaware of the role model.
+func (r *DashboardRepository) FindAccessible(ctx context.Context, userID primitive.ObjectID, isOrgRole bool) ([]models.Dashboard, error) {
+	filter := bson.M{}
+	if !isOrgRole {
+		filter["$or"] = []bson.M{
 			{"owner_id": userID},
 			{"shared_with": userID},
 			{"is_public": true},
-		},
+		}
 	}
 
 	cursor, err := r.col.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var dashboards []models.Dashboard
 	if err := cursor.All(ctx, &dashboards); err != nil {

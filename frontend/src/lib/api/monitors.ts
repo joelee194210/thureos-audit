@@ -1,16 +1,48 @@
 import { api } from "./client";
-import type { Monitor, SchemaField, SourceType, CreateSourceConfig } from "@/lib/types";
+import type {
+  Monitor,
+  SchemaField,
+  SourceType,
+  CreateSourceConfig,
+} from "@/lib/types";
 
 export const monitorsApi = {
   list: () => api.get<Monitor[]>("/monitors"),
 
   get: (id: string) => api.get<Monitor>(`/monitors/${id}`),
 
-  create: (data: { name: string; description: string; sourceType: SourceType; sourceConfig?: CreateSourceConfig }) =>
-    api.post<Monitor | { monitor: Monitor; pushToken: string }>("/monitors", data),
+  create: (data: {
+    name: string;
+    description: string;
+    sourceType: SourceType;
+    sourceConfig?: CreateSourceConfig;
+    schema?: SchemaField[];
+  }) =>
+    api.post<Monitor | { monitor: Monitor; pushToken: string }>(
+      "/monitors",
+      data,
+    ),
 
-  update: (id: string, data: { name?: string; description?: string; sourceConfig?: CreateSourceConfig }) =>
-    api.put<{ message: string }>(`/monitors/${id}`, data),
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      sourceConfig?: CreateSourceConfig;
+    },
+  ) => api.put<{ message: string }>(`/monitors/${id}`, data),
+
+  detectSchema: (
+    sourceType: string,
+    sourceConfig: Partial<CreateSourceConfig>,
+  ) =>
+    api.post<{ schema: SchemaField[]; sampleCount: number }>(
+      "/monitors/detect-schema",
+      {
+        sourceType,
+        sourceConfig,
+      },
+    ),
 
   rotatePushToken: (id: string) =>
     api.post<{ pushToken: string }>(`/monitors/${id}/rotate-push-token`, {}),

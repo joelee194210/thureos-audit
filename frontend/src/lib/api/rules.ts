@@ -49,4 +49,32 @@ export const rulesApi = {
     dataSample?: string;
   }) =>
     api.post<{ suggestions: AIRuleSuggestion[] }>("/rules/ai-generate", data),
+
+  // Tipologías AML pre-armadas: catálogo + instanciación por monitor.
+  listTemplates: () => api.get<RuleTemplate[]>("/rule-templates"),
+
+  instantiateTemplate: (
+    monitorId: string,
+    data: {
+      templateId: string;
+      fieldMap: Record<string, string>;
+      params?: Record<string, number>;
+      name: string;
+    },
+  ) => api.post<Rule>(`/monitors/${monitorId}/rules/from-template`, data),
 };
+
+export interface RuleTemplate {
+  id: string;
+  name: string;
+  description: string;
+  suggestedSeverity: Severity;
+  requiredFields: string[];
+  params: {
+    key: string;
+    label: string;
+    description: string;
+    default: number;
+    min: number;
+  }[];
+}

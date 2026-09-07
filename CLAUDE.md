@@ -10,14 +10,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 monitors-main/
-├── frontend/          # Next.js 15 + React 19 + shadcn/ui + Tailwind CSS 4
+├── frontend/          # Next.js 16 + React 19 + shadcn/ui + Tailwind CSS 4
 ├── backend/           # Go (Gin/Fiber) REST API + WebSocket
 ├── linea_grafica/     # Manual de marca y arte del logotipo (normativo)
 └── docs/superpowers/  # Specs de diseño y planes de implementación
 ```
 
 ### Frontend (`frontend/`)
-- **Framework:** Next.js 15 (App Router) with TypeScript
+
+- **Framework:** Next.js 16 (App Router) with TypeScript
 - **UI:** shadcn/ui components + Tailwind CSS 4, minimalist design
 - **State:** Zustand for global state, TanStack Query for server state
 - **Charts:** Recharts for dashboards
@@ -25,7 +26,8 @@ monitors-main/
 - **Theming:** Light/dark mode with CSS variables
 
 ### Backend (`backend/`)
-- **Language:** Go 1.22+
+
+- **Language:** Go 1.26+
 - **Router:** Fiber v2
 - **Database:** MongoDB (flexible schema for varied data structures)
 - **Cache:** Redis (session management, rule evaluation cache)
@@ -34,13 +36,16 @@ monitors-main/
 - **Rules engine:** Dynamic rule evaluation with Claude API for AI-assisted rule generation
 
 ### Data Flow
+
 ```
 Data Sources (CSV/Excel/JSON/API) → Ingestion Pipeline → Schema Detection →
 MongoDB Storage → Redis Queue → Worker Pool → Rules Engine → Alerts
 ```
 
 ### Async Rule Evaluation (Queue + Workers)
+
 Rule evaluation is decoupled from data ingestion via a Redis queue:
+
 - Upload endpoint enqueues an `EvalJob` and returns immediately
 - Worker goroutines (`internal/services/worker.go`) poll the queue with `BRPOP`
 - Failed evaluations retry up to 3 times, then move to dead queue
@@ -50,26 +55,29 @@ Rule evaluation is decoupled from data ingestion via a Redis queue:
 ## Build & Development Commands
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install              # Install dependencies
 npm run dev              # Dev server (http://localhost:3000)
 npm run build            # Production build
-npm run lint             # ⚠ ESLint NO está configurado: abre un asistente interactivo
-npm run test             # ⚠ Vitest instalado pero el proyecto no tiene tests
+npm run lint             # ESLint 9 (eslint.config.mjs, preset de eslint-config-next)
+npm run test:run         # Vitest (tests en src/lib/)
 ```
 
 ### Backend
+
 ```bash
 cd backend
 go mod tidy              # Sync dependencies
 go run cmd/server/main.go  # Run API server (http://localhost:8080)
 go build -o bin/server cmd/server/main.go  # Build binary
-go test ./...            # ⚠ el backend no tiene tests todavía
+go test ./...            # Tests por paquete (handlers, middleware, router, services)
 golangci-lint run        # Linting
 ```
 
 ### Infrastructure
+
 ```bash
 docker compose up -d     # Start MongoDB + Redis
 docker compose down      # Stop services
@@ -79,33 +87,41 @@ docker compose logs -f   # Follow logs
 ## Key Architecture Patterns
 
 ### Schema Detection Engine
+
 Data uploaded in any format passes through a schema detector that infers field types and creates a MongoDB collection schema dynamically. Each "monitor" has its own collection and schema definition stored in a `schemas` collection.
 
 ### Rules Engine
+
 Rules are stored as JSON documents with conditions, thresholds, and actions. Structure:
+
 ```json
 {
   "monitor_id": "...",
   "name": "High value alert",
-  "conditions": [{"field": "amount", "operator": "gt", "value": 10000}],
+  "conditions": [{ "field": "amount", "operator": "gt", "value": 10000 }],
   "actions": ["alert", "flag"],
   "severity": "high"
 }
 ```
+
 Rules support: comparison operators, regex, aggregate functions, time windows, and composite (AND/OR) logic.
 
 ### Role-Based Access
+
 Three roles with hierarchical permissions:
+
 - **admin**: Full access — manage users, monitors, rules, system config
 - **compliance**: Create/edit monitors, rules, dashboards. Cannot manage users
 - **viewer**: Read-only access to assigned dashboards
 
 ### Dashboard System
+
 Dashboards are composed of configurable widgets tied to specific monitors and rules. Each widget queries aggregated data and renders via Recharts. Dashboards are shareable and role-restricted.
 
 ## Coding Conventions
 
 ### Frontend
+
 - Use `"use client"` only when necessary (interactivity, hooks)
 - Prefer Server Components for data fetching
 - All API calls go through `/lib/api/` client module
@@ -113,6 +129,7 @@ Dashboards are composed of configurable widgets tied to specific monitors and ru
 - Use `cn()` utility for conditional classNames
 
 ### Backend
+
 - Follow standard Go project layout (`cmd/`, `internal/`, `pkg/`)
 - Handlers in `internal/handlers/`, business logic in `internal/services/`
 - MongoDB operations in `internal/repository/`
@@ -149,11 +166,13 @@ nunca una marca independiente: no se usa solo.
 ## Environment Variables
 
 ### Frontend (`.env.local`)
+
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
 ```
 
 ### Backend (`.env`)
+
 ```
 # Puertos publicados por docker-compose.yml, no los estándar
 MONGO_URI=mongodb://localhost:27019/thureos_compliance
@@ -164,6 +183,7 @@ PORT=8080
 ```
 
 ## MongoDB Collections
+
 - `users` — User accounts and roles
 - `monitors` — Monitor definitions (name, source type, schedule)
 - `schemas` — Detected schemas per monitor

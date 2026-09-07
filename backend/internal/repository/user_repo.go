@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/thureos/compliance/internal/database"
@@ -22,10 +23,12 @@ func NewUserRepository(db *database.MongoDB) *UserRepository {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	col.Indexes().CreateOne(ctx, mongo.IndexModel{
+	if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "email", Value: 1}},
 		Options: options.Index().SetUnique(true),
-	})
+	}); err != nil {
+		log.Printf("users: creando índice único de email: %v", err)
+	}
 
 	return &UserRepository{col: col}
 }
@@ -68,7 +71,7 @@ func (r *UserRepository) FindAll(ctx context.Context) ([]models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var users []models.User
 	if err := cursor.All(ctx, &users); err != nil {

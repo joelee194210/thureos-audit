@@ -40,9 +40,11 @@ func NewScheduler(
 func (s *Scheduler) Start(ctx context.Context) {
 	s.cron = cron.New()
 
-	s.cron.AddFunc("* * * * *", func() {
+	if _, err := s.cron.AddFunc("* * * * *", func() {
 		s.checkAndFireRules(ctx)
-	})
+	}); err != nil {
+		log.Printf("scheduler: registrando chequeo de reglas: %v", err)
+	}
 
 	s.mu.Lock()
 	s.running = true

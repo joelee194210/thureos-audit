@@ -26,7 +26,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
-	defer mongo.Disconnect()
+	defer func() {
+		if err := mongo.Disconnect(); err != nil {
+			log.Printf("MongoDB disconnect error: %v", err)
+		}
+	}()
 
 	// Connect to Redis
 	redisClient, err := database.ConnectRedis(cfg.RedisURL)
@@ -39,6 +43,8 @@ func main() {
 	monitorRepo := repository.NewMonitorRepository(mongo)
 	ruleRepo := repository.NewRuleRepository(mongo)
 	redFlagRepo := repository.NewRedFlagRepository(mongo)
+	redFlagReportRepo := repository.NewRedFlagReportRepository(mongo)
+	redFlagCaseRepo := repository.NewRedFlagCaseRepository(mongo)
 	redFlagLogRepo := repository.NewRedFlagLogRepository(mongo)
 	dashboardRepo := repository.NewDashboardRepository(mongo)
 	mccRepo := repository.NewMCCRepository(mongo)
@@ -82,15 +88,21 @@ func main() {
 	// Initialize services
 	authService := services.NewAuthService(userRepo, cfg)
 	ingestionService := services.NewIngestionService(monitorRepo)
-	ruleEngine := services.NewRuleEngine(ruleRepo, redFlagRepo, monitorRepo, execLogRepo)
+	ruleEngine := services.NewRuleEngine(ruleRepo, redFlagRepo, monitorRepo, redFlagReportRepo, execLogRepo)
 	aiRulesService := services.NewAIRulesService(systemConfigRepo)
+	notificationService := services.NewNotificationService(nil, systemConfigRepo)
+	ruleEngine.SetNotifier(notificationService)
 	dashboardService := services.NewDashboardService(dashboardRepo, monitorRepo, ruleRepo)
+
+	redFlagHandler := handlers.NewRedFlagHandler(redFlagRepo, redFlagLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo, redFlagReportRepo)
+	redFlagHandler.SetCaseRepo(redFlagCaseRepo)
 
 	// Initialize job queue and workers
 	var jobQueue *services.JobQueue
 	if redisClient != nil {
 		jobQueue = services.NewJobQueue(redisClient)
-		worker := services.NewWorker(jobQueue, ruleEngine, monitorRepo, 2)
+		notificationService.SetQueue(jobQueue)
+		worker := services.NewWorker(jobQueue, ruleEngine, monitorRepo, 2, notificationService)
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		defer workerCancel()
@@ -121,8 +133,9 @@ func main() {
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
 		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
 		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, aiRulesService, ruleEngine),
+		RuleTemplate:  handlers.NewRuleTemplateHandler(monitorRepo, ruleRepo),
 		Dashboard:     handlers.NewDashboardHandler(dashboardRepo, dashboardService),
-		RedFlag:       handlers.NewRedFlagHandler(redFlagRepo, redFlagLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo),
+		RedFlag:       redFlagHandler,
 		User:          handlers.NewUserHandler(userRepo, activityLogRepo),
 		MCC:           handlers.NewMCCHandler(mccRepo, activityLogRepo),
 		Country:       handlers.NewCountryHandler(countryRepo),
@@ -130,6 +143,7 @@ func main() {
 		Scheduler:     scheduler,
 		MonitorPuller: monitorPuller,
 		ConfigRepo:    systemConfigRepo,
+		Notifier:      notificationService,
 	}
 
 	// Create Fiber app
@@ -146,7 +160,9 @@ func main() {
 	go func() {
 		<-quit
 		log.Println("Shutting down server...")
-		app.Shutdown()
+		if err := app.Shutdown(); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
 	}()
 
 	log.Printf("Thureos Compliance API server starting on :%s", cfg.Port)

@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -50,6 +52,7 @@ func (h *MonitorHandler) Create(c *fiber.Ctx) error {
 		Description:  req.Description,
 		SourceType:   req.SourceType,
 		SourceConfig: req.SourceConfig.ToSourceConfig(),
+		Schema:       req.Schema,
 		CollectionID: primitive.NewObjectID().Hex(),
 		OwnerID:      userID,
 	}
@@ -118,6 +121,52 @@ func validateSourceConfig(sourceType models.SourceType, cfg *models.SourceConfig
 		}
 	}
 	return nil
+}
+
+// detectSchemaRequest mirrors the shape of CreateMonitorRequest's relevant
+// fields (sourceType + sourceConfig) rather than a bare SourceConfigInput,
+// so the frontend can build this call the same way it builds Create's body.
+type detectSchemaRequest struct {
+	SourceType   models.SourceType         `json:"sourceType"`
+	SourceConfig *models.SourceConfigInput `json:"sourceConfig"`
+}
+
+// DetectSchema makes a live test request to a not-yet-created api+pull
+// monitor's configured endpoint and returns the inferred schema, without
+// persisting anything — lets the create-monitor form show the user a
+// schema to confirm instead of it being detected blindly on first ingest.
+func (h *MonitorHandler) DetectSchema(c *fiber.Ctx) error {
+	var req detectSchemaRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if req.SourceType != "" && req.SourceType != models.SourceAPI {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "la detección de schema solo está disponible para sourceType \"api\""})
+	}
+
+	cfg := req.SourceConfig.ToSourceConfig()
+	if err := validateSourceConfig(models.SourceAPI, cfg); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	schema, sampleCount, err := h.ingestionService.DetectAPISchema(c.Context(), *cfg)
+	if err != nil {
+		if errors.Is(err, services.ErrPushModeSchemaDetection) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		// A timed-out request to the external API is distinguished from
+		// other network/response failures (DNS, refused, non-2xx, bad JSON)
+		// so the frontend can tell "it's slow" apart from "it's broken" —
+		// everything else collapses to 502 since this service isn't the
+		// origin of the failure either way.
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			return c.Status(fiber.StatusGatewayTimeout).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"schema": schema, "sampleCount": sampleCount})
 }
 
 func (h *MonitorHandler) List(c *fiber.Ctx) error {
@@ -272,7 +321,7 @@ func (h *MonitorHandler) UploadData(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "opening file"})
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var count int
 	switch monitor.SourceType {

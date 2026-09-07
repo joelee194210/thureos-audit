@@ -19,24 +19,66 @@ type RuleEngine struct {
 	ruleRepo    *repository.RuleRepository
 	redFlagRepo *repository.RedFlagRepository
 	monitorRepo *repository.MonitorRepository
+	reportRepo  *repository.RedFlagReportRepository
 	execLogRepo *repository.RuleExecutionLogRepository
+	notifier    *NotificationService
 }
 
 func NewRuleEngine(
 	ruleRepo *repository.RuleRepository,
 	redFlagRepo *repository.RedFlagRepository,
 	monitorRepo *repository.MonitorRepository,
+	reportRepo *repository.RedFlagReportRepository,
 	execLogRepo ...*repository.RuleExecutionLogRepository,
 ) *RuleEngine {
 	e := &RuleEngine{
 		ruleRepo:    ruleRepo,
 		redFlagRepo: redFlagRepo,
 		monitorRepo: monitorRepo,
+		reportRepo:  reportRepo,
 	}
 	if len(execLogRepo) > 0 {
 		e.execLogRepo = execLogRepo[0]
 	}
 	return e
+}
+
+// SetNotifier conecta el servicio de notificaciones (opcional, para no
+// romper los constructores existentes ni los tests).
+func (e *RuleEngine) SetNotifier(n *NotificationService) {
+	e.notifier = n
+}
+
+// triggerNotification encola el aviso de una bandera roja NUEVA; el
+// upsert de una existente no re-avisa (evita tormentas por un mismo
+// patrón). Corre en goroutine propia por la misma razón que el reporte.
+func (e *RuleEngine) triggerNotification(rf models.RedFlag, isNew bool) {
+	if e.notifier == nil || !isNew {
+		return
+	}
+	go e.notifier.TriggerRedFlag(rf)
+}
+
+// triggerReportGeneration arma y guarda el PDF automático de una bandera
+// roja recién creada. Corre en su propia goroutine con timeout propio: un
+// fallo acá nunca debe bloquear ni revertir la creación de la alerta, que
+// ya quedó confirmada en Mongo antes de este llamado.
+func (e *RuleEngine) triggerReportGeneration(rf models.RedFlag) {
+	if e.reportRepo == nil {
+		return
+	}
+	go func() {
+		pdf, err := RenderRedFlagReportPDF(&rf)
+		if err != nil {
+			log.Printf("WARNING: failed to render report for red flag %s: %v", rf.ID.Hex(), err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := e.reportRepo.Save(ctx, rf.ID, pdf); err != nil {
+			log.Printf("WARNING: failed to save report for red flag %s: %v", rf.ID.Hex(), err)
+		}
+	}()
 }
 
 // EvaluateRules runs all active rules for a monitor against its data
@@ -91,6 +133,8 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 						if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
 							log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
 						}
+						e.triggerReportGeneration(redFlag)
+						e.triggerNotification(redFlag, isNew)
 					}
 				}
 			}
@@ -114,6 +158,8 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 						if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
 							log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
 						}
+						e.triggerReportGeneration(aggRedFlags[i])
+						e.triggerNotification(aggRedFlags[i], isNew)
 					}
 				}
 			}
@@ -305,7 +351,9 @@ func toFloat(val interface{}) float64 {
 		return float64(v)
 	case string:
 		f := 0.0
-		fmt.Sscanf(v, "%f", &f)
+		if _, err := fmt.Sscanf(v, "%f", &f); err != nil {
+			return 0
+		}
 		return f
 	default:
 		return 0
@@ -534,6 +582,8 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
 						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
 					}
+					e.triggerReportGeneration(redFlag)
+					e.triggerNotification(redFlag, isNew)
 				}
 			}
 		}
@@ -556,6 +606,8 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
 						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
 					}
+					e.triggerReportGeneration(aggRedFlags[i])
+					e.triggerNotification(aggRedFlags[i], isNew)
 				}
 			}
 		}

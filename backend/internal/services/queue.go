@@ -15,10 +15,22 @@ const (
 	MaxRetries          = 3
 )
 
+// Tipos de job sobre la misma cola: el Kind vacío es evaluación de reglas
+// (los jobs históricos no traen Kind), JobKindNotify entrega notificaciones.
+const (
+	JobKindEval   = "eval"
+	JobKindNotify = "notify"
+)
+
 type EvalJob struct {
-	MonitorID string `json:"monitorId"`
-	Retries   int    `json:"retries"`
-	CreatedAt int64  `json:"createdAt"`
+	Kind string `json:"kind,omitempty"`
+	// Evaluación de reglas
+	MonitorID string `json:"monitorId,omitempty"`
+	// Notificación de red flag nueva
+	Notify *NotifyPayload `json:"notify,omitempty"`
+
+	Retries   int   `json:"retries"`
+	CreatedAt int64 `json:"createdAt"`
 }
 
 type JobQueue struct {

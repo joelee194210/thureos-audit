@@ -4,13 +4,31 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,8 +44,18 @@ import { Plus, Database, Upload, Trash2, Copy, Check } from "lucide-react";
 import { monitorsApi } from "@/lib/api/monitors";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
-import { SourceConfigFields, sourceConfigValuesToInput } from "@/components/monitors/source-config-fields";
-import type { Monitor, SourceType, APIMode, APIAuthType, CreateSourceConfig } from "@/lib/types";
+import {
+  SourceConfigFields,
+  sourceConfigValuesToInput,
+} from "@/components/monitors/source-config-fields";
+import type {
+  Monitor,
+  SourceType,
+  APIMode,
+  APIAuthType,
+  CreateSourceConfig,
+  SchemaField,
+} from "@/lib/types";
 
 export default function MonitorsPage() {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -48,7 +76,13 @@ export default function MonitorsPage() {
     pullAuthValue: "",
     pullIntervalMinutes: "60",
   });
-  const [pushTokenReveal, setPushTokenReveal] = useState<{ url: string; token: string } | null>(null);
+  const [detectedSchema, setDetectedSchema] = useState<SchemaField[] | null>(
+    null,
+  );
+  const [pushTokenReveal, setPushTokenReveal] = useState<{
+    url: string;
+    token: string;
+  } | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
   const { toastError } = useToast();
 
@@ -60,41 +94,64 @@ export default function MonitorsPage() {
     try {
       const data = await monitorsApi.list();
       setMonitors(data);
-    } catch { toastError("Error al cargar monitores"); }
+    } catch {
+      toastError("Error al cargar monitores");
+    }
   }
 
   async function createMonitor(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const sourceConfig = sourceConfigValuesToInput(newMonitor.sourceType, newMonitor) as CreateSourceConfig | undefined;
+      const sourceConfig = sourceConfigValuesToInput(
+        newMonitor.sourceType,
+        newMonitor,
+      ) as CreateSourceConfig | undefined;
 
       const result = await monitorsApi.create({
         name: newMonitor.name,
         description: newMonitor.description,
         sourceType: newMonitor.sourceType,
         sourceConfig,
+        schema: detectedSchema ?? undefined,
       });
 
       setIsCreateOpen(false);
       if ("pushToken" in result) {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
-        setPushTokenReveal({ url: `${apiUrl}/ingest/${result.monitor.id}`, token: result.pushToken });
+        const apiUrl =
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+        setPushTokenReveal({
+          url: `${apiUrl}/ingest/${result.monitor.id}`,
+          token: result.pushToken,
+        });
         setTokenCopied(false);
       }
       setNewMonitor({
-        name: "", description: "", sourceType: "csv",
-        delimiter: "", hasHeaderRow: true, sheetName: "", rootPath: "",
-        apiMode: "push", pullUrl: "", pullMethod: "GET", pullAuthType: "none",
-        pullAuthHeaderName: "", pullAuthValue: "", pullIntervalMinutes: "60",
+        name: "",
+        description: "",
+        sourceType: "csv",
+        delimiter: "",
+        hasHeaderRow: true,
+        sheetName: "",
+        rootPath: "",
+        apiMode: "push",
+        pullUrl: "",
+        pullMethod: "GET",
+        pullAuthType: "none",
+        pullAuthHeaderName: "",
+        pullAuthValue: "",
+        pullIntervalMinutes: "60",
       });
+      setDetectedSchema(null);
       loadMonitors();
-    } catch { toastError("Error al crear monitor"); }
+    } catch {
+      toastError("Error al crear monitor");
+    }
   }
 
   async function copyPushToken() {
     if (!pushTokenReveal) return;
     await navigator.clipboard.writeText(
-      `URL: ${pushTokenReveal.url}\nHeader: X-Ingest-Token: ${pushTokenReveal.token}`
+      `URL: ${pushTokenReveal.url}\nHeader: X-Ingest-Token: ${pushTokenReveal.token}`,
     );
     setTokenCopied(true);
   }
@@ -103,7 +160,9 @@ export default function MonitorsPage() {
     try {
       await monitorsApi.delete(id);
       loadMonitors();
-    } catch { toastError("Error al eliminar monitor"); }
+    } catch {
+      toastError("Error al eliminar monitor");
+    }
   }
 
   return (
@@ -114,7 +173,13 @@ export default function MonitorsPage() {
           <p className="text-sm text-muted-foreground">
             Gestiona tus fuentes de datos y esquemas
           </p>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <Dialog
+            open={isCreateOpen}
+            onOpenChange={(open) => {
+              setIsCreateOpen(open);
+              if (!open) setDetectedSchema(null);
+            }}
+          >
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4" /> Nuevo monitor
@@ -129,7 +194,9 @@ export default function MonitorsPage() {
                   <Label>Nombre</Label>
                   <Input
                     value={newMonitor.name}
-                    onChange={(e) => setNewMonitor({ ...newMonitor, name: e.target.value })}
+                    onChange={(e) =>
+                      setNewMonitor({ ...newMonitor, name: e.target.value })
+                    }
                     placeholder="Ej: Tarjetas de credito"
                     required
                   />
@@ -138,7 +205,12 @@ export default function MonitorsPage() {
                   <Label>Descripción</Label>
                   <Textarea
                     value={newMonitor.description}
-                    onChange={(e) => setNewMonitor({ ...newMonitor, description: e.target.value })}
+                    onChange={(e) =>
+                      setNewMonitor({
+                        ...newMonitor,
+                        description: e.target.value,
+                      })
+                    }
                     placeholder="Describe que datos va a monitorear"
                   />
                 </div>
@@ -146,9 +218,17 @@ export default function MonitorsPage() {
                   <Label>Tipo de fuente</Label>
                   <Select
                     value={newMonitor.sourceType}
-                    onValueChange={(v) => setNewMonitor({ ...newMonitor, sourceType: v as SourceType })}
+                    onValueChange={(v) => {
+                      setNewMonitor({
+                        ...newMonitor,
+                        sourceType: v as SourceType,
+                      });
+                      setDetectedSchema(null);
+                    }}
                   >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="csv">CSV</SelectItem>
                       <SelectItem value="excel">Excel</SelectItem>
@@ -161,33 +241,58 @@ export default function MonitorsPage() {
                 <SourceConfigFields
                   sourceType={newMonitor.sourceType}
                   values={newMonitor}
-                  onChange={(patch) => setNewMonitor({ ...newMonitor, ...patch })}
+                  onChange={(patch) =>
+                    setNewMonitor({ ...newMonitor, ...patch })
+                  }
+                  onSchemaDetected={setDetectedSchema}
                 />
 
-                <Button type="submit" className="w-full">Crear</Button>
+                <Button type="submit" className="w-full">
+                  Crear
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
 
-          <Dialog open={!!pushTokenReveal} onOpenChange={(open) => !open && setPushTokenReveal(null)}>
+          <Dialog
+            open={!!pushTokenReveal}
+            onOpenChange={(open) => !open && setPushTokenReveal(null)}
+          >
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Credenciales de ingesta</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Guarda esta URL y este token ahora — no se van a volver a mostrar.
+                  Guarda esta URL y este token ahora — no se van a volver a
+                  mostrar.
                 </p>
                 <div className="space-y-2">
                   <Label>URL</Label>
-                  <Input readOnly value={pushTokenReveal?.url ?? ""} className="font-mono text-xs" />
+                  <Input
+                    readOnly
+                    value={pushTokenReveal?.url ?? ""}
+                    className="font-mono text-xs"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Header: X-Ingest-Token</Label>
-                  <Input readOnly value={pushTokenReveal?.token ?? ""} className="font-mono text-xs" />
+                  <Input
+                    readOnly
+                    value={pushTokenReveal?.token ?? ""}
+                    className="font-mono text-xs"
+                  />
                 </div>
-                <Button onClick={copyPushToken} className="w-full" variant="outline">
-                  {tokenCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                <Button
+                  onClick={copyPushToken}
+                  className="w-full"
+                  variant="outline"
+                >
+                  {tokenCopied ? (
+                    <Check className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Copy className="mr-2 h-4 w-4" />
+                  )}
                   {tokenCopied ? "URL y token copiados" : "Copiar URL y token"}
                 </Button>
               </div>
@@ -200,7 +305,9 @@ export default function MonitorsPage() {
             <CardContent className="flex flex-col items-center justify-center py-12">
               <Database className="mb-4 h-12 w-12 text-muted-foreground" />
               <p className="mb-2 font-medium">No hay monitores</p>
-              <p className="text-sm text-muted-foreground">Crea tu primer monitor para empezar</p>
+              <p className="text-sm text-muted-foreground">
+                Crea tu primer monitor para empezar
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -211,11 +318,16 @@ export default function MonitorsPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <CardTitle className="text-base">
-                        <Link href={`/monitors/${monitor.id}`} className="hover:underline">
+                        <Link
+                          href={`/monitors/${monitor.id}`}
+                          className="hover:underline"
+                        >
                           {monitor.name}
                         </Link>
                       </CardTitle>
-                      <CardDescription className="mt-1">{monitor.description}</CardDescription>
+                      <CardDescription className="mt-1">
+                        {monitor.description}
+                      </CardDescription>
                     </div>
                     <Badge variant="outline">{monitor.sourceType}</Badge>
                   </div>
@@ -246,17 +358,24 @@ export default function MonitorsPage() {
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>¿Eliminar &quot;{monitor.name}&quot;?</AlertDialogTitle>
+                            <AlertDialogTitle>
+                              ¿Eliminar &quot;{monitor.name}&quot;?
+                            </AlertDialogTitle>
                             <AlertDialogDescription>
-                              Se elimina la definición del monitor y deja de recibir datos nuevos.
-                              Los {monitor.recordCount} registros ya ingeridos y las reglas asociadas
-                              <strong> no se borran</strong> — quedan huérfanos, sin un monitor que los
-                              vincule, por retención regulatoria. Esta acción no se puede deshacer desde aquí.
+                              Se elimina la definición del monitor y deja de
+                              recibir datos nuevos. Los {monitor.recordCount}{" "}
+                              registros ya ingeridos y las reglas asociadas
+                              <strong> no se borran</strong> — quedan huérfanos,
+                              sin un monitor que los vincule, por retención
+                              regulatoria. Esta acción no se puede deshacer
+                              desde aquí.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => deleteMonitor(monitor.id)}>
+                            <AlertDialogAction
+                              onClick={() => deleteMonitor(monitor.id)}
+                            >
                               Eliminar
                             </AlertDialogAction>
                           </AlertDialogFooter>

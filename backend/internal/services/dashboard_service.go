@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
@@ -26,6 +27,7 @@ type WidgetData struct {
 	Title    string        `json:"title"`
 	Type     string        `json:"type"`
 	Data     []interface{} `json:"data"`
+	Error    string        `json:"error,omitempty"`
 }
 
 // GetWidgetData fetches aggregated data for a single widget
@@ -76,6 +78,19 @@ func (s *DashboardService) GetDashboardData(ctx context.Context, dashboardID str
 	for _, widget := range dashboard.Widgets {
 		wd, err := s.GetWidgetData(ctx, widget)
 		if err != nil {
+			// A widget still gets a slot in the response even when its
+			// query fails (most commonly: the monitor it points to was
+			// deleted — monitor deletion doesn't cascade to dashboards).
+			// Dropping it silently, as before, left the widget's card on
+			// the dashboard rendering an empty chart with no indication
+			// anything was wrong.
+			widgetData = append(widgetData, WidgetData{
+				WidgetID: widget.ID,
+				Title:    widget.Title,
+				Type:     string(widget.Type),
+				Data:     []interface{}{},
+				Error:    "No se pudieron cargar los datos: el monitor de este widget ya no existe o no se pudo consultar.",
+			})
 			continue
 		}
 		widgetData = append(widgetData, *wd)
@@ -99,6 +114,17 @@ func buildAggregationPipeline(widget models.Widget) mongo.Pipeline {
 		if len(matchConditions) > 0 {
 			pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchConditions}})
 		}
+	}
+
+	// $min/$max compare by BSON type order (string > number): a single
+	// stray string in an otherwise-numeric field would win as the "max"
+	// instead of being excluded, unlike $sum/$avg, which already ignore
+	// non-numeric values on their own. Filtering to numeric documents
+	// first keeps $min/$max limited to the values they're meant to compare.
+	if (widget.Aggregation == models.AggMin || widget.Aggregation == models.AggMax) && widget.Field != "" {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: widget.Field, Value: bson.D{{Key: "$type", Value: "number"}}},
+		}}})
 	}
 
 	// Build aggregation based on type
@@ -192,13 +218,19 @@ func (s *DashboardService) DrillDown(ctx context.Context, dashboardID, widgetID,
 		filter[widget.GroupBy] = groupValue
 	}
 
-	// Apply search across string fields
+	// Apply search across string fields. QuoteMeta treats the query as a
+	// literal substring instead of a regex: unescaped, a search box is a
+	// user-facing $regex injection point — any authenticated viewer could
+	// submit a catastrophic-backtracking pattern (e.g. "(a+)+$") as a DoS,
+	// and ordinary queries containing regex metacharacters (a literal "."
+	// or "$" in an amount or account number) would silently mismatch.
 	if search != "" {
 		var orConditions []bson.M
+		pattern := regexp.QuoteMeta(search)
 		for _, field := range monitor.Schema {
 			if field.Type == "string" {
 				orConditions = append(orConditions, bson.M{
-					field.Name: bson.M{"$regex": search, "$options": "i"},
+					field.Name: bson.M{"$regex": pattern, "$options": "i"},
 				})
 			}
 		}

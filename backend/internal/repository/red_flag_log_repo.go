@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/thureos/compliance/internal/database"
@@ -22,12 +23,14 @@ func NewRedFlagLogRepository(db *database.MongoDB) *RedFlagLogRepository {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	col.Indexes().CreateOne(ctx, mongo.IndexModel{
+	if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
 			{Key: "red_flag_id", Value: 1},
 			{Key: "created_at", Value: 1},
 		},
-	})
+	}); err != nil {
+		log.Printf("red_flag_logs: creando índice: %v", err)
+	}
 
 	return &RedFlagLogRepository{col: col}
 }
@@ -48,7 +51,7 @@ func (r *RedFlagLogRepository) FindByRedFlagID(ctx context.Context, redFlagID pr
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func() { _ = cursor.Close(ctx) }()
 
 	var logs []models.RedFlagLog
 	if err := cursor.All(ctx, &logs); err != nil {

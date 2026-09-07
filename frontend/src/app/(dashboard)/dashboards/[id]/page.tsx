@@ -45,6 +45,7 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import {
   BarChart,
@@ -104,31 +105,62 @@ const fmt = new Intl.NumberFormat("es", {
 
 const fmtFull = new Intl.NumberFormat("es", { maximumFractionDigits: 2 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomTooltip({ active, payload, label }: any) {
+// Mismo tope que aplica el backend en DrillDown cuando export=true
+// (dashboard_service.go) — solo para avisar aquí, no para hacerlo cumplir.
+const EXPORT_ALL_LIMIT = 10000;
+
+function CustomTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { color: string; value: number; name: string }[];
+  label?: React.ReactNode;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border bg-popover px-3 py-2 shadow-xl">
       <p className="mb-1 text-xs font-medium text-muted-foreground">{label}</p>
-      {payload.map((entry: { color: string; value: number; name: string }, i: number) => (
-        <p key={i} className="text-sm font-semibold" style={{ color: entry.color }}>
-          {fmtFull.format(entry.value)}
-        </p>
-      ))}
+      {payload.map(
+        (entry: { color: string; value: number; name: string }, i: number) => (
+          <p
+            key={i}
+            className="text-sm font-semibold"
+            style={{ color: entry.color }}
+          >
+            {fmtFull.format(entry.value)}
+          </p>
+        ),
+      )}
     </div>
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function PieTooltip({ active, payload }: any) {
+function PieTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: {
+    name?: string;
+    value: number;
+    payload?: { total?: number; fill?: string };
+  }[];
+}) {
   if (!active || !payload?.length) return null;
   const entry = payload[0];
   const total = entry.payload?.total || 0;
   const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : "0";
   return (
     <div className="rounded-lg border bg-popover px-3 py-2 shadow-xl">
-      <p className="mb-1 text-xs font-medium text-muted-foreground">{entry.name}</p>
-      <p className="text-sm font-semibold" style={{ color: entry.payload?.fill }}>
+      <p className="mb-1 text-xs font-medium text-muted-foreground">
+        {entry.name}
+      </p>
+      <p
+        className="text-sm font-semibold"
+        style={{ color: entry.payload?.fill }}
+      >
         {fmtFull.format(entry.value)} ({pct}%)
       </p>
     </div>
@@ -138,14 +170,17 @@ function PieTooltip({ active, payload }: any) {
 interface DrilldownState {
   widgetId: string;
   widgetTitle: string;
-  groupValue: string;      // display label (may be "(Sin valor)")
-  dbGroupValue: string;     // actual value sent to the backend API
+  groupValue: string; // display label (may be "(Sin valor)")
+  dbGroupValue: string; // actual value sent to the backend API
 }
 
 export default function DashboardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [widgetData, setWidgetData] = useState<Record<string, Record<string, unknown>[]>>({});
+  const [widgetData, setWidgetData] = useState<
+    Record<string, Record<string, unknown>[]>
+  >({});
+  const [widgetErrors, setWidgetErrors] = useState<Record<string, string>>({});
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -154,7 +189,9 @@ export default function DashboardDetailPage() {
 
   // Drill-down state
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
-  const [drillRecords, setDrillRecords] = useState<Record<string, unknown>[]>([]);
+  const [drillRecords, setDrillRecords] = useState<Record<string, unknown>[]>(
+    [],
+  );
   const [drillTotal, setDrillTotal] = useState(0);
   const [drillPage, setDrillPage] = useState(1);
   const [drillSearch, setDrillSearch] = useState("");
@@ -178,13 +215,19 @@ export default function DashboardDetailPage() {
     if (id) {
       loadDashboard();
       loadData();
-      monitorsApi.list().then(setMonitors).catch((err) => {
-        console.error("Failed to load monitors:", err);
-        toastError("Error al cargar monitores");
-      });
-      rulesApi.list().then(setRules).catch((err) => {
-        console.error("Failed to load rules:", err);
-      });
+      monitorsApi
+        .list()
+        .then(setMonitors)
+        .catch((err) => {
+          console.error("Failed to load monitors:", err);
+          toastError("Error al cargar monitores");
+        });
+      rulesApi
+        .list()
+        .then(setRules)
+        .catch((err) => {
+          console.error("Failed to load rules:", err);
+        });
     }
   }, [id]);
 
@@ -201,10 +244,13 @@ export default function DashboardDetailPage() {
     try {
       const result = await dashboardsApi.getData(id);
       const dataMap: Record<string, Record<string, unknown>[]> = {};
+      const errorMap: Record<string, string> = {};
       result.widgets?.forEach((w) => {
         dataMap[w.widgetId] = w.data;
+        if (w.error) errorMap[w.widgetId] = w.error;
       });
       setWidgetData(dataMap);
+      setWidgetErrors(errorMap);
     } catch (err) {
       console.error("Failed to load widget data:", err);
       toastError("Error al cargar datos del dashboard");
@@ -242,9 +288,20 @@ export default function DashboardDetailPage() {
         payload.aggregation = newWidget.aggregation;
         payload.groupBy = newWidget.groupBy;
       }
-      await dashboardsApi.addWidget(id, payload as Parameters<typeof dashboardsApi.addWidget>[1]);
+      await dashboardsApi.addWidget(
+        id,
+        payload as Parameters<typeof dashboardsApi.addWidget>[1],
+      );
       setIsAddOpen(false);
-      setNewWidget({ title: "", type: "bar_chart", monitorId: "", field: "", aggregation: "count", groupBy: "", ruleId: "" });
+      setNewWidget({
+        title: "",
+        type: "bar_chart",
+        monitorId: "",
+        field: "",
+        aggregation: "count",
+        groupBy: "",
+        ruleId: "",
+      });
       setWidgetMode("manual");
       loadDashboard();
       loadData();
@@ -267,7 +324,13 @@ export default function DashboardDetailPage() {
 
   // Drill-down: load records for a clicked segment
   const loadDrilldown = useCallback(
-    async (widgetId: string, groupValue: string, page: number, search: string, pageSize: number) => {
+    async (
+      widgetId: string,
+      groupValue: string,
+      page: number,
+      search: string,
+      pageSize: number,
+    ) => {
       setDrillLoading(true);
       try {
         const result = await dashboardsApi.drilldown(id, widgetId, {
@@ -288,7 +351,11 @@ export default function DashboardDetailPage() {
     [id],
   );
 
-  function handleChartClick(widgetId: string, widgetTitle: string, groupValue: string) {
+  function handleChartClick(
+    widgetId: string,
+    widgetTitle: string,
+    groupValue: string,
+  ) {
     if (!groupValue) return;
     // Reverse the "(Sin valor)" normalization — the DB has empty strings
     const dbGroupValue = groupValue === "(Sin valor)" ? "" : groupValue;
@@ -299,10 +366,43 @@ export default function DashboardDetailPage() {
     loadDrilldown(widgetId, dbGroupValue, 1, "", drillPageSize);
   }
 
+  // Recharts' <Line>/<Area> don't support a click handler on the curve/fill
+  // itself the way <Bar>/<Pie> do (data, index) — a click there only ever
+  // gets the native mouse event, with no way back to which point was hit.
+  // The one target that does carry the clicked point's data is the
+  // activeDot (the dot Recharts shows at the hovered point) — but it wraps
+  // the onClick handler through two layers of its own event-adapter helper,
+  // and depending on the layer, the point's props (with `.payload`) land in
+  // either the first or the second argument. Rather than hard-code one
+  // ordering (which is exactly how the previous version of this handler
+  // silently never fired), check both.
+  function handleActiveDotClick(widgetId: string, widgetTitle: string) {
+    // What recharts actually forwards to this onClick — the dot's props
+    // land in either argument depending on the adapter layer.
+    type DotClickProps = { payload?: { name?: unknown } };
+    return (a?: unknown, b?: unknown) => {
+      const aDot = a as DotClickProps | undefined;
+      const bDot = b as DotClickProps | undefined;
+      const dotProps = bDot?.payload ? bDot : aDot?.payload ? aDot : undefined;
+      const d = dotProps?.payload;
+      if (d) handleChartClick(widgetId, widgetTitle, String(d.name || ""));
+    };
+  }
+
   // Reload drill-down when page or pageSize changes
   useEffect(() => {
     if (drilldown) {
-      loadDrilldown(drilldown.widgetId, drilldown.dbGroupValue, drillPage, drillSearch, drillPageSize);
+      // debt: loadDrilldown fija drillLoading síncrono a propósito — la
+      // paginación del drilldown muestra spinner en el mismo frame.
+      // Revisar -> al migrar esta página a TanStack Query (ya instalada).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      loadDrilldown(
+        drilldown.widgetId,
+        drilldown.dbGroupValue,
+        drillPage,
+        drillSearch,
+        drillPageSize,
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drillPage, drillPageSize]);
@@ -312,7 +412,13 @@ export default function DashboardDetailPage() {
     setDrillPage(1);
     setExpandedRow(null);
     if (drilldown) {
-      loadDrilldown(drilldown.widgetId, drilldown.dbGroupValue, 1, drillSearch, drillPageSize);
+      loadDrilldown(
+        drilldown.widgetId,
+        drilldown.dbGroupValue,
+        1,
+        drillSearch,
+        drillPageSize,
+      );
     }
   }
 
@@ -343,7 +449,10 @@ export default function DashboardDetailPage() {
 
   function handleExportPage() {
     if (!drilldown || !drillRecords.length) return;
-    exportCSV(drillRecords, `${drilldown.widgetTitle}-${drilldown.groupValue}-pag${drillPage}.csv`);
+    exportCSV(
+      drillRecords,
+      `${drilldown.widgetTitle}-${drilldown.groupValue}-pag${drillPage}.csv`,
+    );
   }
 
   async function handleExportAll() {
@@ -382,7 +491,9 @@ export default function DashboardDetailPage() {
       <Header title={dashboard.name} />
       <div className="p-6">
         <div className="mb-6 flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{dashboard.description}</p>
+          <p className="text-sm text-muted-foreground">
+            {dashboard.description}
+          </p>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -424,6 +535,12 @@ export default function DashboardDetailPage() {
                             ...newWidget,
                             ruleId: v,
                             title: rule ? `Regla: ${rule.name}` : "",
+                            // Sin aggregateConditions, el widget queda en
+                            // count sin agrupar — una sola barra "(Sin
+                            // valor)" es menos útil que el número solo.
+                            type: rule?.aggregateConditions?.length
+                              ? newWidget.type
+                              : "stat",
                           });
                         }}
                       >
@@ -435,7 +552,10 @@ export default function DashboardDetailPage() {
                             <SelectItem key={r.id} value={r.id}>
                               <div className="flex items-center gap-2">
                                 <span>{r.name}</span>
-                                <Badge variant="outline" className="text-[10px]">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px]"
+                                >
                                   {r.severity}
                                 </Badge>
                               </div>
@@ -445,7 +565,9 @@ export default function DashboardDetailPage() {
                       </Select>
                       {selectedRule && (
                         <p className="text-xs text-muted-foreground">
-                          Monitor: {monitors.find((m) => m.id === selectedRule.monitorId)?.name || selectedRule.monitorId}
+                          Monitor:{" "}
+                          {monitors.find((m) => m.id === selectedRule.monitorId)
+                            ?.name || selectedRule.monitorId}
                           {selectedRule.aggregateConditions?.length
                             ? ` | ${selectedRule.aggregateConditions[0].function}(${selectedRule.aggregateConditions[0].field}) por ${selectedRule.aggregateConditions[0].groupBy}`
                             : ` | ${selectedRule.conditionGroup.conditions.length} condiciones`}
@@ -457,7 +579,12 @@ export default function DashboardDetailPage() {
                         <Label>Título</Label>
                         <Input
                           value={newWidget.title}
-                          onChange={(e) => setNewWidget({ ...newWidget, title: e.target.value })}
+                          onChange={(e) =>
+                            setNewWidget({
+                              ...newWidget,
+                              title: e.target.value,
+                            })
+                          }
                           required
                         />
                       </div>
@@ -465,26 +592,41 @@ export default function DashboardDetailPage() {
                         <Label>Tipo de grafico</Label>
                         <Select
                           value={newWidget.type}
-                          onValueChange={(v) => setNewWidget({ ...newWidget, type: v as WidgetType })}
+                          onValueChange={(v) =>
+                            setNewWidget({
+                              ...newWidget,
+                              type: v as WidgetType,
+                            })
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="bar_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.bar_chart} Barras</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.bar_chart} Barras
+                              </span>
                             </SelectItem>
                             <SelectItem value="line_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.line_chart} Lineas</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.line_chart} Lineas
+                              </span>
                             </SelectItem>
                             <SelectItem value="pie_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.pie_chart} Circular</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.pie_chart} Circular
+                              </span>
                             </SelectItem>
                             <SelectItem value="area_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.area_chart} Area</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.area_chart} Area
+                              </span>
                             </SelectItem>
                             <SelectItem value="stat">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.stat} Estadistica</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.stat} Estadistica
+                              </span>
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -497,7 +639,9 @@ export default function DashboardDetailPage() {
                       <Label>Título</Label>
                       <Input
                         value={newWidget.title}
-                        onChange={(e) => setNewWidget({ ...newWidget, title: e.target.value })}
+                        onChange={(e) =>
+                          setNewWidget({ ...newWidget, title: e.target.value })
+                        }
                         required
                       />
                     </div>
@@ -506,26 +650,41 @@ export default function DashboardDetailPage() {
                         <Label>Tipo</Label>
                         <Select
                           value={newWidget.type}
-                          onValueChange={(v) => setNewWidget({ ...newWidget, type: v as WidgetType })}
+                          onValueChange={(v) =>
+                            setNewWidget({
+                              ...newWidget,
+                              type: v as WidgetType,
+                            })
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="bar_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.bar_chart} Barras</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.bar_chart} Barras
+                              </span>
                             </SelectItem>
                             <SelectItem value="line_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.line_chart} Lineas</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.line_chart} Lineas
+                              </span>
                             </SelectItem>
                             <SelectItem value="pie_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.pie_chart} Circular</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.pie_chart} Circular
+                              </span>
                             </SelectItem>
                             <SelectItem value="area_chart">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.area_chart} Area</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.area_chart} Area
+                              </span>
                             </SelectItem>
                             <SelectItem value="stat">
-                              <span className="flex items-center gap-2">{WIDGET_TYPE_ICONS.stat} Estadistica</span>
+                              <span className="flex items-center gap-2">
+                                {WIDGET_TYPE_ICONS.stat} Estadistica
+                              </span>
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -534,7 +693,9 @@ export default function DashboardDetailPage() {
                         <Label>Monitor</Label>
                         <Select
                           value={newWidget.monitorId}
-                          onValueChange={(v) => setNewWidget({ ...newWidget, monitorId: v })}
+                          onValueChange={(v) =>
+                            setNewWidget({ ...newWidget, monitorId: v })
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Monitor" />
@@ -554,7 +715,9 @@ export default function DashboardDetailPage() {
                         <Label>Campo</Label>
                         <Select
                           value={newWidget.field}
-                          onValueChange={(v) => setNewWidget({ ...newWidget, field: v })}
+                          onValueChange={(v) =>
+                            setNewWidget({ ...newWidget, field: v })
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Campo" />
@@ -572,7 +735,12 @@ export default function DashboardDetailPage() {
                         <Label>Agregacion</Label>
                         <Select
                           value={newWidget.aggregation}
-                          onValueChange={(v) => setNewWidget({ ...newWidget, aggregation: v as AggregationType })}
+                          onValueChange={(v) =>
+                            setNewWidget({
+                              ...newWidget,
+                              aggregation: v as AggregationType,
+                            })
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -591,7 +759,12 @@ export default function DashboardDetailPage() {
                       <Label>Agrupar por (opcional)</Label>
                       <Select
                         value={newWidget.groupBy || "__none__"}
-                        onValueChange={(v) => setNewWidget({ ...newWidget, groupBy: v === "__none__" ? "" : v })}
+                        onValueChange={(v) =>
+                          setNewWidget({
+                            ...newWidget,
+                            groupBy: v === "__none__" ? "" : v,
+                          })
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Sin agrupacion" />
@@ -620,34 +793,51 @@ export default function DashboardDetailPage() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <BarChart3 className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">Agrega widgets para visualizar tus datos</p>
+              <p className="text-sm text-muted-foreground">
+                Agrega widgets para visualizar tus datos
+              </p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {dashboard.widgets?.map((widget) => {
-              const rawData = (widgetData[widget.id] || []) as Record<string, unknown>[];
+              const rawData = (widgetData[widget.id] || []) as Record<
+                string,
+                unknown
+              >[];
               // Normalize empty names to "(Sin valor)"
               const data = rawData.map((d) => ({
                 ...d,
-                name: d.name && String(d.name).trim() ? String(d.name) : "(Sin valor)",
+                name:
+                  d.name && String(d.name).trim()
+                    ? String(d.name)
+                    : "(Sin valor)",
               })) as Record<string, unknown>[];
               // Add total for pie chart percentage calc
-              const pieTotal = data.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
+              const pieTotal = data.reduce(
+                (sum, d) => sum + (Number(d.value) || 0),
+                0,
+              );
               const pieData = data.map((d) => ({ ...d, total: pieTotal }));
+              const widgetError = widgetErrors[widget.id];
 
               return (
                 <Card key={widget.id} className="group overflow-hidden">
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">{WIDGET_TYPE_ICONS[widget.type]}</span>
-                        <CardTitle className="text-sm font-semibold">{widget.title}</CardTitle>
+                        <span className="text-muted-foreground">
+                          {WIDGET_TYPE_ICONS[widget.type]}
+                        </span>
+                        <CardTitle className="text-sm font-semibold">
+                          {widget.title}
+                        </CardTitle>
                       </div>
                       <div className="flex items-center gap-1">
                         {widget.groupBy && (
                           <span className="flex items-center gap-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                            <MousePointerClick className="h-3 w-3" /> Click para detalle
+                            <MousePointerClick className="h-3 w-3" /> Click para
+                            detalle
                           </span>
                         )}
                         <Button
@@ -667,19 +857,44 @@ export default function DashboardDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="h-80">
-                      {widget.type === "bar_chart" ? (
+                      {widgetError ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                          <AlertTriangle className="h-8 w-8 text-muted-foreground/50" />
+                          <p className="max-w-[85%] text-sm text-muted-foreground">
+                            {widgetError}
+                          </p>
+                        </div>
+                      ) : widget.type === "bar_chart" ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
                             data={data}
                             margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
                           >
                             <defs>
-                              <linearGradient id={`barGrad-${widget.id}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={CHART_COLORS[0]} stopOpacity={1} />
-                                <stop offset="100%" stopColor={CHART_COLORS[0]} stopOpacity={0.6} />
+                              <linearGradient
+                                id={`barGrad-${widget.id}`}
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop
+                                  offset="0%"
+                                  stopColor={CHART_COLORS[0]}
+                                  stopOpacity={1}
+                                />
+                                <stop
+                                  offset="100%"
+                                  stopColor={CHART_COLORS[0]}
+                                  stopOpacity={0.6}
+                                />
                               </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              className="stroke-muted/30"
+                              vertical={false}
+                            />
                             <XAxis
                               dataKey="name"
                               tick={{ fontSize: 11 }}
@@ -695,26 +910,59 @@ export default function DashboardDetailPage() {
                               className="fill-muted-foreground"
                               width={55}
                             />
-                            <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }} />
+                            <RechartsTooltip
+                              content={<CustomTooltip />}
+                              cursor={{
+                                fill: "hsl(var(--muted))",
+                                opacity: 0.5,
+                              }}
+                            />
                             <Bar
                               dataKey="value"
                               fill={`url(#barGrad-${widget.id})`}
                               radius={[6, 6, 0, 0]}
                               cursor="pointer"
-                              onClick={(d) => handleChartClick(widget.id, widget.title, String(d.name || ""))}
+                              onClick={(d) =>
+                                handleChartClick(
+                                  widget.id,
+                                  widget.title,
+                                  String(d.name || ""),
+                                )
+                              }
                             />
                           </BarChart>
                         </ResponsiveContainer>
                       ) : widget.type === "line_chart" ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <LineChart
+                            data={data}
+                            margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                          >
                             <defs>
-                              <linearGradient id={`lineArea-${widget.id}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={CHART_COLORS[1]} stopOpacity={0.15} />
-                                <stop offset="100%" stopColor={CHART_COLORS[1]} stopOpacity={0} />
+                              <linearGradient
+                                id={`lineArea-${widget.id}`}
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop
+                                  offset="0%"
+                                  stopColor={CHART_COLORS[1]}
+                                  stopOpacity={0.15}
+                                />
+                                <stop
+                                  offset="100%"
+                                  stopColor={CHART_COLORS[1]}
+                                  stopOpacity={0}
+                                />
                               </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              className="stroke-muted/30"
+                              vertical={false}
+                            />
                             <XAxis
                               dataKey="name"
                               tick={{ fontSize: 11 }}
@@ -736,27 +984,55 @@ export default function DashboardDetailPage() {
                               dataKey="value"
                               stroke={CHART_COLORS[1]}
                               strokeWidth={2.5}
-                              dot={{ r: 4, fill: CHART_COLORS[1], strokeWidth: 0 }}
-                              activeDot={{ r: 6, strokeWidth: 2, stroke: "hsl(var(--background))" }}
-                              cursor="pointer"
-                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                              onClick={((_: any, idx: any) => {
-                                const d = data[idx];
-                                if (d) handleChartClick(widget.id, widget.title, String(d.name || ""));
-                              }) as any}
+                              dot={{
+                                r: 4,
+                                fill: CHART_COLORS[1],
+                                strokeWidth: 0,
+                              }}
+                              activeDot={{
+                                r: 6,
+                                strokeWidth: 2,
+                                stroke: "hsl(var(--background))",
+                                cursor: "pointer",
+                                onClick: handleActiveDotClick(
+                                  widget.id,
+                                  widget.title,
+                                ),
+                              }}
                             />
                           </LineChart>
                         </ResponsiveContainer>
                       ) : widget.type === "area_chart" ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <AreaChart
+                            data={data}
+                            margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                          >
                             <defs>
-                              <linearGradient id={`areaGrad-${widget.id}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor={CHART_COLORS[0]} stopOpacity={0.3} />
-                                <stop offset="100%" stopColor={CHART_COLORS[0]} stopOpacity={0.02} />
+                              <linearGradient
+                                id={`areaGrad-${widget.id}`}
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop
+                                  offset="0%"
+                                  stopColor={CHART_COLORS[0]}
+                                  stopOpacity={0.3}
+                                />
+                                <stop
+                                  offset="100%"
+                                  stopColor={CHART_COLORS[0]}
+                                  stopOpacity={0.02}
+                                />
                               </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              className="stroke-muted/30"
+                              vertical={false}
+                            />
                             <XAxis
                               dataKey="name"
                               tick={{ fontSize: 11 }}
@@ -779,12 +1055,13 @@ export default function DashboardDetailPage() {
                               stroke={CHART_COLORS[0]}
                               strokeWidth={2}
                               fill={`url(#areaGrad-${widget.id})`}
-                              cursor="pointer"
-                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                              onClick={((_: any, idx: any) => {
-                                const d = data[idx];
-                                if (d) handleChartClick(widget.id, widget.title, String(d.name || ""));
-                              }) as any}
+                              activeDot={{
+                                cursor: "pointer",
+                                onClick: handleActiveDotClick(
+                                  widget.id,
+                                  widget.title,
+                                ),
+                              }}
                             />
                           </AreaChart>
                         </ResponsiveContainer>
@@ -803,7 +1080,12 @@ export default function DashboardDetailPage() {
                               cursor="pointer"
                               onClick={(_, idx) => {
                                 const d = data[idx];
-                                if (d) handleChartClick(widget.id, widget.title, String(d.name || ""));
+                                if (d)
+                                  handleChartClick(
+                                    widget.id,
+                                    widget.title,
+                                    String(d.name || ""),
+                                  );
                               }}
                             >
                               {pieData.map((_, i) => (
@@ -820,7 +1102,9 @@ export default function DashboardDetailPage() {
                               verticalAlign="bottom"
                               height={36}
                               formatter={(value: string) => (
-                                <span className="text-xs text-muted-foreground">{value}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {value}
+                                </span>
                               )}
                             />
                           </PieChart>
@@ -834,7 +1118,7 @@ export default function DashboardDetailPage() {
                           <p className="mt-2 text-sm text-muted-foreground">
                             {widget.aggregation.toUpperCase()}({widget.field})
                           </p>
-                          {Boolean(data[0]?.name) && (
+                          {Boolean(rawData[0]?.name) && (
                             <Badge variant="outline" className="mt-1 text-xs">
                               {String(data[0].name)}
                             </Badge>
@@ -855,13 +1139,27 @@ export default function DashboardDetailPage() {
       </div>
 
       {/* Drill-down Sheet */}
-      <Sheet open={!!drilldown} onOpenChange={(open) => { if (!open) { setDrilldown(null); setExpandedRow(null); } }}>
+      <Sheet
+        open={!!drilldown}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDrilldown(null);
+            setExpandedRow(null);
+          }
+        }}
+      >
         <SheetContent className="w-full sm:max-w-5xl overflow-y-auto">
           <SheetHeader>
             <div className="flex items-center gap-3">
-              <SheetTitle className="text-base">{drilldown?.widgetTitle}</SheetTitle>
-              <Badge variant="secondary" className="text-xs">{drilldown?.groupValue}</Badge>
-              <Badge variant="outline" className="text-xs">{drillTotal.toLocaleString("es")} registros</Badge>
+              <SheetTitle className="text-base">
+                {drilldown?.widgetTitle}
+              </SheetTitle>
+              <Badge variant="secondary" className="text-xs">
+                {drilldown?.groupValue}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {drillTotal.toLocaleString("es")} registros
+              </Badge>
             </div>
           </SheetHeader>
 
@@ -888,16 +1186,43 @@ export default function DashboardDetailPage() {
               </div>
 
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" onClick={handleExportPage} disabled={!drillRecords.length}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 text-xs"
+                  onClick={handleExportPage}
+                  disabled={!drillRecords.length}
+                >
                   <Download className="h-3.5 w-3.5" /> Pagina
                 </Button>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs" onClick={handleExportAll} disabled={drillExporting || !drillTotal}>
-                  {drillExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 text-xs"
+                  onClick={handleExportAll}
+                  disabled={drillExporting || !drillTotal}
+                  title={
+                    drillTotal > EXPORT_ALL_LIMIT
+                      ? `El export se limita a los primeros ${EXPORT_ALL_LIMIT.toLocaleString("es")} registros`
+                      : undefined
+                  }
+                >
+                  {drillExporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
                   Todos ({drillTotal.toLocaleString("es")})
                 </Button>
               </div>
 
-              <Select value={String(drillPageSize)} onValueChange={(v) => { setDrillPageSize(Number(v)); setDrillPage(1); }}>
+              <Select
+                value={String(drillPageSize)}
+                onValueChange={(v) => {
+                  setDrillPageSize(Number(v));
+                  setDrillPage(1);
+                }}
+              >
                 <SelectTrigger className="w-[90px] h-9 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -909,10 +1234,18 @@ export default function DashboardDetailPage() {
               </Select>
             </div>
 
+            {drillTotal > EXPORT_ALL_LIMIT && (
+              <p className="text-xs text-warning-fg">
+                &quot;Todos&quot; exporta como máximo los primeros{" "}
+                {EXPORT_ALL_LIMIT.toLocaleString("es")} registros.
+              </p>
+            )}
+
             {/* Range indicator */}
             {drillTotal > 0 && (
               <p className="text-xs text-muted-foreground">
-                Mostrando {drillFrom}–{drillTo} de {drillTotal.toLocaleString("es")}
+                Mostrando {drillFrom}–{drillTo} de{" "}
+                {drillTotal.toLocaleString("es")}
               </p>
             )}
 
@@ -922,7 +1255,10 @@ export default function DashboardDetailPage() {
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex gap-3">
                     {Array.from({ length: 5 }).map((_, j) => (
-                      <div key={j} className="h-4 flex-1 animate-pulse rounded bg-muted" />
+                      <div
+                        key={j}
+                        className="h-4 flex-1 animate-pulse rounded bg-muted"
+                      />
                     ))}
                   </div>
                 ))}
@@ -930,66 +1266,95 @@ export default function DashboardDetailPage() {
             )}
 
             {/* Records table */}
-            {!drillLoading && drillRecords.length > 0 && (() => {
-              const columns = Object.keys(drillRecords[0]).filter((k) => k !== "_id");
-              return (
-                <div className="overflow-x-auto rounded-lg border max-h-[calc(100vh-280px)]">
-                  <table className="w-full text-xs">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="border-b bg-muted/80 backdrop-blur-sm">
-                        <th className="w-8 px-2 py-2" />
-                        {columns.map((key) => (
-                          <th key={key} className="whitespace-nowrap px-3 py-2 text-left font-medium text-muted-foreground">
-                            {key}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {drillRecords.map((record, i) => (
-                        <React.Fragment key={i}>
-                          <tr
-                            className={`border-b last:border-0 cursor-pointer transition-colors hover:bg-muted/40 ${i % 2 === 0 ? "bg-transparent" : "bg-muted/15"} ${expandedRow === i ? "bg-primary/5" : ""}`}
-                            onClick={() => setExpandedRow(expandedRow === i ? null : i)}
-                          >
-                            <td className="px-2 py-2 text-muted-foreground">
-                              {expandedRow === i ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                            </td>
-                            {columns.map((key) => {
-                              const val = record[key];
-                              return (
-                                <td key={key} className="whitespace-nowrap px-3 py-2 max-w-[250px] truncate">
-                                  {typeof val === "number" ? fmtFull.format(val) : String(val ?? "")}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                          {expandedRow === i && (
-                            <tr className="border-b bg-muted/10">
-                              <td colSpan={columns.length + 1} className="px-4 py-3">
-                                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
-                                  {columns.map((key) => (
-                                    <div key={key} className="flex gap-2">
-                                      <span className="font-medium text-muted-foreground min-w-[120px]">{key}:</span>
-                                      <span className="break-all">
-                                        {typeof record[key] === "number" ? fmtFull.format(record[key] as number) : String(record[key] ?? "")}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
+            {!drillLoading &&
+              drillRecords.length > 0 &&
+              (() => {
+                const columns = Object.keys(drillRecords[0]).filter(
+                  (k) => k !== "_id",
+                );
+                return (
+                  <div className="overflow-x-auto rounded-lg border max-h-[calc(100vh-280px)]">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="border-b bg-muted/80 backdrop-blur-sm">
+                          <th className="w-8 px-2 py-2" />
+                          {columns.map((key) => (
+                            <th
+                              key={key}
+                              className="whitespace-nowrap px-3 py-2 text-left font-medium text-muted-foreground"
+                            >
+                              {key}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drillRecords.map((record, i) => (
+                          <React.Fragment key={i}>
+                            <tr
+                              className={`border-b last:border-0 cursor-pointer transition-colors hover:bg-muted/40 ${i % 2 === 0 ? "bg-transparent" : "bg-muted/15"} ${expandedRow === i ? "bg-primary/5" : ""}`}
+                              onClick={() =>
+                                setExpandedRow(expandedRow === i ? null : i)
+                              }
+                            >
+                              <td className="px-2 py-2 text-muted-foreground">
+                                {expandedRow === i ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )}
                               </td>
+                              {columns.map((key) => {
+                                const val = record[key];
+                                return (
+                                  <td
+                                    key={key}
+                                    className="whitespace-nowrap px-3 py-2 max-w-[250px] truncate"
+                                  >
+                                    {typeof val === "number"
+                                      ? fmtFull.format(val)
+                                      : String(val ?? "")}
+                                  </td>
+                                );
+                              })}
                             </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
+                            {expandedRow === i && (
+                              <tr className="border-b bg-muted/10">
+                                <td
+                                  colSpan={columns.length + 1}
+                                  className="px-4 py-3"
+                                >
+                                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                                    {columns.map((key) => (
+                                      <div key={key} className="flex gap-2">
+                                        <span className="font-medium text-muted-foreground min-w-[120px]">
+                                          {key}:
+                                        </span>
+                                        <span className="break-all">
+                                          {typeof record[key] === "number"
+                                            ? fmtFull.format(
+                                                record[key] as number,
+                                              )
+                                            : String(record[key] ?? "")}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
 
             {!drillLoading && drillRecords.length === 0 && (
-              <p className="py-8 text-center text-sm text-muted-foreground">Sin registros</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Sin registros
+              </p>
             )}
 
             {/* Pagination */}
@@ -999,10 +1364,20 @@ export default function DashboardDetailPage() {
                   Pagina {drillPage} de {drillTotalPages}
                 </p>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" disabled={drillPage <= 1} onClick={() => setDrillPage((p) => p - 1)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={drillPage <= 1}
+                    onClick={() => setDrillPage((p) => p - 1)}
+                  >
                     <ChevronLeft className="h-4 w-4 mr-1" /> Anterior
                   </Button>
-                  <Button variant="outline" size="sm" disabled={drillPage >= drillTotalPages} onClick={() => setDrillPage((p) => p + 1)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={drillPage >= drillTotalPages}
+                    onClick={() => setDrillPage((p) => p + 1)}
+                  >
                     Siguiente <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>

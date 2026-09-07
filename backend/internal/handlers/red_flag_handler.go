@@ -7,12 +7,15 @@ import (
 	"strings"
 	"time"
 
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
 	"github.com/thureos/compliance/internal/services"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type RedFlagHandler struct {
@@ -22,6 +25,8 @@ type RedFlagHandler struct {
 	monitorRepo    *repository.MonitorRepository
 	userRepo       *repository.UserRepository
 	activityRepo   *repository.ActivityLogRepository
+	reportRepo     *repository.RedFlagReportRepository
+	caseRepo       *repository.RedFlagCaseRepository
 }
 
 func NewRedFlagHandler(
@@ -31,6 +36,7 @@ func NewRedFlagHandler(
 	monitorRepo *repository.MonitorRepository,
 	userRepo *repository.UserRepository,
 	activityRepo *repository.ActivityLogRepository,
+	reportRepo *repository.RedFlagReportRepository,
 ) *RedFlagHandler {
 	return &RedFlagHandler{
 		redFlagRepo:    redFlagRepo,
@@ -39,7 +45,36 @@ func NewRedFlagHandler(
 		monitorRepo:    monitorRepo,
 		userRepo:       userRepo,
 		activityRepo:   activityRepo,
+		reportRepo:     reportRepo,
 	}
+}
+
+// SetCaseRepo conecta el repositorio de casos (opcional para no romper
+// los constructores existentes).
+func (h *RedFlagHandler) SetCaseRepo(r *repository.RedFlagCaseRepository) {
+	h.caseRepo = r
+}
+
+// GetReport descarga el PDF guardado automáticamente para esta bandera
+// roja. No lo regenera — si no hay uno guardado (por ejemplo, alertas
+// creadas antes de que existiera este endpoint), responde 404.
+func (h *RedFlagHandler) GetReport(c *fiber.Ctx) error {
+	redFlagID, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid red flag ID"})
+	}
+
+	pdf, err := h.reportRepo.Get(c.Context(), redFlagID)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "no hay informe guardado para esta alerta"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	c.Set("Content-Type", "application/pdf")
+	c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="informe-bandera-roja-%s.pdf"`, redFlagID.Hex()))
+	return c.Send(pdf)
 }
 
 func (h *RedFlagHandler) List(c *fiber.Ctx) error {
@@ -352,4 +387,174 @@ func (h *RedFlagHandler) Calendar(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(counts)
+}
+
+// caseUserID resuelve el usuario autenticado o aborta con 401.
+func caseUserID(c *fiber.Ctx) (primitive.ObjectID, error) {
+	idStr, ok := c.Locals("userId").(string)
+	if !ok || idStr == "" {
+		return primitive.NilObjectID, fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
+	}
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return primitive.NilObjectID, fiber.NewError(fiber.StatusBadRequest, "invalid user session")
+	}
+	return id, nil
+}
+
+// AssignCase asigna el caso a un usuario (o al propio analista con
+// "me"). Setea prioridad y SLA derivados de la severidad de la alerta.
+func (h *RedFlagHandler) AssignCase(c *fiber.Ctx) error {
+	if h.caseRepo == nil {
+		return fiber.NewError(fiber.StatusNotImplemented, "case management no disponible")
+	}
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid red flag ID"})
+	}
+
+	var body struct {
+		AssigneeID string `json:"assigneeId"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	var assignee primitive.ObjectID
+	if body.AssigneeID == "me" {
+		assignee, err = caseUserID(c)
+		if err != nil {
+			return err
+		}
+	} else {
+		assignee, err = primitive.ObjectIDFromHex(body.AssigneeID)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid assigneeId"})
+		}
+	}
+
+	rf, err := h.redFlagRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "red flag not found"})
+	}
+
+	if err := h.caseRepo.Assign(c.Context(), id, assignee,
+		services.PriorityForSeverity(rf.Severity),
+		services.SLADueAt(rf)); err != nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	h.logCaseActivity(c, assignee, rf, "asignó el caso")
+	return c.JSON(fiber.Map{"message": "caso asignado"})
+}
+
+// AddCaseNote agrega una nota al timeline de investigación.
+func (h *RedFlagHandler) AddCaseNote(c *fiber.Ctx) error {
+	if h.caseRepo == nil {
+		return fiber.NewError(fiber.StatusNotImplemented, "case management no disponible")
+	}
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid red flag ID"})
+	}
+	var body struct {
+		Text string `json:"text"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	authorID, err := caseUserID(c)
+	if err != nil {
+		return err
+	}
+	authorName, _ := c.Locals("email").(string)
+
+	note := &models.RedFlagNote{
+		RedFlagID:  id,
+		AuthorID:   authorID,
+		AuthorName: authorName,
+		Text:       body.Text,
+	}
+	if err := h.caseRepo.AddNote(c.Context(), note); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(note)
+}
+
+// ListCaseNotes devuelve el timeline del caso, más reciente primero.
+func (h *RedFlagHandler) ListCaseNotes(c *fiber.Ctx) error {
+	if h.caseRepo == nil {
+		return fiber.NewError(fiber.StatusNotImplemented, "case management no disponible")
+	}
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid red flag ID"})
+	}
+	notes, err := h.caseRepo.ListNotes(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(notes)
+}
+
+// TransitionCase mueve el caso por la máquina de estados validada. El
+// cierre exige disposition (false_positive, confirmed_ros, no_action).
+func (h *RedFlagHandler) TransitionCase(c *fiber.Ctx) error {
+	if h.caseRepo == nil {
+		return fiber.NewError(fiber.StatusNotImplemented, "case management no disponible")
+	}
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid red flag ID"})
+	}
+	var body struct {
+		Status      string `json:"status"`
+		Disposition string `json:"disposition"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	rf, err := h.redFlagRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "red flag not found"})
+	}
+
+	to := models.RedFlagStatus(body.Status)
+	disposition := models.RedFlagDisposition(body.Disposition)
+	if err := services.ValidTransition(rf.Status, to, disposition); err != nil {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	userID, err := caseUserID(c)
+	if err != nil {
+		return err
+	}
+	if err := h.caseRepo.Transition(c.Context(), id, to, disposition, userID); err != nil {
+		if errors.Is(err, repository.ErrCaseClosed) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	h.logCaseActivity(c, userID, rf, "movió el caso a "+string(to))
+	return c.JSON(fiber.Map{"message": "caso en " + string(to)})
+}
+
+// logCaseActivity deja rastro en la bitácora existente — el timeline de
+// auditoría del caso es la bitácora de actividad del sistema.
+func (h *RedFlagHandler) logCaseActivity(c *fiber.Ctx, userID primitive.ObjectID, rf *models.RedFlag, action string) {
+	if h.activityRepo == nil {
+		return
+	}
+	userName, _ := c.Locals("email").(string)
+	_ = h.activityRepo.Create(c.Context(), &models.ActivityLog{
+		UserID:    userID,
+		UserName:  userName,
+		UserEmail: userName,
+		Action:    models.ActivityRedFlagAction,
+		Detail:    fmt.Sprintf("Caso %s (%s): %s", rf.ID.Hex(), rf.RuleName, action),
+		Resource:  "red_flag",
+		IP:        c.IP(),
+	})
 }

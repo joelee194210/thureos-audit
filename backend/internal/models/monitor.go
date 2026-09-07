@@ -138,6 +138,11 @@ type CreateMonitorRequest struct {
 	Description  string             `json:"description"`
 	SourceType   SourceType         `json:"sourceType"`
 	SourceConfig *SourceConfigInput `json:"sourceConfig,omitempty"`
+	// Schema is optional and only meaningful for source type "api": the
+	// frontend sends it after the user confirms the result of POST
+	// /monitors/detect-schema. Every other flow (CSV/Excel/JSON/TXT,
+	// API push) omits it, leaving schema detection on first ingest unchanged.
+	Schema []SchemaField `json:"schema,omitempty"`
 }
 
 // UpdateMonitorRequest is the client-facing shape for editing a monitor.

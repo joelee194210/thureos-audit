@@ -13,8 +13,20 @@ type RedFlagStatus string
 const (
 	RedFlagNew          RedFlagStatus = "new"
 	RedFlagAcknowledged RedFlagStatus = "acknowledged"
+	RedFlagEscalated    RedFlagStatus = "escalated"
 	RedFlagResolved     RedFlagStatus = "resolved"
 	RedFlagDismissed    RedFlagStatus = "dismissed"
+)
+
+// RedFlagDisposition es la disposición final obligatoria al cerrar un
+// caso: queda como evidencia para auditoría y semilla del módulo de
+// reportes regulatorios.
+type RedFlagDisposition string
+
+const (
+	DispositionFalsePositive RedFlagDisposition = "false_positive"
+	DispositionConfirmedROS  RedFlagDisposition = "confirmed_ros"
+	DispositionNoAction      RedFlagDisposition = "no_action"
 )
 
 type RedFlagType string
@@ -45,8 +57,43 @@ type RedFlag struct {
 	GroupByValue   string                   `bson:"group_by_value,omitempty" json:"groupByValue,omitempty"`
 	Threshold      float64                  `bson:"threshold,omitempty" json:"threshold,omitempty"`
 	AcknowledgedBy *primitive.ObjectID      `bson:"acknowledged_by,omitempty" json:"acknowledgedBy,omitempty"`
-	CreatedAt      time.Time                `bson:"created_at" json:"createdAt"`
-	UpdatedAt      time.Time                `bson:"updated_at" json:"updatedAt"`
+
+	// Capa de caso (investigación)
+	AssigneeID  *primitive.ObjectID `bson:"assignee_id,omitempty" json:"assigneeId,omitempty"`
+	Priority    int                 `bson:"priority,omitempty" json:"priority,omitempty"` // 1 = más urgente
+	SLADueAt    *time.Time          `bson:"sla_due_at,omitempty" json:"slaDueAt,omitempty"`
+	Disposition RedFlagDisposition  `bson:"disposition,omitempty" json:"disposition,omitempty"`
+	ClosedAt    *time.Time          `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
+	ClosedBy    *primitive.ObjectID `bson:"closed_by,omitempty" json:"closedBy,omitempty"`
+
+	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
+}
+
+// SLADefaultForSeverity son los plazos de primera respuesta por severidad.
+// Configurables en el futuro via system_config; hoy, defaults en código.
+func SLADefaultForSeverity(s Severity) time.Duration {
+	switch s {
+	case SeverityCritical:
+		return 24 * time.Hour
+	case SeverityHigh:
+		return 72 * time.Hour
+	case SeverityMedium:
+		return 7 * 24 * time.Hour
+	default:
+		return 30 * 24 * time.Hour
+	}
+}
+
+// RedFlagNote es una entrada del timeline de investigación de un caso.
+// Inmutable por diseño: no existe Update ni Delete para esta colección.
+type RedFlagNote struct {
+	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	RedFlagID  primitive.ObjectID `bson:"red_flag_id" json:"redFlagId"`
+	AuthorID   primitive.ObjectID `bson:"author_id" json:"authorId"`
+	AuthorName string             `bson:"author_name" json:"authorName"`
+	Text       string             `bson:"text" json:"text"`
+	CreatedAt  time.Time          `bson:"created_at" json:"createdAt"`
 }
 
 // RowRedFlagFingerprint generates a dedup key for row-level red flags.

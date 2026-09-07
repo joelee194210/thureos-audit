@@ -1,6 +1,11 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useSyncExternalStore,
+} from "react";
 
 type Theme = "light" | "dark";
 
@@ -18,27 +23,44 @@ export function useTheme() {
   return useContext(ThemeContext);
 }
 
+function subscribeToTheme(onStoreChange: () => void) {
+  const observer = new MutationObserver(onStoreChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => observer.disconnect();
+}
+
+function getThemeSnapshot(): Theme {
+  return document.documentElement.getAttribute("data-theme") === "light"
+    ? "light"
+    : "dark";
+}
+
+function getThemeServerSnapshot(): Theme {
+  return "dark";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // El script inline del layout ya fijó data-theme antes de la primera
   // pintura. Aquí solo se lee, nunca se decide: decidir de nuevo
   // reintroduciría el parpadeo que el script existe para evitar.
-  const [theme, setTheme] = useState<Theme>("dark");
+  const theme = useSyncExternalStore(
+    subscribeToTheme,
+    getThemeSnapshot,
+    getThemeServerSnapshot,
+  );
 
-  useEffect(() => {
-    const current = document.documentElement.getAttribute("data-theme");
-    setTheme(current === "light" ? "light" : "dark");
-  }, []);
-
-  function toggleTheme() {
-    const next: Theme = theme === "dark" ? "light" : "dark";
-    setTheme(next);
+  const toggleTheme = useCallback(() => {
+    const next: Theme = getThemeSnapshot() === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     try {
       localStorage.setItem("theme", next);
     } catch {
       // Modo privado: el tema no persiste, pero la app no se rompe.
     }
-  }
+  }, []);
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>

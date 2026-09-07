@@ -1,5 +1,10 @@
 import { api } from "./client";
-import type { RedFlag, RedFlagStatus, RedFlagLog, ActionCategory } from "@/lib/types";
+import type {
+  RedFlag,
+  RedFlagStatus,
+  RedFlagLog,
+  ActionCategory,
+} from "@/lib/types";
 
 export interface RedFlagRecordsResponse {
   records: Record<string, unknown>[];
@@ -28,21 +33,58 @@ export const redFlagsApi = {
 
   get: (id: string) => api.get<RedFlag>(`/red-flags/${id}`),
 
-  updateStatus: (id: string, status: RedFlagStatus, category: ActionCategory, notes: string) =>
-    api.patch<{ message: string }>(`/red-flags/${id}/status`, { status, category, notes }),
+  updateStatus: (
+    id: string,
+    status: RedFlagStatus,
+    category: ActionCategory,
+    notes: string,
+  ) =>
+    api.patch<{ message: string }>(`/red-flags/${id}/status`, {
+      status,
+      category,
+      notes,
+    }),
 
-  getLogs: (id: string) =>
-    api.get<RedFlagLog[]>(`/red-flags/${id}/logs`),
+  getLogs: (id: string) => api.get<RedFlagLog[]>(`/red-flags/${id}/logs`),
 
   stats: () =>
     api.get<{ new: number; acknowledged: number }>("/red-flags/stats"),
 
   records: (id: string, page = 1, limit = 50) =>
-    api.get<RedFlagRecordsResponse>(`/red-flags/${id}/records?page=${page}&limit=${limit}`),
+    api.get<RedFlagRecordsResponse>(
+      `/red-flags/${id}/records?page=${page}&limit=${limit}`,
+    ),
 
   calendar: (year: number, month: number) =>
     api.get<CalendarDay[]>(`/red-flags/calendar?year=${year}&month=${month}`),
 
-  byDate: (date: string) =>
-    api.get<RedFlag[]>(`/red-flags/date/${date}`),
+  byDate: (date: string) => api.get<RedFlag[]>(`/red-flags/date/${date}`),
+
+  /** Informe ya generado al crearse la alerta. null si no hay uno guardado
+   *  (alertas anteriores a este cambio) — quien llama cae al camino
+   *  client-side en ese caso. */
+  downloadReport: (id: string) => api.getBlob(`/red-flags/${id}/report`),
+
+  // Case management
+  assignCase: (id: string, assigneeId: string) =>
+    api.post<{ message: string }>(`/red-flags/${id}/assign`, {
+      assigneeId,
+    }),
+  listNotes: (id: string) => api.get<CaseNote[]>(`/red-flags/${id}/notes`),
+  addNote: (id: string, text: string) =>
+    api.post<CaseNote>(`/red-flags/${id}/notes`, { text }),
+  transitionCase: (id: string, status: string, disposition?: string) =>
+    api.post<{ message: string }>(`/red-flags/${id}/transition`, {
+      status,
+      disposition,
+    }),
 };
+
+export interface CaseNote {
+  id: string;
+  redFlagId: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+}

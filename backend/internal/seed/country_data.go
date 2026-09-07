@@ -20,7 +20,6 @@ var (
 	fatf      = []string{"FATF"}
 	ofac      = []string{"OFAC"}
 	basel     = []string{"Basel"}
-	eu        = []string{"EU"}
 	fatfOfac  = []string{"FATF", "OFAC"}
 	fatfOnu   = []string{"FATF", "ONU"}
 	ofacOnu   = []string{"OFAC", "ONU"}

@@ -1,5 +1,10 @@
 import { api } from "./client";
-import type { Dashboard, Widget, WidgetType, AggregationType } from "@/lib/types";
+import type {
+  Dashboard,
+  Widget,
+  WidgetType,
+  AggregationType,
+} from "@/lib/types";
 
 export const dashboardsApi = {
   list: () => api.get<Dashboard[]>("/dashboards"),
@@ -20,7 +25,7 @@ export const dashboardsApi = {
       groupBy?: string;
       ruleId?: string;
       position: { x: number; y: number; w: number; h: number };
-    }
+    },
   ) => api.post<Widget>(`/dashboards/${dashboardId}/widgets`, widget),
 
   getData: (id: string) =>
@@ -30,21 +35,31 @@ export const dashboardsApi = {
         title: string;
         type: string;
         data: Record<string, unknown>[];
+        error?: string;
       }[];
     }>(`/dashboards/${id}/data`),
 
   drilldown: (
     dashboardId: string,
     widgetId: string,
-    body: { groupValue: string; page: number; pageSize: number; search: string; export?: boolean }
+    body: {
+      groupValue: string;
+      page: number;
+      pageSize: number;
+      search: string;
+      export?: boolean;
+    },
   ) =>
-    api.post<{ records: Record<string, unknown>[]; total: number; page: number }>(
-      `/dashboards/${dashboardId}/widgets/${widgetId}/drilldown`,
-      body
-    ),
+    api.post<{
+      records: Record<string, unknown>[];
+      total: number;
+      page: number;
+    }>(`/dashboards/${dashboardId}/widgets/${widgetId}/drilldown`, body),
 
   deleteWidget: (dashboardId: string, widgetId: string) =>
-    api.delete<{ message: string }>(`/dashboards/${dashboardId}/widgets/${widgetId}`),
+    api.delete<{ message: string }>(
+      `/dashboards/${dashboardId}/widgets/${widgetId}`,
+    ),
 
   delete: (id: string) => api.delete<{ message: string }>(`/dashboards/${id}`),
 };

@@ -85,15 +85,15 @@ func (h *CountryHandler) Get(c *fiber.Ctx) error {
 }
 
 type createCountryRequest struct {
-	Code        string                   `json:"code"`
-	Code3       string                   `json:"code3"`
-	Name        string                   `json:"name"`
-	NameEN      string                   `json:"nameEn"`
-	Region      string                   `json:"region"`
-	RiskLevel   models.CountryRiskLevel  `json:"riskLevel"`
-	RiskSources []string                 `json:"riskSources"`
-	Active      bool                     `json:"active"`
-	Notes       string                   `json:"notes"`
+	Code        string                  `json:"code"`
+	Code3       string                  `json:"code3"`
+	Name        string                  `json:"name"`
+	NameEN      string                  `json:"nameEn"`
+	Region      string                  `json:"region"`
+	RiskLevel   models.CountryRiskLevel `json:"riskLevel"`
+	RiskSources []string                `json:"riskSources"`
+	Active      bool                    `json:"active"`
+	Notes       string                  `json:"notes"`
 }
 
 func (h *CountryHandler) Create(c *fiber.Ctx) error {

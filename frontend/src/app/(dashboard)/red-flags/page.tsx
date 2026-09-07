@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ import {
   Calendar,
   Loader2,
   ClipboardList,
+  FileText,
 } from "lucide-react";
 import { redFlagsApi } from "@/lib/api/red-flags";
 import { monitorsApi } from "@/lib/api/monitors";
@@ -46,7 +48,19 @@ import type { RedFlagRecordsResponse, CalendarDay } from "@/lib/api/red-flags";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
 import { RISK_BG, RISK_BORDER_L } from "@/lib/semantic-colors";
-import type { RedFlag, RedFlagStatus, RedFlagLog, ActionCategory, Severity, Monitor } from "@/lib/types";
+import {
+  RED_FLAG_STATUS_LABELS as statusLabels,
+  ACTION_CATEGORY_LABELS as categoryLabels,
+  SEVERITY_LABELS,
+} from "@/lib/red-flag-labels";
+import type {
+  RedFlag,
+  RedFlagStatus,
+  RedFlagLog,
+  ActionCategory,
+  Severity,
+  Monitor,
+} from "@/lib/types";
 
 const severityConfig: Record<
   Severity,
@@ -61,33 +75,26 @@ const severityConfig: Record<
     variant: "risk-critical",
     color: `${RISK_BORDER_L.critical} ${RISK_BG.critical}`,
     icon: ShieldAlert,
-    label: "Crítica",
+    label: SEVERITY_LABELS.critical,
   },
   high: {
     variant: "risk-high",
     color: `${RISK_BORDER_L.high} ${RISK_BG.high}`,
     icon: AlertTriangle,
-    label: "Alta",
+    label: SEVERITY_LABELS.high,
   },
   medium: {
     variant: "risk-medium",
     color: `${RISK_BORDER_L.medium} ${RISK_BG.medium}`,
     icon: Info,
-    label: "Media",
+    label: SEVERITY_LABELS.medium,
   },
   low: {
     variant: "risk-low",
     color: `${RISK_BORDER_L.low} ${RISK_BG.low}`,
     icon: Info,
-    label: "Baja",
+    label: SEVERITY_LABELS.low,
   },
-};
-
-const statusLabels: Record<RedFlagStatus, string> = {
-  new: "Nueva",
-  acknowledged: "Reconocida",
-  resolved: "Resuelta",
-  dismissed: "Descartada",
 };
 
 function formatNumber(val: unknown): string {
@@ -103,10 +110,14 @@ function formatNumber(val: unknown): string {
 }
 
 function isNumericField(val: unknown): boolean {
-  return typeof val === "number" || (typeof val === "string" && !isNaN(Number(val)) && val.trim() !== "");
+  return (
+    typeof val === "number" ||
+    (typeof val === "string" && !isNaN(Number(val)) && val.trim() !== "")
+  );
 }
 
-const AGG_RE = /Aggregate rule '.*?': (\w+)\((\w+)\) for (\w+)='(.+?)' = ([\d.]+) \(threshold: (\w+) ([\d.]+)\)/;
+const AGG_RE =
+  /Aggregate rule '.*?': (\w+)\((\w+)\) for (\w+)='(.+?)' = ([\d.]+) \(threshold: (\w+) ([\d.]+)\)/;
 
 function parseAggregateFromMessage(redFlag: RedFlag): RedFlag {
   if (redFlag.redFlagType === "aggregate") return redFlag;
@@ -121,13 +132,26 @@ function parseAggregateFromMessage(redFlag: RedFlag): RedFlag {
     groupByValue: m[4],
     aggValue: parseFloat(m[5]),
     threshold: parseFloat(m[7]),
-    matchCount: redFlag.matchedData?.count != null ? Number(redFlag.matchedData.count) : redFlag.matchCount,
+    matchCount:
+      redFlag.matchedData?.count != null
+        ? Number(redFlag.matchedData.count)
+        : redFlag.matchCount,
   };
 }
 
 const MONTH_NAMES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
 ];
 const DAY_NAMES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
@@ -145,9 +169,12 @@ function RedFlagCalendar({
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
 
   useEffect(() => {
-    redFlagsApi.calendar(year, month).then(data => setCalendarData(data ?? [])).catch((err) => {
-      console.error("Failed to load calendar data:", err);
-    });
+    redFlagsApi
+      .calendar(year, month)
+      .then((data) => setCalendarData(data ?? []))
+      .catch((err) => {
+        console.error("Failed to load calendar data:", err);
+      });
   }, [year, month]);
 
   const dayMap = useMemo(() => {
@@ -163,12 +190,16 @@ function RedFlagCalendar({
   if (startWeekday < 0) startWeekday = 6;
 
   const prevMonth = () => {
-    if (month === 1) { setMonth(12); setYear(y => y - 1); }
-    else setMonth(m => m - 1);
+    if (month === 1) {
+      setMonth(12);
+      setYear((y) => y - 1);
+    } else setMonth((m) => m - 1);
   };
   const nextMonth = () => {
-    if (month === 12) { setMonth(1); setYear(y => y + 1); }
-    else setMonth(m => m + 1);
+    if (month === 12) {
+      setMonth(1);
+      setYear((y) => y + 1);
+    } else setMonth((m) => m + 1);
   };
 
   const cells: (number | null)[] = [];
@@ -194,7 +225,10 @@ function RedFlagCalendar({
 
         <div className="grid grid-cols-7 gap-1 text-center">
           {DAY_NAMES.map((d) => (
-            <div key={d} className="text-[10px] font-medium text-muted-foreground py-1">
+            <div
+              key={d}
+              className="text-[10px] font-medium text-muted-foreground py-1"
+            >
               {d}
             </div>
           ))}
@@ -226,7 +260,9 @@ function RedFlagCalendar({
                 {hasRedFlags && (
                   <div className="flex gap-0.5 mt-0.5">
                     <div className={`h-1 w-1 rounded-full ${dotColor}`} />
-                    {data!.total > 5 && <div className="h-1 w-1 rounded-full bg-muted-foreground" />}
+                    {data!.total > 5 && (
+                      <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+                    )}
                   </div>
                 )}
                 {hasRedFlags && !isSelected && (
@@ -245,7 +281,12 @@ function RedFlagCalendar({
               <Calendar className="h-3 w-3 inline mr-1" />
               Filtrando: {selectedDate}
             </span>
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => onSelectDate(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={() => onSelectDate(null)}
+            >
               Limpiar
             </Button>
           </div>
@@ -263,28 +304,40 @@ function RedFlagDataTable({ redFlag }: { redFlag: RedFlag }) {
   const [dataSearch, setDataSearch] = useState("");
   const pageSize = 50;
 
-  const loadPage = useCallback(async (p: number) => {
-    setLoading(true);
-    try {
-      const res = await redFlagsApi.records(redFlag.id, p, pageSize);
-      setData(res);
-      setPage(p);
-    } catch (err) {
-      console.error("Failed to load paginated records, using embedded fallback:", err);
-      const records = redFlag.matchedRecords ?? (redFlag.matchedData ? [redFlag.matchedData] : []);
-      setData({
-        records: records as Record<string, unknown>[],
-        total: redFlag.matchCount || records.length,
-        page: 1,
-        limit: records.length,
-        totalPages: 1,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [redFlag]);
+  const loadPage = useCallback(
+    async (p: number) => {
+      setLoading(true);
+      try {
+        const res = await redFlagsApi.records(redFlag.id, p, pageSize);
+        setData(res);
+        setPage(p);
+      } catch (err) {
+        console.error(
+          "Failed to load paginated records, using embedded fallback:",
+          err,
+        );
+        const records =
+          redFlag.matchedRecords ??
+          (redFlag.matchedData ? [redFlag.matchedData] : []);
+        setData({
+          records: records as Record<string, unknown>[],
+          total: redFlag.matchCount || records.length,
+          page: 1,
+          limit: records.length,
+          totalPages: 1,
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [redFlag],
+  );
 
   useEffect(() => {
+    // debt: loadPage fija loading síncrono a propósito — el spinner de
+    // paginación y los botones deshabilitados dependen de ese flag en el
+    // mismo frame. Revisar -> al migrar esta página a TanStack Query.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPage(1);
   }, [loadPage]);
 
@@ -305,12 +358,18 @@ function RedFlagDataTable({ redFlag }: { redFlag: RedFlag }) {
     );
   }
 
-  const columns = Object.keys(data.records[0]).filter((k) => !k.startsWith("_"));
+  const columns = Object.keys(data.records[0]).filter(
+    (k) => !k.startsWith("_"),
+  );
 
   const filteredRecords = dataSearch
     ? data.records.filter((rec) => {
         const q = dataSearch.toLowerCase();
-        return columns.some((col) => String(rec[col] ?? "").toLowerCase().includes(q));
+        return columns.some((col) =>
+          String(rec[col] ?? "")
+            .toLowerCase()
+            .includes(q),
+        );
       })
     : data.records;
 
@@ -349,7 +408,9 @@ function RedFlagDataTable({ redFlag }: { redFlag: RedFlag }) {
           <table className="w-full text-xs">
             <thead className="bg-muted/70 sticky top-0 z-10">
               <tr>
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8">#</th>
+                <th className="px-3 py-2 text-left font-medium text-muted-foreground w-8">
+                  #
+                </th>
                 {columns.map((col) => (
                   <th
                     key={col}
@@ -433,6 +494,8 @@ function RedFlagDataTable({ redFlag }: { redFlag: RedFlag }) {
 
 // ─── Main Page ──────────────────────────────────────────────
 export default function RedFlagsPage() {
+  const router = useRouter();
+  const openCase = (id: string) => router.push(`/red-flags/${id}`);
   const [redFlags, setRedFlags] = useState<RedFlag[]>([]);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [filter, setFilter] = useState<string>("all");
@@ -440,12 +503,15 @@ export default function RedFlagsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const { toastError } = useToast();
+  const { toastError, toastSuccess } = useToast();
 
   useEffect(() => {
-    monitorsApi.list().then(setMonitors).catch((err) => {
-      console.error("Failed to load monitors:", err);
-    });
+    monitorsApi
+      .list()
+      .then(setMonitors)
+      .catch((err) => {
+        console.error("Failed to load monitors:", err);
+      });
   }, []);
 
   useEffect(() => {
@@ -467,10 +533,48 @@ export default function RedFlagsPage() {
   }
 
   // Action dialog state
-  const [actionDialog, setActionDialog] = useState<{ redFlag: RedFlag; targetStatus: RedFlagStatus } | null>(null);
-  const [actionCategory, setActionCategory] = useState<ActionCategory>("investigation");
+  const [actionDialog, setActionDialog] = useState<{
+    redFlag: RedFlag;
+    targetStatus: RedFlagStatus;
+  } | null>(null);
+  const [actionCategory, setActionCategory] =
+    useState<ActionCategory>("investigation");
   const [actionNotes, setActionNotes] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Report generation (one flag at a time)
+  const [reportingId, setReportingId] = useState<string | null>(null);
+
+  async function downloadReport(redFlag: RedFlag) {
+    setReportingId(redFlag.id);
+    try {
+      // El backend guarda un PDF apenas se crea la alerta — se prefiere ese
+      // (es el que queda trazado con fecha y sha256). Solo si no existe
+      // (alertas creadas antes de este cambio) se arma uno en el navegador.
+      const saved = await redFlagsApi
+        .downloadReport(redFlag.id)
+        .catch(() => null);
+      if (saved) {
+        const url = URL.createObjectURL(saved);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `informe-bandera-roja-${redFlag.id}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        // Carga diferida: jsPDF pesa ~140 kB y solo hace falta cuando alguien
+        // pide un informe, no cada vez que se abre la lista.
+        const { generateRedFlagReport } = await import("@/lib/red-flag-report");
+        await generateRedFlagReport(redFlag);
+      }
+      toastSuccess("Informe generado");
+    } catch (err) {
+      console.error("Failed to generate red flag report:", err);
+      toastError("No se pudo generar el informe");
+    } finally {
+      setReportingId(null);
+    }
+  }
 
   // Log timeline dialog state
   const [logDialog, setLogDialog] = useState<RedFlag | null>(null);
@@ -485,10 +589,18 @@ export default function RedFlagsPage() {
 
   async function submitAction() {
     if (!actionDialog) return;
-    if (!actionNotes.trim()) { toastError("Las notas son requeridas"); return; }
+    if (!actionNotes.trim()) {
+      toastError("Las notas son requeridas");
+      return;
+    }
     setActionLoading(true);
     try {
-      await redFlagsApi.updateStatus(actionDialog.redFlag.id, actionDialog.targetStatus, actionCategory, actionNotes);
+      await redFlagsApi.updateStatus(
+        actionDialog.redFlag.id,
+        actionDialog.targetStatus,
+        actionCategory,
+        actionNotes,
+      );
       setActionDialog(null);
       loadRedFlags();
     } catch {
@@ -511,7 +623,8 @@ export default function RedFlagsPage() {
   }
 
   const filtered = useMemo(() => {
-    let result = filter === "all" ? redFlags : redFlags.filter((a) => a.status === filter);
+    let result =
+      filter === "all" ? redFlags : redFlags.filter((a) => a.status === filter);
     if (filterMonitorId !== "all") {
       result = result.filter((a) => a.monitorId === filterMonitorId);
     }
@@ -522,7 +635,7 @@ export default function RedFlagsPage() {
           a.ruleName.toLowerCase().includes(term) ||
           a.monitorName.toLowerCase().includes(term) ||
           a.message.toLowerCase().includes(term) ||
-          (a.groupByValue && a.groupByValue.toLowerCase().includes(term))
+          (a.groupByValue && a.groupByValue.toLowerCase().includes(term)),
       );
     }
     return result;
@@ -550,7 +663,10 @@ export default function RedFlagsPage() {
       <div className="p-6 space-y-4">
         {/* Top: Calendar + Stats */}
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-          <RedFlagCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+          <RedFlagCalendar
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 content-start">
             <Card>
@@ -618,7 +734,9 @@ export default function RedFlagsPage() {
             <SelectContent>
               <SelectItem value="all">Todos los monitores</SelectItem>
               {monitors.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                <SelectItem key={m.id} value={m.id}>
+                  {m.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -691,9 +809,14 @@ export default function RedFlagsPage() {
                           <SeverityIcon className="h-4 w-4 shrink-0" />
                           <p className="font-semibold">{redFlag.ruleName}</p>
                           <Badge variant={config.variant}>{config.label}</Badge>
-                          <Badge variant="outline">{statusLabels[redFlag.status]}</Badge>
+                          <Badge variant="outline">
+                            {statusLabels[redFlag.status]}
+                          </Badge>
                           {isAggregate && (
-                            <Badge variant="secondary" className="bg-accent-soft text-accent-fg gap-1">
+                            <Badge
+                              variant="secondary"
+                              className="bg-accent-soft text-accent-fg gap-1"
+                            >
                               <Calculator className="h-3 w-3" />
                               Agregada
                             </Badge>
@@ -706,7 +829,8 @@ export default function RedFlagsPage() {
                             <div className="flex items-center justify-between gap-4">
                               <div>
                                 <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                                  {redFlag.aggFunction?.toUpperCase()}({redFlag.aggField}) por {redFlag.groupByField}
+                                  {redFlag.aggFunction?.toUpperCase()}(
+                                  {redFlag.aggField}) por {redFlag.groupByField}
                                 </p>
                                 <p className="text-lg font-bold text-foreground mt-0.5">
                                   {redFlag.groupByValue}
@@ -721,36 +845,47 @@ export default function RedFlagsPage() {
                                 </p>
                               </div>
                             </div>
-                            {redFlag.threshold !== undefined && redFlag.threshold > 0 && (
-                              <div className="mt-2">
-                                <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full bg-risk-high-fg transition-all"
-                                    style={{
-                                      width: `${Math.min((redFlag.aggValue! / redFlag.threshold) * 100, 100)}%`,
-                                    }}
-                                  />
+                            {redFlag.threshold !== undefined &&
+                              redFlag.threshold > 0 && (
+                                <div className="mt-2">
+                                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-risk-high-fg transition-all"
+                                      style={{
+                                        width: `${Math.min((redFlag.aggValue! / redFlag.threshold) * 100, 100)}%`,
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="flex justify-between mt-1">
+                                    <span className="text-[10px] text-muted-foreground">
+                                      0
+                                    </span>
+                                    <span className="text-[10px] text-risk-high-fg font-medium">
+                                      {(
+                                        (redFlag.aggValue! /
+                                          redFlag.threshold) *
+                                        100
+                                      ).toFixed(0)}
+                                      % del umbral
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {formatNumber(redFlag.threshold)}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex justify-between mt-1">
-                                  <span className="text-[10px] text-muted-foreground">0</span>
-                                  <span className="text-[10px] text-risk-high-fg font-medium">
-                                    {((redFlag.aggValue! / redFlag.threshold) * 100).toFixed(0)}% del umbral
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {formatNumber(redFlag.threshold)}
-                                  </span>
-                                </div>
-                              </div>
-                            )}
+                              )}
                             {redFlag.matchCount > 0 && (
                               <p className="text-xs text-muted-foreground mt-2">
                                 <Database className="h-3 w-3 inline mr-1" />
-                                {redFlag.matchCount.toLocaleString()} transacciones en el periodo
+                                {redFlag.matchCount.toLocaleString()}{" "}
+                                transacciones en el periodo
                               </p>
                             )}
                           </div>
                         ) : (
-                          <p className="mt-1 text-sm text-muted-foreground">{redFlag.message}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {redFlag.message}
+                          </p>
                         )}
 
                         <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
@@ -767,12 +902,22 @@ export default function RedFlagsPage() {
 
                       {/* Actions */}
                       <div className="flex gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openCase(redFlag.id)}
+                          title="Abrir caso"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </Button>
                         {redFlag.status === "new" && (
                           <>
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openActionDialog(redFlag, "acknowledged")}
+                              onClick={() =>
+                                openActionDialog(redFlag, "acknowledged")
+                              }
                               title="Reconocer"
                             >
                               <Eye className="h-4 w-4" />
@@ -780,7 +925,9 @@ export default function RedFlagsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openActionDialog(redFlag, "resolved")}
+                              onClick={() =>
+                                openActionDialog(redFlag, "resolved")
+                              }
                               title="Resolver"
                             >
                               <Check className="h-4 w-4 text-success-fg" />
@@ -788,7 +935,9 @@ export default function RedFlagsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => openActionDialog(redFlag, "dismissed")}
+                              onClick={() =>
+                                openActionDialog(redFlag, "dismissed")
+                              }
                               title="Descartar"
                             >
                               <X className="h-4 w-4 text-muted-foreground" />
@@ -799,12 +948,27 @@ export default function RedFlagsPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => openActionDialog(redFlag, "resolved")}
+                            onClick={() =>
+                              openActionDialog(redFlag, "resolved")
+                            }
                             title="Resolver"
                           >
                             <Check className="h-4 w-4 text-success-fg" />
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => downloadReport(redFlag)}
+                          disabled={reportingId === redFlag.id}
+                          title="Generar informe PDF"
+                        >
+                          {reportingId === redFlag.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -816,7 +980,9 @@ export default function RedFlagsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setExpandedId(isExpanded ? null : redFlag.id)}
+                          onClick={() =>
+                            setExpandedId(isExpanded ? null : redFlag.id)
+                          }
                           title="Ver datos"
                         >
                           {isExpanded ? (
@@ -839,37 +1005,63 @@ export default function RedFlagsPage() {
       </div>
 
       {/* Action Dialog */}
-      <Dialog open={!!actionDialog} onOpenChange={(open) => !open && setActionDialog(null)}>
+      <Dialog
+        open={!!actionDialog}
+        onOpenChange={(open) => !open && setActionDialog(null)}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {actionDialog?.targetStatus === "acknowledged" && "Reconocer bandera roja"}
-              {actionDialog?.targetStatus === "resolved" && "Resolver bandera roja"}
-              {actionDialog?.targetStatus === "dismissed" && "Descartar bandera roja"}
+              {actionDialog?.targetStatus === "acknowledged" &&
+                "Reconocer bandera roja"}
+              {actionDialog?.targetStatus === "resolved" &&
+                "Resolver bandera roja"}
+              {actionDialog?.targetStatus === "dismissed" &&
+                "Descartar bandera roja"}
             </DialogTitle>
           </DialogHeader>
           {actionDialog && (
             <div className="space-y-4">
               <div className="rounded-md border p-3 text-sm space-y-1">
                 <p className="font-medium">{actionDialog.redFlag.ruleName}</p>
-                <p className="text-muted-foreground">{actionDialog.redFlag.monitorName}</p>
+                <p className="text-muted-foreground">
+                  {actionDialog.redFlag.monitorName}
+                </p>
                 <div className="flex gap-2 mt-1">
-                  <Badge variant={actionDialog.redFlag.severity === "critical" || actionDialog.redFlag.severity === "high" ? "destructive" : "secondary"}>
+                  <Badge
+                    variant={
+                      actionDialog.redFlag.severity === "critical" ||
+                      actionDialog.redFlag.severity === "high"
+                        ? "destructive"
+                        : "secondary"
+                    }
+                  >
                     {actionDialog.redFlag.severity}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{actionDialog.redFlag.matchCount} coincidencias</span>
+                  <span className="text-xs text-muted-foreground">
+                    {actionDialog.redFlag.matchCount} coincidencias
+                  </span>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label>Categoría</Label>
-                <Select value={actionCategory} onValueChange={(v) => setActionCategory(v as ActionCategory)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={actionCategory}
+                  onValueChange={(v) => setActionCategory(v as ActionCategory)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="investigation">Investigación</SelectItem>
-                    <SelectItem value="false_positive">Falso positivo</SelectItem>
+                    <SelectItem value="false_positive">
+                      Falso positivo
+                    </SelectItem>
                     <SelectItem value="escalation">Escalado</SelectItem>
-                    <SelectItem value="corrective_action">Acción correctiva</SelectItem>
+                    <SelectItem value="corrective_action">
+                      Acción correctiva
+                    </SelectItem>
                     <SelectItem value="other">Otro</SelectItem>
                   </SelectContent>
                 </Select>
@@ -885,8 +1077,14 @@ export default function RedFlagsPage() {
                 />
               </div>
 
-              <Button onClick={submitAction} disabled={actionLoading || !actionNotes.trim()} className="w-full">
-                {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              <Button
+                onClick={submitAction}
+                disabled={actionLoading || !actionNotes.trim()}
+                className="w-full"
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
                 Confirmar
               </Button>
             </div>
@@ -895,7 +1093,10 @@ export default function RedFlagsPage() {
       </Dialog>
 
       {/* Log Timeline Dialog */}
-      <Dialog open={!!logDialog} onOpenChange={(open) => !open && setLogDialog(null)}>
+      <Dialog
+        open={!!logDialog}
+        onOpenChange={(open) => !open && setLogDialog(null)}
+      >
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Bitácora de bandera roja</DialogTitle>
@@ -904,7 +1105,9 @@ export default function RedFlagsPage() {
             <div>
               <div className="rounded-md border p-3 text-sm mb-4">
                 <p className="font-medium">{logDialog.ruleName}</p>
-                <p className="text-muted-foreground text-xs">{logDialog.message}</p>
+                <p className="text-muted-foreground text-xs">
+                  {logDialog.message}
+                </p>
               </div>
 
               {logsLoading ? (
@@ -919,19 +1122,18 @@ export default function RedFlagsPage() {
                 <div className="relative border-l-2 border-border ml-3 space-y-4">
                   {redFlagLogs.map((log) => {
                     const dotColor =
-                      log.newStatus === "resolved" ? "bg-success-fg" :
-                      log.newStatus === "acknowledged" ? "bg-info-fg" :
-                      log.newStatus === "dismissed" ? "bg-ink-subtle" : "bg-warning-fg";
-                    const categoryLabels: Record<string, string> = {
-                      investigation: "Investigación",
-                      false_positive: "Falso positivo",
-                      escalation: "Escalado",
-                      corrective_action: "Acción correctiva",
-                      other: "Otro",
-                    };
+                      log.newStatus === "resolved"
+                        ? "bg-success-fg"
+                        : log.newStatus === "acknowledged"
+                          ? "bg-info-fg"
+                          : log.newStatus === "dismissed"
+                            ? "bg-ink-subtle"
+                            : "bg-warning-fg";
                     return (
                       <div key={log.id} className="relative pl-6">
-                        <div className={`absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full ${dotColor}`} />
+                        <div
+                          className={`absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full ${dotColor}`}
+                        />
                         <div className="text-sm">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium">{log.userName}</span>
@@ -942,8 +1144,12 @@ export default function RedFlagsPage() {
                               {categoryLabels[log.category] || log.category}
                             </Badge>
                           </div>
-                          <p className="text-muted-foreground mt-1">{log.notes}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{formatDate(log.createdAt)}</p>
+                          <p className="text-muted-foreground mt-1">
+                            {log.notes}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {formatDate(log.createdAt)}
+                          </p>
                         </div>
                       </div>
                     );
