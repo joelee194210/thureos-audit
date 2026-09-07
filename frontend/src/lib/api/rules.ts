@@ -62,7 +62,31 @@ export const rulesApi = {
       name: string;
     },
   ) => api.post<Rule>(`/monitors/${monitorId}/rules/from-template`, data),
+
+  // Efectividad: cuenta cuántas red flags generó cada regla/tipología y
+  // cómo se resolvieron (disposition de cada caso cerrado).
+  effectiveness: (ruleId: string) =>
+    api.get<EffectivenessStats>(`/rules/${ruleId}/effectiveness`),
+
+  effectivenessByTemplate: () =>
+    api.get<TemplateEffectiveness[]>("/rule-templates/effectiveness"),
 };
+
+export interface EffectivenessStats {
+  total: number;
+  open: number;
+  falsePositive: number;
+  confirmedRos: number;
+  noAction: number;
+  falsePositiveRate: number;
+  avgCloseHours: number;
+}
+
+export interface TemplateEffectiveness {
+  templateId: string;
+  name: string;
+  stats: EffectivenessStats;
+}
 
 export interface RuleTemplate {
   id: string;
