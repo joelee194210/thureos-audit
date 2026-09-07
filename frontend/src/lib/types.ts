@@ -149,6 +149,7 @@ export interface Rule {
   fatfTypology?: string;
   thresholdJustification?: string;
   regulatoryBasis?: string;
+  screeningFields?: string[];
   version: number;
   deletedAt?: string;
   createdBy: string;

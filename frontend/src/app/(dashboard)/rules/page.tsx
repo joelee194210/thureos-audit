@@ -447,6 +447,7 @@ function RulesContent() {
     scheduleFrequency: "daily",
     scheduleDay: "1",
     scheduleTime: "06:00",
+    screeningFields: [] as string[],
   });
   const [activeTab, setActiveTab] = useState("daily");
   const [executingRuleId, setExecutingRuleId] = useState<string | null>(null);
@@ -490,6 +491,7 @@ function RulesContent() {
     fatfTypology: "",
     thresholdJustification: "",
     regulatoryBasis: "",
+    screeningFields: [] as string[],
   });
   const [backtesting, setBacktesting] = useState(false);
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(
@@ -614,6 +616,7 @@ function RulesContent() {
         fatfTypology: createForm.fatfTypology || undefined,
         thresholdJustification: createForm.thresholdJustification || undefined,
         regulatoryBasis: createForm.regulatoryBasis || undefined,
+        screeningFields: createForm.screeningFields.length > 0 ? createForm.screeningFields : undefined,
       });
       setIsCreateOpen(false);
       setBacktestResult(null);
@@ -632,6 +635,7 @@ function RulesContent() {
         fatfTypology: "",
         thresholdJustification: "",
         regulatoryBasis: "",
+        screeningFields: [],
       });
       loadRules();
     } catch (err) {
@@ -753,6 +757,7 @@ function RulesContent() {
       aggregateConditions:
         rule.aggregateConditions?.map((a) => ({ ...a })) || [],
       scheduleEnabled: rule.schedule?.enabled || false,
+      screeningFields: rule.screeningFields || [],
       ...(() => {
         const cron =
           rule.schedule?.cronExpr ||
@@ -870,6 +875,7 @@ function RulesContent() {
               )
             : "",
         },
+        screeningFields: editForm.screeningFields.length > 0 ? editForm.screeningFields : undefined,
       });
       setEditingRule(null);
       setBacktestResult(null);
@@ -1331,6 +1337,38 @@ function RulesContent() {
                         }
                         placeholder="Justificacion del umbral"
                       />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Campos a screenear contra sanciones (opcional)
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(createMonitorSchema || []).map(
+                        (f) => {
+                          const active = createForm.screeningFields.includes(f.name);
+                          return (
+                            <button
+                              key={f.name}
+                              type="button"
+                              onClick={() =>
+                                setCreateForm((prev) => ({
+                                  ...prev,
+                                  screeningFields: active
+                                    ? prev.screeningFields.filter((n) => n !== f.name)
+                                    : [...prev.screeningFields, f.name],
+                                }))
+                              }
+                              className={`rounded-md border px-2 py-1 text-xs ${
+                                active ? "border-primary bg-primary/10" : ""
+                              }`}
+                            >
+                              {f.name}
+                            </button>
+                          );
+                        },
+                      )}
                     </div>
                   </div>
 
@@ -2607,6 +2645,36 @@ function RulesContent() {
                   setEditForm({ ...editForm, description: e.target.value })
                 }
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">
+                Campos a screenear contra sanciones (opcional)
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {(editMonitorSchema || []).map((f) => {
+                  const active = editForm.screeningFields.includes(f.name);
+                  return (
+                    <button
+                      key={f.name}
+                      type="button"
+                      onClick={() =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          screeningFields: active
+                            ? prev.screeningFields.filter((n) => n !== f.name)
+                            : [...prev.screeningFields, f.name],
+                        }))
+                      }
+                      className={`rounded-md border px-2 py-1 text-xs ${
+                        active ? "border-primary bg-primary/10" : ""
+                      }`}
+                    >
+                      {f.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Schedule */}

@@ -30,6 +30,7 @@ export const rulesApi = {
     fatfTypology?: string;
     thresholdJustification?: string;
     regulatoryBasis?: string;
+    screeningFields?: string[];
     aiGenerated?: boolean;
   }) => api.post<Rule>("/rules", data),
 
