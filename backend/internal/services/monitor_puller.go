@@ -63,6 +63,9 @@ func newSafeHTTPClient() *http.Client {
 			if err != nil {
 				return nil, fmt.Errorf("resolving %s: %w", host, err)
 			}
+			if len(ips) == 0 {
+				return nil, fmt.Errorf("resolving %s: no addresses returned", host)
+			}
 			for _, ip := range ips {
 				if isPrivateOrReservedIP(ip) {
 					return nil, fmt.Errorf("refusing to connect to private/reserved address %s", ip)
@@ -74,8 +77,31 @@ func newSafeHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second, Transport: transport}
 }
 
+// cgnatBlock is RFC 6598 Shared Address Space (100.64.0.0/10) — carrier-grade
+// NAT and, in several cloud providers, internal service/load-balancer
+// addressing. net.IP.IsPrivate() only covers RFC 1918 + RFC 4193 and misses
+// this range entirely, so it needs an explicit check.
+var cgnatBlock = mustParseCIDR("100.64.0.0/10")
+
+func mustParseCIDR(s string) *net.IPNet {
+	_, block, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return block
+}
+
 func isPrivateOrReservedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	// 0.0.0.0/8 ("this network"): not caught by IsUnspecified, which only
+	// matches the literal 0.0.0.0 — but the whole block is non-routable and
+	// some stacks treat it as loopback-equivalent.
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 0 {
+		return true
+	}
+	return cgnatBlock.Contains(ip)
 }
 
 // Start launches the puller. Blocks until ctx is cancelled — call with `go`.
