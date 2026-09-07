@@ -65,7 +65,7 @@ func (c *WatchmanClient) Search(ctx context.Context, name string, opts WatchmanS
 		baseURL = cfg.Watchman.URL
 	}
 	if baseURL == "" {
-		return nil, fmt.Errorf("Watchman: URL no configurada (Configuración → APIs)")
+		return nil, fmt.Errorf("watchman: URL no configurada (Configuración → APIs)")
 	}
 
 	limit := opts.Limit
@@ -98,7 +98,7 @@ func (c *WatchmanClient) Search(ctx context.Context, name string, opts WatchmanS
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("Watchman respondió HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("watchman respondió HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed watchmanSearchResponse
