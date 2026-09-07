@@ -92,6 +92,10 @@ func main() {
 	aiRulesService := services.NewAIRulesService(systemConfigRepo)
 	notificationService := services.NewNotificationService(nil, systemConfigRepo)
 	ruleEngine.SetNotifier(notificationService)
+	watchmanClient := services.NewWatchmanClient(systemConfigRepo)
+	screeningRepo := repository.NewScreeningRepository(mongo)
+	screeningService := services.NewScreeningService(watchmanClient, screeningRepo)
+	ruleEngine.SetScreeningService(screeningService)
 	dashboardService := services.NewDashboardService(dashboardRepo, monitorRepo, ruleRepo)
 
 	redFlagHandler := handlers.NewRedFlagHandler(redFlagRepo, redFlagLogRepo, ruleRepo, monitorRepo, userRepo, activityLogRepo, redFlagReportRepo)
@@ -134,6 +138,12 @@ func main() {
 	defer slaCancel()
 	go slaEscalationJob.Start(slaCtx)
 
+	// Initialize screening reeval job
+	screeningReevalJob := services.NewScreeningReevalJob(screeningRepo, watchmanClient, notificationService)
+	screeningReevalCtx, screeningReevalCancel := context.WithCancel(context.Background())
+	defer screeningReevalCancel()
+	go screeningReevalJob.Start(screeningReevalCtx)
+
 	// Initialize handlers
 	h := &router.Handlers{
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
@@ -151,6 +161,7 @@ func main() {
 		SLAEscalation: slaEscalationJob,
 		ConfigRepo:    systemConfigRepo,
 		Notifier:      notificationService,
+		Screening:     handlers.NewScreeningHandler(screeningService, screeningRepo, activityLogRepo),
 	}
 
 	// Create Fiber app

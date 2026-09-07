@@ -29,6 +29,7 @@ type Handlers struct {
 	SLAEscalation interface{ Status() map[string]interface{} }
 	ConfigRepo    *repository.SystemConfigRepository
 	Notifier      *services.NotificationService
+	Screening     *handlers.ScreeningHandler
 }
 
 func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
@@ -108,6 +109,12 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	monitors.Post("/:id/rules/from-template", middleware.RequireComplianceOrAbove(), h.RuleTemplate.Instantiate)
 	monitors.Post("/:id/rules/backtest", middleware.RequireComplianceOrAbove(), h.Rule.Backtest)
 
+	// Screening de sanciones: buscar es compliance+ (misma vara que crear
+	// reglas); descartar un match exige nota, igual que cerrar un caso.
+	screening := protected.Group("/screening")
+	screening.Post("/search", middleware.RequireComplianceOrAbove(), h.Screening.Search)
+	screening.Post("/:id/dismiss", middleware.RequireComplianceOrAbove(), h.Screening.Dismiss)
+
 	// Dashboards
 	dashboards := protected.Group("/dashboards")
 	dashboards.Get("/", h.Dashboard.List)
@@ -137,6 +144,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	redFlags.Post("/:id/transition", middleware.RequireComplianceOrAbove(), h.RedFlag.TransitionCase)
 	redFlags.Post("/:id/notes", middleware.RequireComplianceOrAbove(), h.RedFlag.AddCaseNote)
 	redFlags.Get("/:id/notes", h.RedFlag.ListCaseNotes)
+	redFlags.Get("/:id/screening", h.Screening.GetByRedFlag)
 
 	// MCCs (catalog)
 	mccs := protected.Group("/mccs")
@@ -298,6 +306,33 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.JSON(fiber.Map{"message": "notificación de prueba encolada"})
+	})
+
+	settings.Get("/screening", func(c *fiber.Ctx) error {
+		cfg, err := h.ConfigRepo.Get(c.Context())
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load config"})
+		}
+		return c.JSON(fiber.Map{"watchmanUrl": cfg.Watchman.URL})
+	})
+
+	settings.Put("/screening", func(c *fiber.Ctx) error {
+		var body struct {
+			WatchmanURL string `json:"watchmanUrl"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+		current, err := h.ConfigRepo.Get(c.Context())
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load current config"})
+		}
+		current.Watchman.URL = body.WatchmanURL
+		current.UpdatedBy, _ = c.Locals("email").(string)
+		if err := h.ConfigRepo.Upsert(c.Context(), current); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"message": "screening actualizado"})
 	})
 
 	settings.Get("/", func(c *fiber.Ctx) error {

@@ -79,3 +79,18 @@ func (s *ScreeningService) ScreenRuleFields(ctx context.Context, redFlagID primi
 func logScreeningError(redFlagID primitive.ObjectID, field string, err error) {
 	log.Printf("WARNING: screening: campo %q del red flag %s: %v", field, redFlagID.Hex(), err)
 }
+
+// ScreenAndPersistEphemeral es la búsqueda manual: corre Search()+clasifica
+// pero NO persiste — es una herramienta de investigación ad-hoc, no un
+// registro de caso. Nombre distinto a ScreenAndPersist a propósito: que
+// quede claro en el call site que este camino no deja rastro en Mongo.
+func (s *ScreeningService) ScreenAndPersistEphemeral(ctx context.Context, query, dateOfBirth string) (*models.ScreeningResult, error) {
+	matches, searchErr := s.client.Search(ctx, query, WatchmanSearchOptions{Limit: 20, MinMatch: 0.5, DateOfBirth: dateOfBirth})
+	outcome := ClassifyScreeningOutcome(matches, searchErr)
+	return &models.ScreeningResult{
+		Query:          query,
+		Status:         outcome.Status,
+		StrongestMatch: outcome.StrongestMatch,
+		Matches:        matches,
+	}, nil
+}

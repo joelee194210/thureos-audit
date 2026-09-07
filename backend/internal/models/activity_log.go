@@ -9,15 +9,16 @@ import (
 type ActivityType string
 
 const (
-	ActivityLogin         ActivityType = "login"
-	ActivityRedFlagAction ActivityType = "red_flag_action"
-	ActivityRuleCreate    ActivityType = "rule_create"
-	ActivityRuleUpdate    ActivityType = "rule_update"
-	ActivityRuleDelete    ActivityType = "rule_delete"
-	ActivityRuleExecute   ActivityType = "rule_execute"
-	ActivityUpload        ActivityType = "upload"
-	ActivityUserManage    ActivityType = "user_manage"
-	ActivityMCCUpdate     ActivityType = "mcc_update"
+	ActivityLogin            ActivityType = "login"
+	ActivityRedFlagAction    ActivityType = "red_flag_action"
+	ActivityRuleCreate       ActivityType = "rule_create"
+	ActivityRuleUpdate       ActivityType = "rule_update"
+	ActivityRuleDelete       ActivityType = "rule_delete"
+	ActivityRuleExecute      ActivityType = "rule_execute"
+	ActivityUpload           ActivityType = "upload"
+	ActivityUserManage       ActivityType = "user_manage"
+	ActivityMCCUpdate        ActivityType = "mcc_update"
+	ActivityScreeningDismiss ActivityType = "screening_dismiss"
 )
 
 type ActivityLog struct {
