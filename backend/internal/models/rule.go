@@ -134,32 +134,32 @@ type RuleSchedule struct {
 }
 
 type Rule struct {
-	ID                     primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
-	MonitorID              primitive.ObjectID   `bson:"monitor_id" json:"monitorId"`
-	Name                   string               `bson:"name" json:"name"`
-	Description            string               `bson:"description" json:"description"`
-	ConditionGroup         ConditionGroup       `bson:"condition_group" json:"conditionGroup"`
-	AggregateConditions    []AggregateCondition `bson:"aggregate_conditions,omitempty" json:"aggregateConditions,omitempty"`
-	Actions                []ActionType         `bson:"actions" json:"actions"`
-	Severity               Severity             `bson:"severity" json:"severity"`
-	Active                 bool                 `bson:"active" json:"active"`
-	AIGenerated            bool                 `bson:"ai_generated" json:"aiGenerated"`
-	TriggerCount           int64                `bson:"trigger_count" json:"triggerCount"`
-	LastTriggered          *time.Time           `bson:"last_triggered,omitempty" json:"lastTriggered,omitempty"`
-	Schedule               RuleSchedule         `bson:"schedule,omitempty" json:"schedule,omitempty"`
-	TemplateID             string               `bson:"template_id,omitempty" json:"templateId,omitempty"`
+	ID                  primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	MonitorID           primitive.ObjectID   `bson:"monitor_id" json:"monitorId"`
+	Name                string               `bson:"name" json:"name"`
+	Description         string               `bson:"description" json:"description"`
+	ConditionGroup      ConditionGroup       `bson:"condition_group" json:"conditionGroup"`
+	AggregateConditions []AggregateCondition `bson:"aggregate_conditions,omitempty" json:"aggregateConditions,omitempty"`
+	Actions             []ActionType         `bson:"actions" json:"actions"`
+	Severity            Severity             `bson:"severity" json:"severity"`
+	Active              bool                 `bson:"active" json:"active"`
+	AIGenerated         bool                 `bson:"ai_generated" json:"aiGenerated"`
+	TriggerCount        int64                `bson:"trigger_count" json:"triggerCount"`
+	LastTriggered       *time.Time           `bson:"last_triggered,omitempty" json:"lastTriggered,omitempty"`
+	Schedule            RuleSchedule         `bson:"schedule,omitempty" json:"schedule,omitempty"`
+	TemplateID          string               `bson:"template_id,omitempty" json:"templateId,omitempty"`
 	// ScreeningFields son los nombres de columnas del schema del monitor
 	// cuyo valor se screenea contra Watchman cuando la regla dispara —
 	// vacío significa que esta regla no dispara screening.
-	ScreeningFields        []string             `bson:"screening_fields,omitempty" json:"screeningFields,omitempty"`
-	FatfTypology           string               `bson:"fatf_typology,omitempty" json:"fatfTypology,omitempty"`
-	ThresholdJustification string               `bson:"threshold_justification,omitempty" json:"thresholdJustification,omitempty"`
-	RegulatoryBasis        string               `bson:"regulatory_basis,omitempty" json:"regulatoryBasis,omitempty"`
-	Version                int                  `bson:"version" json:"version"`
-	DeletedAt              *time.Time           `bson:"deleted_at,omitempty" json:"deletedAt,omitempty"`
-	CreatedBy              primitive.ObjectID   `bson:"created_by" json:"createdBy"`
-	CreatedAt              time.Time            `bson:"created_at" json:"createdAt"`
-	UpdatedAt              time.Time            `bson:"updated_at" json:"updatedAt"`
+	ScreeningFields        []string           `bson:"screening_fields,omitempty" json:"screeningFields,omitempty"`
+	FatfTypology           string             `bson:"fatf_typology,omitempty" json:"fatfTypology,omitempty"`
+	ThresholdJustification string             `bson:"threshold_justification,omitempty" json:"thresholdJustification,omitempty"`
+	RegulatoryBasis        string             `bson:"regulatory_basis,omitempty" json:"regulatoryBasis,omitempty"`
+	Version                int                `bson:"version" json:"version"`
+	DeletedAt              *time.Time         `bson:"deleted_at,omitempty" json:"deletedAt,omitempty"`
+	CreatedBy              primitive.ObjectID `bson:"created_by" json:"createdBy"`
+	CreatedAt              time.Time          `bson:"created_at" json:"createdAt"`
+	UpdatedAt              time.Time          `bson:"updated_at" json:"updatedAt"`
 }
 
 type CreateRuleRequest struct {
