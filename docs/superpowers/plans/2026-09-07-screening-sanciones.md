@@ -1165,6 +1165,7 @@ git commit -m "feat(screening): job diario de reevaluación de whitelist vencido
 **Files:**
 - Create: `backend/internal/handlers/screening_handler.go`
 - Modify: `backend/internal/models/activity_log.go`
+- Modify: `backend/internal/services/screening_service.go` (agrega `ScreenAndPersistEphemeral`, Step 3)
 - Modify: `backend/internal/router/router.go`
 - Modify: `backend/cmd/server/main.go`
 
