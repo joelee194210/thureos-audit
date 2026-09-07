@@ -78,6 +78,10 @@ type AggregateCondition struct {
 	TimeWindow string      `bson:"time_window" json:"timeWindow"` // duration: "24h", "7d", "30d"
 	Operator   Operator    `bson:"operator" json:"operator"`      // comparison: gt, gte, lt, etc.
 	Threshold  float64     `bson:"threshold" json:"threshold"`    // value to compare against
+	// Filter reduce el universo ANTES de agrupar/agregar (ej. solo montos
+	// en la franja de estructuración) — opcional, aditivo: una regla sin
+	// Filter agrega sobre todos los registros, igual que siempre.
+	Filter []Condition `bson:"filter,omitempty" json:"filter,omitempty"`
 }
 
 type ConditionGroup struct {

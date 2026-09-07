@@ -435,6 +435,17 @@ func buildAggregatePipeline(cond models.AggregateCondition) mongo.Pipeline {
 		}
 	}
 
+	// Step 1.5: Filter records before grouping (correlación filtrada —
+	// ej. estructuración: solo montos en la franja, agregados por cuenta).
+	// Aditivo: sin Filter, el pipeline queda exactamente igual que antes.
+	if len(cond.Filter) > 0 {
+		pipeline = append(pipeline, bson.D{
+			{Key: "$match", Value: BuildMongoFilter(models.ConditionGroup{
+				Logic: models.LogicAND, Conditions: cond.Filter,
+			})},
+		})
+	}
+
 	// Step 2: Group by groupBy field and apply aggregation
 	aggExpr := buildAggExpr(cond.Function, cond.Field)
 	groupID := interface{}(nil)
@@ -728,6 +739,16 @@ func buildAggregatePipelineDateScoped(cond models.AggregateCondition, dayStart, 
 				}},
 			})
 		}
+	}
+
+	// Filter records before grouping (correlación filtrada) — mismo
+	// tratamiento que buildAggregatePipeline, aditivo.
+	if len(cond.Filter) > 0 {
+		pipeline = append(pipeline, bson.D{
+			{Key: "$match", Value: BuildMongoFilter(models.ConditionGroup{
+				Logic: models.LogicAND, Conditions: cond.Filter,
+			})},
+		})
 	}
 
 	// Group + aggregate
