@@ -12,6 +12,7 @@ import (
 type RuleHandler struct {
 	ruleRepo       *repository.RuleRepository
 	monitorRepo    *repository.MonitorRepository
+	redFlagRepo    *repository.RedFlagRepository
 	aiRulesService *services.AIRulesService
 	ruleEngine     *services.RuleEngine
 }
@@ -19,15 +20,34 @@ type RuleHandler struct {
 func NewRuleHandler(
 	ruleRepo *repository.RuleRepository,
 	monitorRepo *repository.MonitorRepository,
+	redFlagRepo *repository.RedFlagRepository,
 	aiRulesService *services.AIRulesService,
 	ruleEngine *services.RuleEngine,
 ) *RuleHandler {
 	return &RuleHandler{
 		ruleRepo:       ruleRepo,
 		monitorRepo:    monitorRepo,
+		redFlagRepo:    redFlagRepo,
 		aiRulesService: aiRulesService,
 		ruleEngine:     ruleEngine,
 	}
+}
+
+// Effectiveness agrega las red flags que esta regla generó: desglose por
+// disposición, tasa de falsos positivos y tiempo medio de cierre.
+func (h *RuleHandler) Effectiveness(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid rule ID"})
+	}
+	if _, err := h.ruleRepo.FindByID(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "rule not found"})
+	}
+	flags, err := h.redFlagRepo.FindByRuleID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(services.ComputeEffectiveness(flags))
 }
 
 func (h *RuleHandler) Create(c *fiber.Ctx) error {
