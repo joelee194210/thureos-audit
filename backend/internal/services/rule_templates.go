@@ -119,7 +119,6 @@ var (
 )
 
 var pMaxTx24h = param("maxTx", "Máximo de transacciones", "Más transacciones que esta cantidad en 24h por cuenta dispara la alerta", 10, 1)
-var pMaxTx7d = param("maxTx", "Máximo de transacciones", "Más transacciones que esta cantidad en 7 días por cuenta dispara la alerta", 30, 1)
 var pAmountThreshold = param("amount", "Umbral de monto", "Monto a partir del cual se dispara la alerta", 10000, 0.01)
 var pSumThreshold = param("sum", "Umbral de suma acumulada", "Suma acumulada a partir de la cual se dispara la alerta", 50000, 0.01)
 var pBandFloor = param("floor", "Piso de la franja", "Monto mínimo de la franja de estructuración", 1000, 0)
