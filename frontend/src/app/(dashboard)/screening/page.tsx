@@ -14,12 +14,16 @@ const STATUS_LABEL: Record<string, string> = {
   clear: "Limpio",
   match: "Coincidencia",
   review: "Revisar",
+  dismissed: "Desestimado",
+  false_positive: "Falso positivo",
 };
 
-const STATUS_CLASS: Record<string, string> = {
-  clear: "bg-success/15 text-success",
-  match: "bg-danger/15 text-danger",
-  review: "bg-warning/15 text-warning",
+const STATUS_VARIANT: Record<string, "success" | "destructive" | "warning" | "default"> = {
+  clear: "success",
+  match: "destructive",
+  review: "warning",
+  dismissed: "default",
+  false_positive: "default",
 };
 
 export default function ScreeningPage() {
@@ -82,7 +86,7 @@ export default function ScreeningPage() {
           <Card>
             <CardContent className="pt-6 space-y-3">
               <div className="flex items-center gap-2">
-                <Badge className={STATUS_CLASS[result.status] || ""}>
+                <Badge variant={STATUS_VARIANT[result.status] || "default"}>
                   {STATUS_LABEL[result.status] || result.status}
                 </Badge>
                 <span className="text-sm text-muted-foreground">
