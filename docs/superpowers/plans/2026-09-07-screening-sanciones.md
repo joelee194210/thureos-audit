@@ -1513,10 +1513,10 @@ const STATUS_LABEL: Record<string, string> = {
   review: "Revisar",
 };
 
-const STATUS_CLASS: Record<string, string> = {
-  clear: "bg-success/15 text-success",
-  match: "bg-danger/15 text-danger",
-  review: "bg-warning/15 text-warning",
+const STATUS_VARIANT: Record<string, "success" | "destructive" | "warning"> = {
+  clear: "success",
+  match: "destructive",
+  review: "warning",
 };
 
 export default function ScreeningPage() {
@@ -1579,7 +1579,7 @@ export default function ScreeningPage() {
           <Card>
             <CardContent className="pt-6 space-y-3">
               <div className="flex items-center gap-2">
-                <Badge className={STATUS_CLASS[result.status] || ""}>
+                <Badge variant={STATUS_VARIANT[result.status]}>
                   {STATUS_LABEL[result.status] || result.status}
                 </Badge>
                 <span className="text-sm text-muted-foreground">
@@ -1717,8 +1717,8 @@ Agregar la sección visual, dentro del panel "Investigación" (junto al timeline
                       <span
                         className={cn(
                           "rounded px-2 py-0.5 text-[10px] font-medium",
-                          s.status === "clear" && "bg-success/15 text-success",
-                          open && "bg-danger/15 text-danger",
+                          s.status === "clear" && "bg-success-bg text-success-fg",
+                          open && "bg-danger-bg text-danger-fg",
                           (s.status === "dismissed" || s.status === "false_positive") &&
                             "bg-muted text-muted-foreground",
                         )}
