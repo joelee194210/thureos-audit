@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Moon,
   Sun,
+  ScanSearch,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,7 @@ const areas: NavArea[] = [
     items: [
       { name: "Monitores", href: "/monitors", icon: Monitor },
       { name: "Reglas", href: "/rules", icon: ShieldCheck },
+      { name: "Screening", href: "/screening", icon: ScanSearch },
       { name: "Dashboards", href: "/dashboards", icon: BarChart3 },
     ],
   },
