@@ -60,6 +60,7 @@ type NotifyPayload struct {
 const (
 	NotifyTypeRedFlagCreated = "red_flag.created"
 	NotifyTypeSLABreach      = "sla_breach"
+	NotifyTypeScreeningStale = "screening_stale"
 )
 
 // enqueueNotification centraliza el chequeo de canales habilitados y el
@@ -120,6 +121,28 @@ func (s *NotificationService) TriggerSLABreach(rf models.RedFlag) error {
 		Severity:    string(rf.Severity),
 		Message:     fmt.Sprintf("SLA vencido: %s", rf.Message),
 		MatchCount:  rf.MatchCount,
+	})
+}
+
+// TriggerScreeningStale encola el aviso de que un descarte de screening
+// vencido (whitelist expirado) volvió a dar match/review al reevaluarse
+// — alguien lo cerró hace 180+ días y nadie está mirando ese caso hoy,
+// a diferencia de un red flag recién creado. Devuelve error como
+// TriggerSLABreach: el caller (screening_reeval_job) decide qué hacer
+// según si el aviso salió de verdad.
+func (s *NotificationService) TriggerScreeningStale(result models.ScreeningResult) error {
+	redFlagRef := "búsqueda manual"
+	if result.RedFlagID != nil {
+		redFlagRef = result.RedFlagID.Hex()
+	}
+	return s.enqueueNotification(&NotifyPayload{
+		Type:        NotifyTypeScreeningStale,
+		RedFlagID:   redFlagRef,
+		MonitorName: "",
+		RuleName:    "",
+		Severity:    "high",
+		Message:     fmt.Sprintf("Screening reevaluado de %q vuelve a dar %s tras vencer el whitelist", result.Query, result.Status),
+		MatchCount:  len(result.Matches),
 	})
 }
 
