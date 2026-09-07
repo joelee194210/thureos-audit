@@ -403,7 +403,8 @@ func caseUserID(c *fiber.Ctx) (primitive.ObjectID, error) {
 }
 
 // AssignCase asigna el caso a un usuario (o al propio analista con
-// "me"). Setea prioridad y SLA derivados de la severidad de la alerta.
+// "me"). Setea la prioridad derivada de la severidad de la alerta;
+// sla_due_at ya quedó fijado al crear el red flag, no se toca acá.
 func (h *RedFlagHandler) AssignCase(c *fiber.Ctx) error {
 	if h.caseRepo == nil {
 		return fiber.NewError(fiber.StatusNotImplemented, "case management no disponible")
@@ -439,8 +440,7 @@ func (h *RedFlagHandler) AssignCase(c *fiber.Ctx) error {
 	}
 
 	if err := h.caseRepo.Assign(c.Context(), id, assignee,
-		services.PriorityForSeverity(rf.Severity),
-		services.SLADueAt(rf)); err != nil {
+		services.PriorityForSeverity(rf.Severity)); err != nil {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	}
 

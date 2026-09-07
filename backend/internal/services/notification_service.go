@@ -48,6 +48,7 @@ const resendAPIURL = "https://api.resend.com/emails"
 // NotifyPayload es la instantánea mínima del red flag para renderizar la
 // notificación sin releer Mongo en el worker.
 type NotifyPayload struct {
+	Type        string `json:"type"`
 	RedFlagID   string `json:"redFlagId"`
 	MonitorName string `json:"monitorName"`
 	RuleName    string `json:"ruleName"`
@@ -56,31 +57,70 @@ type NotifyPayload struct {
 	MatchCount  int    `json:"matchCount"`
 }
 
-// TriggerRedFlag encola la notificación de una red flag nueva. Fallo de
-// cola se loguea y no sube: la alerta ya está confirmada en Mongo.
-func (s *NotificationService) TriggerRedFlag(rf models.RedFlag) {
+const (
+	NotifyTypeRedFlagCreated = "red_flag.created"
+	NotifyTypeSLABreach      = "sla_breach"
+)
+
+// enqueueNotification centraliza el chequeo de canales habilitados y el
+// encolado — TriggerRedFlag, TriggerSLABreach y TriggerTest son el mismo
+// camino con distinto payload. "Sin canales habilitados" también es
+// error: para TriggerSLABreach eso le dice al caller que nada se envió
+// de verdad, así que no debe marcar el caso como notificado — mejor
+// reintentar en el próximo tick que perder el aviso en silencio si más
+// tarde se configura un canal.
+func (s *NotificationService) enqueueNotification(payload *NotifyPayload) error {
 	if s == nil || s.queue == nil || s.configRepo == nil {
-		return
+		return fmt.Errorf("la cola de notificaciones no está disponible")
 	}
 	cfg, err := s.configRepo.Get(context.Background())
 	if err != nil {
-		log.Printf("WARNING: notifications: leyendo config: %v", err)
-		return
+		return fmt.Errorf("leyendo config de notificaciones: %w", err)
 	}
 	if !cfg.Notifications.EmailProviderEnabled() && !cfg.Notifications.WebhooksEnabled() {
-		return
+		return fmt.Errorf("no hay ningún canal de notificación habilitado")
 	}
-	job := EvalJob{Kind: JobKindNotify, Notify: &NotifyPayload{
+	job := EvalJob{Kind: JobKindNotify, Notify: payload}
+	if err := s.queue.Enqueue(context.Background(), job); err != nil {
+		return fmt.Errorf("encolando notificación: %w", err)
+	}
+	return nil
+}
+
+// TriggerRedFlag encola la notificación de una red flag nueva. Fallo se
+// loguea y no sube: la alerta ya está confirmada en Mongo, y no hay nadie
+// esperando una respuesta síncrona (a diferencia de TriggerSLABreach, que
+// el cron de escalamiento necesita para decidir si marca el caso como
+// notificado).
+func (s *NotificationService) TriggerRedFlag(rf models.RedFlag) {
+	if err := s.enqueueNotification(&NotifyPayload{
+		Type:        NotifyTypeRedFlagCreated,
 		RedFlagID:   rf.ID.Hex(),
 		MonitorName: rf.MonitorName,
 		RuleName:    rf.RuleName,
 		Severity:    string(rf.Severity),
 		Message:     rf.Message,
 		MatchCount:  rf.MatchCount,
-	}}
-	if err := s.queue.Enqueue(context.Background(), job); err != nil {
-		log.Printf("WARNING: notifications: encolando aviso de red flag %s: %v", rf.ID.Hex(), err)
+	}); err != nil {
+		log.Printf("WARNING: notifications: aviso de red flag %s: %v", rf.ID.Hex(), err)
 	}
+}
+
+// TriggerSLABreach encola el aviso de que el plazo de SLA de un caso
+// venció. No cambia status ni fuerza escalamiento — solo avisa; mover el
+// caso a "escalated" sigue siendo decisión del analista. Devuelve error
+// (a diferencia de TriggerRedFlag) porque el cron de escalamiento solo
+// debe marcar el caso como notificado si el aviso salió de verdad.
+func (s *NotificationService) TriggerSLABreach(rf models.RedFlag) error {
+	return s.enqueueNotification(&NotifyPayload{
+		Type:        NotifyTypeSLABreach,
+		RedFlagID:   rf.ID.Hex(),
+		MonitorName: rf.MonitorName,
+		RuleName:    rf.RuleName,
+		Severity:    string(rf.Severity),
+		Message:     fmt.Sprintf("SLA vencido: %s", rf.Message),
+		MatchCount:  rf.MatchCount,
+	})
 }
 
 // testNotifyPayload es la notificación sintética que dispara el botón
@@ -88,6 +128,7 @@ func (s *NotificationService) TriggerRedFlag(rf models.RedFlag) {
 // que el email/webhook de prueba se vea igual al de producción.
 func testNotifyPayload() *NotifyPayload {
 	return &NotifyPayload{
+		Type:        NotifyTypeRedFlagCreated,
 		RedFlagID:   "test",
 		MonitorName: "Monitor de prueba",
 		RuleName:    "Regla de prueba",
@@ -103,21 +144,7 @@ func testNotifyPayload() *NotifyPayload {
 // de esa función SÍ reporta el error al caller: el admin está mirando la
 // pantalla y necesita saber si falló.
 func (s *NotificationService) TriggerTest(ctx context.Context) error {
-	if s == nil || s.queue == nil || s.configRepo == nil {
-		return fmt.Errorf("la cola de notificaciones no está disponible")
-	}
-	cfg, err := s.configRepo.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("leyendo config de notificaciones: %w", err)
-	}
-	if !cfg.Notifications.EmailProviderEnabled() && !cfg.Notifications.WebhooksEnabled() {
-		return fmt.Errorf("no hay ningún canal de notificación habilitado")
-	}
-	job := EvalJob{Kind: JobKindNotify, Notify: testNotifyPayload()}
-	if err := s.queue.Enqueue(ctx, job); err != nil {
-		return fmt.Errorf("encolando notificación de prueba: %w", err)
-	}
-	return nil
+	return s.enqueueNotification(testNotifyPayload())
 }
 
 // ProcessNotification entrega la notificación por todos los canales
@@ -138,7 +165,7 @@ func (s *NotificationService) ProcessNotification(ctx context.Context, payload *
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
-		"type":       "red_flag.created",
+		"type":       payload.Type,
 		"redFlagId":  payload.RedFlagID,
 		"monitor":    payload.MonitorName,
 		"rule":       payload.RuleName,

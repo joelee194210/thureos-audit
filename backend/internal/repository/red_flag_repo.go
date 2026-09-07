@@ -39,6 +39,8 @@ func (r *RedFlagRepository) Create(ctx context.Context, redFlag *models.RedFlag)
 	redFlag.CreatedAt = time.Now()
 	redFlag.UpdatedAt = time.Now()
 	redFlag.Status = models.RedFlagNew
+	slaDueAt := redFlag.CreatedAt.Add(models.SLADefaultForSeverity(redFlag.Severity))
+	redFlag.SLADueAt = &slaDueAt
 
 	result, err := r.col.InsertOne(ctx, redFlag)
 	if err != nil {
@@ -65,11 +67,14 @@ func (r *RedFlagRepository) Upsert(ctx context.Context, redFlag *models.RedFlag)
 	now := time.Now()
 	redFlag.UpdatedAt = now
 
-	// Fields to set on insert only (not overwritten on update)
+	// Fields to set on insert only (not overwritten on update). sla_due_at
+	// va acá, no en setAlways: es el plazo objetivo desde la primera
+	// detección — re-triggerear un red flag existente no debe moverlo.
 	setOnInsert := bson.M{
 		"_id":        primitive.NewObjectID(),
 		"created_at": now,
 		"status":     models.RedFlagNew,
+		"sla_due_at": now.Add(models.SLADefaultForSeverity(redFlag.Severity)),
 	}
 
 	// Fields to always update (refresh data)
@@ -115,6 +120,8 @@ func (r *RedFlagRepository) Upsert(ctx context.Context, redFlag *models.RedFlag)
 		// cero y Status vacío pese a que ya quedaron bien guardados.
 		redFlag.CreatedAt = now
 		redFlag.Status = models.RedFlagNew
+		slaDueAt := now.Add(models.SLADefaultForSeverity(redFlag.Severity))
+		redFlag.SLADueAt = &slaDueAt
 	}
 	return isNew, nil
 }
@@ -258,6 +265,35 @@ func (r *RedFlagRepository) FindByRuleIDs(ctx context.Context, ruleIDs []primiti
 		return nil, err
 	}
 	return redFlags, nil
+}
+
+// FindOverdueUnnotified returns red flags whose SLA already breached,
+// that aren't in a terminal state, and that the escalation job hasn't
+// notified yet — the exact set the escalation cron needs each tick.
+func (r *RedFlagRepository) FindOverdueUnnotified(ctx context.Context) ([]models.RedFlag, error) {
+	filter := bson.M{
+		"sla_due_at":             bson.M{"$lt": time.Now()},
+		"status":                 bson.M{"$nin": bson.A{models.RedFlagResolved, models.RedFlagDismissed}},
+		"escalation_notified_at": bson.M{"$exists": false},
+	}
+	cursor, err := r.col.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = cursor.Close(ctx) }()
+
+	var redFlags []models.RedFlag
+	if err := cursor.All(ctx, &redFlags); err != nil {
+		return nil, err
+	}
+	return redFlags, nil
+}
+
+// MarkEscalationNotified stamps escalation_notified_at so the next tick of
+// the escalation job doesn't re-notify the same breach.
+func (r *RedFlagRepository) MarkEscalationNotified(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.col.UpdateByID(ctx, id, bson.M{"$set": bson.M{"escalation_notified_at": time.Now()}})
+	return err
 }
 
 func (r *RedFlagRepository) UpdateStatus(ctx context.Context, id primitive.ObjectID, status models.RedFlagStatus, userID *primitive.ObjectID) error {
