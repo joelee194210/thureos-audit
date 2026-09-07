@@ -31,6 +31,7 @@ import { api } from "@/lib/api/client";
 import { settingsApi, type AIConfigResponse } from "@/lib/api/settings";
 import { useToast } from "@/lib/use-toast";
 import { NotificationsCard } from "@/components/settings/notifications-card";
+import { ScreeningCard } from "@/components/settings/screening-card";
 import { useTheme } from "@/components/theme-provider";
 
 interface SystemSettings {
@@ -212,6 +213,9 @@ export default function SettingsPage() {
 
           {/* Notificaciones de banderas rojas (SMTP/Resend + webhooks) */}
           <NotificationsCard />
+
+          {/* Screening de sanciones — configuración de Watchman */}
+          <ScreeningCard />
 
           {/* AI Configuration — EDITABLE */}
           <Card>

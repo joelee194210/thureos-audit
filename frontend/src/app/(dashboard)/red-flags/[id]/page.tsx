@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/lib/use-toast";
 import { useAuthStore } from "@/stores/auth-store";
 import { redFlagsApi, type CaseNote } from "@/lib/api/red-flags";
+import { screeningApi, type ScreeningResult } from "@/lib/api/screening";
 import {
   CASE_LABELS,
   type RedFlag,
@@ -46,21 +47,27 @@ function CasePage() {
   const user = useAuthStore((s) => s.user);
   const [rf, setRf] = useState<RedFlag | null>(null);
   const [notes, setNotes] = useState<CaseNote[]>([]);
+  const [screenings, setScreenings] = useState<ScreeningResult[]>([]);
   const [noteText, setNoteText] = useState("");
   const [closeStatus, setCloseStatus] = useState("");
   const [disposition, setDisposition] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [dismissNotes, setDismissNotes] = useState("");
+  const [dismissing, setDismissing] = useState(false);
 
   const canAct = user != null && user.role !== "viewer";
 
   const load = useCallback(async () => {
     try {
-      const [flag, caseNotes] = await Promise.all([
+      const [flag, caseNotes, screeningResults] = await Promise.all([
         redFlagsApi.get(id),
         redFlagsApi.listNotes(id),
+        screeningApi.getByRedFlag(id),
       ]);
       setRf(flag);
       setNotes(caseNotes);
+      setScreenings(screeningResults);
     } catch {
       toastError("Error al cargar el caso");
     }
@@ -97,6 +104,28 @@ function CasePage() {
       toastError(err instanceof Error ? err.message : "Error en la operación");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function dismissScreening(
+    screeningId: string,
+    status: "dismissed" | "false_positive",
+  ) {
+    if (!dismissNotes.trim()) {
+      toastError("La nota es obligatoria para descartar un screening");
+      return;
+    }
+    setDismissing(true);
+    try {
+      await screeningApi.dismiss(screeningId, { status, notes: dismissNotes });
+      toastSuccess("Screening descartado");
+      setDismissingId(null);
+      setDismissNotes("");
+      await load();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al descartar");
+    } finally {
+      setDismissing(false);
     }
   }
 
@@ -318,6 +347,90 @@ function CasePage() {
                   </div>
                 )}
               </div>
+
+              {screenings.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h3 className="text-sm font-medium">Screening de sanciones</h3>
+                  {screenings.map((s) => {
+                    const open = s.status === "match" || s.status === "review";
+                    return (
+                      <div key={s.id} className="rounded-md border p-3 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{s.field}: {s.query}</span>
+                          <span
+                            className={cn(
+                              "rounded px-2 py-0.5 text-[10px] font-medium",
+                              s.status === "clear" && "bg-success-bg text-success-fg",
+                              open && "bg-danger-bg text-danger-fg",
+                              (s.status === "dismissed" || s.status === "false_positive") &&
+                                "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {s.status}
+                          </span>
+                        </div>
+                        {(s.matches || []).slice(0, 3).map((m, i) => (
+                          <p key={i} className="text-muted-foreground">
+                            {m.name} — {m.sourceList} ({m.score.toFixed(2)})
+                          </p>
+                        ))}
+
+                        {open && dismissingId !== s.id && canAct && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[11px]"
+                            onClick={() => {
+                              setDismissingId(s.id);
+                              setDismissNotes("");
+                            }}
+                          >
+                            Descartar
+                          </Button>
+                        )}
+
+                        {dismissingId === s.id && (
+                          <div className="space-y-2 pt-1">
+                            <Input
+                              value={dismissNotes}
+                              onChange={(e) => setDismissNotes(e.target.value)}
+                              placeholder="Nota obligatoria: por qué se descarta"
+                              className="text-xs h-7"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                className="h-6 text-[11px]"
+                                disabled={dismissing}
+                                onClick={() => dismissScreening(s.id, "false_positive")}
+                              >
+                                Falso positivo
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-[11px]"
+                                disabled={dismissing}
+                                onClick={() => dismissScreening(s.id, "dismissed")}
+                              >
+                                Descartar
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-[11px]"
+                                onClick={() => setDismissingId(null)}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
