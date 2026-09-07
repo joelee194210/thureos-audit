@@ -532,7 +532,53 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 	rule models.Rule,
 	dayStart, dayEnd time.Time,
 ) ([]models.RedFlag, error) {
+	candidates := e.matchRuleForDateRange(ctx, monitor, rule, dayStart, dayEnd)
+
 	var redFlags []models.RedFlag
+	for i := range candidates {
+		candidate := candidates[i]
+		isNew, err := e.redFlagRepo.Upsert(ctx, &candidate)
+		if err != nil {
+			log.Printf("ERROR upserting %s red flag for rule %s: %v", candidate.RedFlagType, rule.ID.Hex(), err)
+			continue
+		}
+		redFlags = append(redFlags, candidate)
+		if isNew {
+			if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
+				log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
+			}
+			e.triggerReportGeneration(candidate)
+			e.triggerNotification(candidate, isNew)
+		}
+	}
+	return redFlags, nil
+}
+
+// BacktestRule reporta qué generaría una regla en [dayStart, dayEnd) sin
+// persistir nada: ni red flag, ni reporte, ni notificación, ni incremento
+// de trigger_count. Para que un usuario pueda ver el impacto de una regla
+// antes de activarla — mismo matching que EvaluateRuleForDateRange, sin
+// los efectos secundarios de ese camino.
+func (e *RuleEngine) BacktestRule(
+	ctx context.Context,
+	monitor *models.Monitor,
+	rule models.Rule,
+	dayStart, dayEnd time.Time,
+) []models.RedFlag {
+	return e.matchRuleForDateRange(ctx, monitor, rule, dayStart, dayEnd)
+}
+
+// matchRuleForDateRange encuentra qué matchearía una regla en
+// [dayStart, dayEnd) sin tocar Mongo en escritura — ni upsert, ni
+// trigger count, ni notificación. Los red flags devueltos no tienen ID
+// (nunca se persistieron); el caller decide qué hacer con ellos.
+func (e *RuleEngine) matchRuleForDateRange(
+	ctx context.Context,
+	monitor *models.Monitor,
+	rule models.Rule,
+	dayStart, dayEnd time.Time,
+) []models.RedFlag {
+	var candidates []models.RedFlag
 
 	// Date filter scoped to _ingested_at
 	dateFilter := bson.M{
@@ -560,7 +606,7 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 			for i := 0; i < limit; i++ {
 				records[i] = map[string]interface{}(matches[i])
 			}
-			redFlag := models.RedFlag{
+			candidates = append(candidates, models.RedFlag{
 				Fingerprint:    models.RowRedFlagFingerprint(rule.ID, monitor.ID, dayStart),
 				MonitorID:      monitor.ID,
 				RuleID:         rule.ID,
@@ -572,20 +618,7 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 				MatchedData:    matches[0],
 				MatchedRecords: records,
 				MatchCount:     len(matches),
-			}
-			isNew, err := e.redFlagRepo.Upsert(ctx, &redFlag)
-			if err != nil {
-				log.Printf("ERROR upserting scheduled red flag for rule %s: %v", rule.ID.Hex(), err)
-			} else {
-				redFlags = append(redFlags, redFlag)
-				if isNew {
-					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
-						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
-					}
-					e.triggerReportGeneration(redFlag)
-					e.triggerNotification(redFlag, isNew)
-				}
-			}
+			})
 		}
 	}
 
@@ -596,24 +629,10 @@ func (e *RuleEngine) EvaluateRuleForDateRange(
 			log.Printf("ERROR aggregate condition (date-scoped) for rule %s: %v", rule.ID.Hex(), err)
 			continue
 		}
-		for i := range aggRedFlags {
-			isNew, err := e.redFlagRepo.Upsert(ctx, &aggRedFlags[i])
-			if err != nil {
-				log.Printf("ERROR upserting aggregate red flag for rule %s: %v", rule.ID.Hex(), err)
-			} else {
-				redFlags = append(redFlags, aggRedFlags[i])
-				if isNew {
-					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
-						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
-					}
-					e.triggerReportGeneration(aggRedFlags[i])
-					e.triggerNotification(aggRedFlags[i], isNew)
-				}
-			}
-		}
+		candidates = append(candidates, aggRedFlags...)
 	}
 
-	return redFlags, nil
+	return candidates
 }
 
 // EvaluateRuleNow evaluates a single rule against today's data (real-time execution).

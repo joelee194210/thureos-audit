@@ -41,7 +41,7 @@ import {
   CircleAlert,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { rulesApi } from "@/lib/api/rules";
+import { rulesApi, type BacktestResult } from "@/lib/api/rules";
 import { monitorsApi } from "@/lib/api/monitors";
 import { dashboardsApi } from "@/lib/api/dashboards";
 import type { Dashboard, WidgetType } from "@/lib/types";
@@ -491,11 +491,43 @@ function RulesContent() {
     thresholdJustification: "",
     regulatoryBasis: "",
   });
+  const [backtesting, setBacktesting] = useState(false);
+  const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(
+    null,
+  );
 
   useEffect(() => {
     loadRules();
     loadMonitors();
   }, []);
+
+  async function runBacktest(
+    monitorId: string,
+    logic: "AND" | "OR",
+    conditions: Condition[],
+    aggregateConditions: AggregateCondition[],
+    severity: Severity,
+  ) {
+    if (!monitorId) {
+      toastError("Elegí un monitor primero");
+      return;
+    }
+    setBacktesting(true);
+    setBacktestResult(null);
+    try {
+      const result = await rulesApi.backtest(monitorId, {
+        conditionGroup: { logic, conditions },
+        aggregateConditions:
+          aggregateConditions.length > 0 ? aggregateConditions : undefined,
+        severity,
+      });
+      setBacktestResult(result);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al probar la regla");
+    } finally {
+      setBacktesting(false);
+    }
+  }
 
   async function loadRules() {
     try {
@@ -584,6 +616,7 @@ function RulesContent() {
         regulatoryBasis: createForm.regulatoryBasis || undefined,
       });
       setIsCreateOpen(false);
+      setBacktestResult(null);
       setCreateForm({
         name: "",
         description: "",
@@ -839,6 +872,7 @@ function RulesContent() {
         },
       });
       setEditingRule(null);
+      setBacktestResult(null);
       loadRules();
     } catch (err) {
       console.error("Failed to update rule:", err);
@@ -1166,7 +1200,13 @@ function RulesContent() {
               Desde plantilla
             </Button>
 
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <Dialog
+              open={isCreateOpen}
+              onOpenChange={(open) => {
+                setIsCreateOpen(open);
+                if (!open) setBacktestResult(null);
+              }}
+            >
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="h-4 Reglas" />
@@ -1771,13 +1811,47 @@ function RulesContent() {
                     )}
                   </div>
 
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={!createForm.monitorId || !createForm.name}
-                  >
-                    Crear regla
-                  </Button>
+                  {backtestResult && (
+                    <div className="rounded-md border bg-muted/30 p-3 text-xs space-y-1">
+                      <p className="font-medium">
+                        {backtestResult.matchCount === 0
+                          ? "No habría generado ninguna alerta contra el histórico"
+                          : `Habría generado ${backtestResult.matchCount} alerta(s) contra el histórico`}
+                      </p>
+                      {backtestResult.sample.slice(0, 5).map((rf, i) => (
+                        <p key={i} className="text-muted-foreground truncate">
+                          {rf.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1"
+                      disabled={backtesting || !createForm.monitorId}
+                      onClick={() =>
+                        runBacktest(
+                          createForm.monitorId,
+                          createForm.logic,
+                          createForm.conditions,
+                          createForm.aggregateConditions,
+                          createForm.severity,
+                        )
+                      }
+                    >
+                      {backtesting ? "Probando…" : "Probar contra histórico"}
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="flex-1"
+                      disabled={!createForm.monitorId || !createForm.name}
+                    >
+                      Crear regla
+                    </Button>
+                  </div>
                 </form>
               </DialogContent>
             </Dialog>
@@ -2152,7 +2226,12 @@ function RulesContent() {
 
       <Dialog
         open={!!editingRule}
-        onOpenChange={(open) => !open && setEditingRule(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingRule(null);
+            setBacktestResult(null);
+          }
+        }}
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -2662,9 +2741,44 @@ function RulesContent() {
               )}
             </div>
 
-            <Button type="submit" className="w-full">
-              Guardar
-            </Button>
+            {backtestResult && (
+              <div className="rounded-md border bg-muted/30 p-3 text-xs space-y-1">
+                <p className="font-medium">
+                  {backtestResult.matchCount === 0
+                    ? "No habría generado ninguna alerta contra el histórico"
+                    : `Habría generado ${backtestResult.matchCount} alerta(s) contra el histórico`}
+                </p>
+                {backtestResult.sample.slice(0, 5).map((rf, i) => (
+                  <p key={i} className="text-muted-foreground truncate">
+                    {rf.message}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={backtesting || !editingRule}
+                onClick={() =>
+                  editingRule &&
+                  runBacktest(
+                    editingRule.monitorId,
+                    editForm.logic,
+                    editForm.conditions,
+                    editForm.aggregateConditions,
+                    editForm.severity,
+                  )
+                }
+              >
+                {backtesting ? "Probando…" : "Probar contra histórico"}
+              </Button>
+              <Button type="submit" className="flex-1">
+                Guardar
+              </Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>
