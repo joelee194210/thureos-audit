@@ -433,17 +433,15 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 
 		userEmail, _ := c.Locals("email").(string)
 
-		updated := &models.SystemConfig{
-			AI: models.AIConfig{
-				Provider: provider,
-				Model:    body.Model,
-				APIKey:   apiKey,
-				BaseURL:  body.BaseURL,
-			},
-			UpdatedBy: userEmail,
+		current.AI = models.AIConfig{
+			Provider: provider,
+			Model:    body.Model,
+			APIKey:   apiKey,
+			BaseURL:  body.BaseURL,
 		}
+		current.UpdatedBy = userEmail
 
-		if err := h.ConfigRepo.Upsert(c.Context(), updated); err != nil {
+		if err := h.ConfigRepo.Upsert(c.Context(), current); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to save AI config"})
 		}
 

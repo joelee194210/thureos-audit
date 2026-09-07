@@ -875,7 +875,7 @@ function RulesContent() {
               )
             : "",
         },
-        screeningFields: editForm.screeningFields.length > 0 ? editForm.screeningFields : undefined,
+        screeningFields: editForm.screeningFields,
       });
       setEditingRule(null);
       setBacktestResult(null);

@@ -66,6 +66,13 @@ func (j *ScreeningReevalJob) checkAndReeval(ctx context.Context) {
 	}
 	for _, result := range expired {
 		matches, searchErr := j.client.Search(ctx, result.Query, WatchmanSearchOptions{Limit: 20, MinMatch: 0.5})
+		if searchErr != nil {
+			// Proveedor caído: no reabrir el descarte del analista por un
+			// error de infraestructura — se reintenta en el próximo corrido
+			// diario, sin tocar whitelist_expires_at.
+			log.Printf("screening reeval: Watchman no disponible para %s, se reintenta mañana: %v", result.ID.Hex(), searchErr)
+			continue
+		}
 		outcome := ClassifyScreeningOutcome(matches, searchErr)
 
 		if err := j.repo.UpdateAfterReeval(ctx, result.ID, outcome.Status, outcome.StrongestMatch, matches); err != nil {
