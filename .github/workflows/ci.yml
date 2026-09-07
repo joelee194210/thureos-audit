@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: backend/go.sum
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Archivos sin formatear (correr gofmt -w):"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # No usamos golangci-lint-action: su binario precompilado va atrás del
+      # Go que declara go.mod (rechaza analizar código go 1.26+ si el propio
+      # binario se construyó con un Go más viejo). Instalarlo con `go install`
+      # lo construye con el toolchain que setup-go ya dejó arriba, así que
+      # nunca puede quedar desfasado de lo que el repo requiere.
+      - name: golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+          golangci-lint run ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run test:run
+
+      - run: npm run build

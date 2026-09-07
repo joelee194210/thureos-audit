@@ -227,7 +227,7 @@ func (s *NotificationService) sendViaResend(ctx context.Context, cfg models.Rese
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("Resend respondió %d", resp.StatusCode)
+		return fmt.Errorf("resend respondió %d", resp.StatusCode)
 	}
 	return nil
 }
