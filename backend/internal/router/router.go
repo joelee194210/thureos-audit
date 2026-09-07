@@ -26,6 +26,7 @@ type Handlers struct {
 	Activity      *handlers.ActivityHandler
 	Scheduler     interface{ Status() map[string]interface{} }
 	MonitorPuller interface{ Status() map[string]interface{} }
+	SLAEscalation interface{ Status() map[string]interface{} }
 	ConfigRepo    *repository.SystemConfigRepository
 	Notifier      *services.NotificationService
 }
@@ -318,6 +319,10 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 		if h.MonitorPuller != nil {
 			monitorPullerStatus = h.MonitorPuller.Status()
 		}
+		slaEscalationStatus := map[string]interface{}{"running": false}
+		if h.SLAEscalation != nil {
+			slaEscalationStatus = h.SLAEscalation.Status()
+		}
 		return c.JSON(fiber.Map{
 			"port":           cfg.Port,
 			"mongoConnected": true,
@@ -330,6 +335,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 			"maxRetries":     3,
 			"scheduler":      schedulerStatus,
 			"monitorPuller":  monitorPullerStatus,
+			"slaEscalation":  slaEscalationStatus,
 		})
 	})
 

@@ -128,6 +128,12 @@ func main() {
 	defer pullerCancel()
 	go monitorPuller.Start(pullerCtx)
 
+	// Initialize SLA escalation job
+	slaEscalationJob := services.NewSLAEscalationJob(redFlagRepo, notificationService)
+	slaCtx, slaCancel := context.WithCancel(context.Background())
+	defer slaCancel()
+	go slaEscalationJob.Start(slaCtx)
+
 	// Initialize handlers
 	h := &router.Handlers{
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
@@ -142,6 +148,7 @@ func main() {
 		Activity:      handlers.NewActivityHandler(activityLogRepo),
 		Scheduler:     scheduler,
 		MonitorPuller: monitorPuller,
+		SLAEscalation: slaEscalationJob,
 		ConfigRepo:    systemConfigRepo,
 		Notifier:      notificationService,
 	}

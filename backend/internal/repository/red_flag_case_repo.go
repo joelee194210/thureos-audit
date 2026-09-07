@@ -76,14 +76,15 @@ func (r *RedFlagCaseRepository) ListNotes(ctx context.Context, redFlagID primiti
 	return notes, nil
 }
 
-// Assign setea el asignado del caso, mueve el status a acknowledged y
-// fija prioridad y SLA (calculados por el caller desde la severidad).
-func (r *RedFlagCaseRepository) Assign(ctx context.Context, id primitive.ObjectID, assignee primitive.ObjectID, priority int, slaDueAt time.Time) error {
+// Assign setea el asignado del caso, mueve el status a acknowledged y fija
+// la prioridad (calculada por el caller desde la severidad). No toca
+// sla_due_at: ese plazo se fija una sola vez, al crear el red flag — es el
+// tiempo desde la primera detección, no desde que alguien lo toma.
+func (r *RedFlagCaseRepository) Assign(ctx context.Context, id primitive.ObjectID, assignee primitive.ObjectID, priority int) error {
 	update := bson.M{"$set": bson.M{
 		"assignee_id": assignee,
 		"status":      models.RedFlagAcknowledged,
 		"priority":    priority,
-		"sla_due_at":  slaDueAt,
 		"updated_at":  time.Now(),
 	}}
 	return r.updateCase(ctx, id, update)

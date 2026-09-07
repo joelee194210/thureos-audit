@@ -59,12 +59,13 @@ type RedFlag struct {
 	AcknowledgedBy *primitive.ObjectID      `bson:"acknowledged_by,omitempty" json:"acknowledgedBy,omitempty"`
 
 	// Capa de caso (investigación)
-	AssigneeID  *primitive.ObjectID `bson:"assignee_id,omitempty" json:"assigneeId,omitempty"`
-	Priority    int                 `bson:"priority,omitempty" json:"priority,omitempty"` // 1 = más urgente
-	SLADueAt    *time.Time          `bson:"sla_due_at,omitempty" json:"slaDueAt,omitempty"`
-	Disposition RedFlagDisposition  `bson:"disposition,omitempty" json:"disposition,omitempty"`
-	ClosedAt    *time.Time          `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
-	ClosedBy    *primitive.ObjectID `bson:"closed_by,omitempty" json:"closedBy,omitempty"`
+	AssigneeID           *primitive.ObjectID `bson:"assignee_id,omitempty" json:"assigneeId,omitempty"`
+	Priority             int                 `bson:"priority,omitempty" json:"priority,omitempty"` // 1 = más urgente
+	SLADueAt             *time.Time          `bson:"sla_due_at,omitempty" json:"slaDueAt,omitempty"`
+	EscalationNotifiedAt *time.Time          `bson:"escalation_notified_at,omitempty" json:"escalationNotifiedAt,omitempty"`
+	Disposition          RedFlagDisposition  `bson:"disposition,omitempty" json:"disposition,omitempty"`
+	ClosedAt             *time.Time          `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
+	ClosedBy             *primitive.ObjectID `bson:"closed_by,omitempty" json:"closedBy,omitempty"`
 
 	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
