@@ -36,7 +36,7 @@ func TestExtractScreeningValues_ValorNoStringSeOmite(t *testing.T) {
 
 func TestExtractScreeningValues_VariosCampos(t *testing.T) {
 	data := map[string]interface{}{
-		"ordenante":   "Ana Gomez",
+		"ordenante":    "Ana Gomez",
 		"beneficiario": "Juan Perez",
 	}
 	got := extractScreeningValues(data, []string{"ordenante", "beneficiario"})
