@@ -143,6 +143,7 @@ type Rule struct {
 	TriggerCount           int64                `bson:"trigger_count" json:"triggerCount"`
 	LastTriggered          *time.Time           `bson:"last_triggered,omitempty" json:"lastTriggered,omitempty"`
 	Schedule               RuleSchedule         `bson:"schedule,omitempty" json:"schedule,omitempty"`
+	TemplateID             string               `bson:"template_id,omitempty" json:"templateId,omitempty"`
 	FatfTypology           string               `bson:"fatf_typology,omitempty" json:"fatfTypology,omitempty"`
 	ThresholdJustification string               `bson:"threshold_justification,omitempty" json:"thresholdJustification,omitempty"`
 	RegulatoryBasis        string               `bson:"regulatory_basis,omitempty" json:"regulatoryBasis,omitempty"`

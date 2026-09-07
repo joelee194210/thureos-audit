@@ -17,15 +17,56 @@ import (
 type RuleTemplateHandler struct {
 	monitorRepo *repository.MonitorRepository
 	ruleRepo    *repository.RuleRepository
+	redFlagRepo *repository.RedFlagRepository
 }
 
-func NewRuleTemplateHandler(monitorRepo *repository.MonitorRepository, ruleRepo *repository.RuleRepository) *RuleTemplateHandler {
-	return &RuleTemplateHandler{monitorRepo: monitorRepo, ruleRepo: ruleRepo}
+func NewRuleTemplateHandler(monitorRepo *repository.MonitorRepository, ruleRepo *repository.RuleRepository, redFlagRepo *repository.RedFlagRepository) *RuleTemplateHandler {
+	return &RuleTemplateHandler{monitorRepo: monitorRepo, ruleRepo: ruleRepo, redFlagRepo: redFlagRepo}
 }
 
 // List devuelve el catálogo completo de tipologías.
 func (h *RuleTemplateHandler) List(c *fiber.Ctx) error {
 	return c.JSON(services.RuleTemplates)
+}
+
+// TemplateEffectiveness es EffectivenessStats agregado a nivel de
+// tipología (todas las reglas instanciadas desde el mismo template),
+// identificado por id y nombre para que el frontend no tenga que resolver
+// el catálogo por su cuenta.
+type TemplateEffectiveness struct {
+	TemplateID string                      `json:"templateId"`
+	Name       string                      `json:"name"`
+	Stats      services.EffectivenessStats `json:"stats"`
+}
+
+// Effectiveness agrega las red flags de todas las reglas de cada
+// tipología — a diferencia de RuleHandler.Effectiveness, que agrega por
+// una sola regla.
+func (h *RuleTemplateHandler) Effectiveness(c *fiber.Ctx) error {
+	rules, err := h.ruleRepo.FindAll(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	groups := services.GroupRuleIDsByTemplate(rules)
+	result := make([]TemplateEffectiveness, 0, len(groups))
+	for templateID, ruleIDs := range groups {
+		flags, err := h.redFlagRepo.FindByRuleIDs(c.Context(), ruleIDs)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		name := templateID
+		if tpl, ok := services.FindRuleTemplate(templateID); ok {
+			name = tpl.Name
+		}
+		result = append(result, TemplateEffectiveness{
+			TemplateID: templateID,
+			Name:       name,
+			Stats:      services.ComputeEffectiveness(flags),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return c.JSON(result)
 }
 
 // unknownColumns devuelve las columnas del fieldMap que no existen en el
@@ -101,6 +142,7 @@ func (h *RuleTemplateHandler) Instantiate(c *fiber.Ctx) error {
 	rule.MonitorID = monitorID
 	rule.Name = req.Name
 	rule.CreatedBy = userID
+	rule.TemplateID = tpl.ID
 
 	if err := h.ruleRepo.Create(c.Context(), &rule); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

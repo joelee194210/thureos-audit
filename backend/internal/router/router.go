@@ -97,11 +97,13 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	rules.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Rule.Delete)
 	rules.Post("/:id/execute", middleware.RequireComplianceOrAbove(), h.Rule.Execute)
 	rules.Post("/ai-generate", middleware.RequireComplianceOrAbove(), h.Rule.GenerateAIRules)
+	rules.Get("/:id/effectiveness", h.Rule.Effectiveness)
 
 	// Tipologías AML: catálogo legible por cualquier sesión autenticada;
 	// instanciar es crear una regla, compliance o superior.
 	templateAPI := protected.Group("/rule-templates")
 	templateAPI.Get("/", h.RuleTemplate.List)
+	templateAPI.Get("/effectiveness", h.RuleTemplate.Effectiveness)
 	monitors.Post("/:id/rules/from-template", middleware.RequireComplianceOrAbove(), h.RuleTemplate.Instantiate)
 
 	// Dashboards

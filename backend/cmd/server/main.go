@@ -132,8 +132,8 @@ func main() {
 	h := &router.Handlers{
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
 		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
-		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, aiRulesService, ruleEngine),
-		RuleTemplate:  handlers.NewRuleTemplateHandler(monitorRepo, ruleRepo),
+		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, redFlagRepo, aiRulesService, ruleEngine),
+		RuleTemplate:  handlers.NewRuleTemplateHandler(monitorRepo, ruleRepo, redFlagRepo),
 		Dashboard:     handlers.NewDashboardHandler(dashboardRepo, dashboardService),
 		RedFlag:       redFlagHandler,
 		User:          handlers.NewUserHandler(userRepo, activityLogRepo),
