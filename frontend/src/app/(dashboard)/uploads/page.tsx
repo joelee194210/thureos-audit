@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,11 +23,18 @@ import {
   Search,
   ArrowUpDown,
   TrendingUp,
+  ChevronDown,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import { CATEGORY_CLASSES } from "@/lib/semantic-colors";
-import type { SourceType } from "@/lib/types";
+import { CATEGORY_CLASSES, STATUS_CLASSES } from "@/lib/semantic-colors";
+import { useAuthStore } from "@/stores/auth-store";
+import { uploadLogApi } from "@/lib/api/upload-log";
+import type { SourceType, UploadLogEntry, UploadStatus } from "@/lib/types";
 
 interface IngestionEntry {
   monitorId: string;
@@ -72,6 +79,38 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat("es-PA").format(n);
 }
 
+const STATUS_LABELS: Record<UploadStatus, string> = {
+  accepted: "Aceptado",
+  partial: "Parcial",
+  rejected_structure: "Rechazado",
+  approved: "Aprobado",
+};
+
+const STATUS_ICONS: Record<UploadStatus, typeof CheckCircle2> = {
+  accepted: CheckCircle2,
+  partial: AlertTriangle,
+  rejected_structure: XCircle,
+  approved: CheckCircle2,
+};
+
+// success/warning/danger/info: eje de estado, no de riesgo — ver CLAUDE.md.
+const STATUS_KIND: Record<UploadStatus, "success" | "warning" | "danger" | "info"> = {
+  accepted: "success",
+  partial: "warning",
+  rejected_structure: "danger",
+  approved: "info",
+};
+
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("es-PA", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 type SortField = "date" | "monitorName" | "recordCount" | "sourceType";
 type SortDir = "asc" | "desc";
 
@@ -90,11 +129,24 @@ export default function UploadsPage() {
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // Bitácora detallada
+  const [logEntries, setLogEntries] = useState<UploadLogEntry[]>([]);
+  const [monitorFilter, setMonitorFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const canApprove = user != null && user.role !== "viewer";
+
   useEffect(() => {
     async function load() {
       try {
-        const data = await api.get<IngestionEntry[]>("/ingestion-history");
-        setEntries(data);
+        const [ingestion, log] = await Promise.all([
+          api.get<IngestionEntry[]>("/ingestion-history"),
+          uploadLogApi.list(),
+        ]);
+        setEntries(ingestion);
+        setLogEntries(log);
       } catch {
         setError("No se pudo cargar el historial de cargas");
       } finally {
@@ -109,6 +161,34 @@ export default function UploadsPage() {
     const types = new Set(entries.map((e) => e.sourceType));
     return Array.from(types).sort();
   }, [entries]);
+
+  // Monitores únicos, derivados de la bitácora, para el filtro
+  const logMonitors = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of logEntries) map.set(e.monitorId, e.monitorName);
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [logEntries]);
+
+  const filteredLog = useMemo(() => {
+    let result = logEntries;
+    if (monitorFilter !== "all") {
+      result = result.filter((e) => e.monitorId === monitorFilter);
+    }
+    if (statusFilter !== "all") {
+      result = result.filter((e) => e.status === statusFilter);
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (e) =>
+          e.monitorName.toLowerCase().includes(q) ||
+          e.fileName.toLowerCase().includes(q),
+      );
+    }
+    return [...result].sort(
+      (a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime(),
+    );
+  }, [logEntries, monitorFilter, statusFilter, search]);
 
   // Filtered and sorted entries
   const filtered = useMemo(() => {
@@ -170,6 +250,19 @@ export default function UploadsPage() {
     } else {
       setSortField(field);
       setSortDir("desc");
+    }
+  }
+
+  async function handleApprove(entry: UploadLogEntry) {
+    setApprovingId(entry.id);
+    try {
+      await uploadLogApi.approve(entry.monitorId, entry.id);
+      const log = await uploadLogApi.list();
+      setLogEntries(log);
+    } catch {
+      setError("No se pudo aprobar la entrada");
+    } finally {
+      setApprovingId(null);
     }
   }
 
@@ -258,6 +351,31 @@ export default function UploadsPage() {
                   {SOURCE_LABELS[t]}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={monitorFilter} onValueChange={setMonitorFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Monitor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los monitores</SelectItem>
+              {logMonitors.map(([id, name]) => (
+                <SelectItem key={id} value={id}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los estados</SelectItem>
+              <SelectItem value="accepted">Aceptado</SelectItem>
+              <SelectItem value="partial">Parcial</SelectItem>
+              <SelectItem value="rejected_structure">Rechazado</SelectItem>
+              <SelectItem value="approved">Aprobado</SelectItem>
             </SelectContent>
           </Select>
           <Input
@@ -382,6 +500,173 @@ export default function UploadsPage() {
             </div>
           </Card>
         )}
+
+        {/* Bitácora detallada por archivo */}
+        <div className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+            Bitácora de archivos subidos
+          </h2>
+          {filteredLog.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Upload className="mb-3 h-10 w-10 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">
+                  No hay archivos en la bitácora con los filtros aplicados
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Archivo
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Monitor
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Fecha/hora
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Subido por
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Estado
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Totales
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Aceptados
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        Rechazados
+                      </th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLog.map((entry) => {
+                      const StatusIcon = STATUS_ICONS[entry.status];
+                      const expanded = expandedId === entry.id;
+                      const hasDetail =
+                        (entry.schemaDiff && !entry.schemaDiff.match) ||
+                        (entry.rowRejections && entry.rowRejections.length > 0);
+                      return (
+                        <Fragment key={entry.id}>
+                          <tr className="border-b transition-colors hover:bg-muted/30 last:border-0">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                {hasDetail && (
+                                  <button
+                                    onClick={() => setExpandedId(expanded ? null : entry.id)}
+                                    className="text-muted-foreground hover:text-foreground"
+                                  >
+                                    {expanded ? (
+                                      <ChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                )}
+                                <span className="text-sm font-medium">{entry.fileName}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <a
+                                href={`/monitors/${entry.monitorId}`}
+                                className="text-sm text-primary hover:underline"
+                              >
+                                {entry.monitorName}
+                              </a>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {formatDateTime(entry.uploadedAt)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">
+                              {entry.uploadedByEmail}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge
+                                variant="outline"
+                                className={cn("gap-1", STATUS_CLASSES[STATUS_KIND[entry.status]])}
+                              >
+                                <StatusIcon className="h-3 w-3" />
+                                {STATUS_LABELS[entry.status]}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm tabular-nums">
+                              {formatNumber(entry.totalRows)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm tabular-nums text-success-fg">
+                              {formatNumber(entry.rowsAccepted)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm tabular-nums text-danger-fg">
+                              {formatNumber(entry.rowsRejected)}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {entry.status === "rejected_structure" && canApprove && (
+                                <button
+                                  onClick={() => handleApprove(entry)}
+                                  disabled={approvingId === entry.id}
+                                  className="rounded-md border px-2 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+                                >
+                                  {approvingId === entry.id ? "Aprobando…" : "Aprobar"}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                          {expanded && hasDetail && (
+                            <tr className="border-b bg-muted/20 last:border-0">
+                              <td colSpan={9} className="px-4 py-3">
+                                {entry.schemaDiff && !entry.schemaDiff.match && (
+                                  <div className="mb-2 space-y-1 text-xs">
+                                    {entry.schemaDiff.missingFields && entry.schemaDiff.missingFields.length > 0 && (
+                                      <p>
+                                        <span className="font-medium">Faltan columnas: </span>
+                                        {entry.schemaDiff.missingFields.join(", ")}
+                                      </p>
+                                    )}
+                                    {entry.schemaDiff.extraFields && entry.schemaDiff.extraFields.length > 0 && (
+                                      <p>
+                                        <span className="font-medium">Columnas de más: </span>
+                                        {entry.schemaDiff.extraFields.join(", ")}
+                                      </p>
+                                    )}
+                                    {entry.schemaDiff.typeMismatches && entry.schemaDiff.typeMismatches.length > 0 && (
+                                      <p>
+                                        <span className="font-medium">Tipo distinto: </span>
+                                        {entry.schemaDiff.typeMismatches
+                                          .map((m) => `${m.field} (esperado ${m.expectedType}, encontrado ${m.actualType})`)
+                                          .join(", ")}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                                {entry.rowRejections && entry.rowRejections.length > 0 && (
+                                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                                    {entry.rowRejections.map((r, i) => (
+                                      <li key={i}>
+                                        Fila {r.rowIndex}: {r.field} — {r.reason}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
     </>
   );
