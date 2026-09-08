@@ -129,3 +129,63 @@ func TestBuildAggregatePipelineDateScoped_ConFiltroAgregaMatchEntreFechaYGroup(t
 		t.Errorf("segundo $match debería ser el filtro sobre 'amount', got %+v", filterMatch)
 	}
 }
+
+func TestParseTimeWindow_Seconds(t *testing.T) {
+	got := parseTimeWindow("60s")
+	want := 60 * time.Second
+	if got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestParseTimeWindow_Minutes(t *testing.T) {
+	got := parseTimeWindow("5min")
+	want := 5 * time.Minute
+	if got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestParseTimeWindow_MinutesDoesNotCollideWithMonths(t *testing.T) {
+	// "min" siempre debe ganar sobre el sufijo de un solo char "m" (meses) —
+	// "5min" no puede interpretarse como "5min" -> unidad "n" inválida, ni
+	// como meses.
+	got := parseTimeWindow("1min")
+	want := 1 * time.Minute
+	if got != want {
+		t.Errorf("got %v, want %v (no debe confundirse con meses)", got, want)
+	}
+}
+
+func TestParseTimeWindow_HoursUnchanged(t *testing.T) {
+	got := parseTimeWindow("24h")
+	want := 24 * time.Hour
+	if got != want {
+		t.Errorf("got %v, want %v (regresión)", got, want)
+	}
+}
+
+func TestParseTimeWindow_DaysUnchanged(t *testing.T) {
+	got := parseTimeWindow("7d")
+	want := 7 * 24 * time.Hour
+	if got != want {
+		t.Errorf("got %v, want %v (regresión)", got, want)
+	}
+}
+
+func TestParseTimeWindow_MonthsUnchanged(t *testing.T) {
+	// "m" sigue significando meses — ninguna regla existente cambia de
+	// significado con este cambio.
+	got := parseTimeWindow("30m")
+	want := time.Duration(30) * 30 * 24 * time.Hour
+	if got != want {
+		t.Errorf("got %v, want %v (regresión — 'm' debe seguir siendo meses)", got, want)
+	}
+}
+
+func TestParseTimeWindow_InvalidUnitReturnsZero(t *testing.T) {
+	got := parseTimeWindow("5x")
+	if got != 0 {
+		t.Errorf("got %v, want 0 para una unidad inválida", got)
+	}
+}
