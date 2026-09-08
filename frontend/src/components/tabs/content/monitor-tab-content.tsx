@@ -810,25 +810,29 @@ export function MonitorTabContent({
                               </SelectContent>
                             </Select>
                           )}
-                          {field.type === "date" && user?.role !== "viewer" && (
-                            <Select
-                              value={field.dateFormat || "auto"}
-                              onValueChange={(v) =>
-                                updateDateFormat(field.name, v === "auto" ? "" : v)
-                              }
-                            >
-                              <SelectTrigger className="w-[180px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="auto">Automático (ISO / RFC3339)</SelectItem>
-                                <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-                                <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-                                <SelectItem value="DD-MM-YYYY">DD-MM-YYYY</SelectItem>
-                                <SelectItem value="YYYY/MM/DD">YYYY/MM/DD</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
+                          {field.type === "date" &&
+                            user?.role !== "viewer" &&
+                            (monitor.sourceType === "csv" ||
+                              monitor.sourceType === "txt" ||
+                              monitor.sourceType === "excel") && (
+                              <Select
+                                value={field.dateFormat || "auto"}
+                                onValueChange={(v) =>
+                                  updateDateFormat(field.name, v === "auto" ? "" : v)
+                                }
+                              >
+                                <SelectTrigger className="w-[180px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="auto">Automático (ISO / RFC3339)</SelectItem>
+                                  <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                                  <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+                                  <SelectItem value="DD-MM-YYYY">DD-MM-YYYY</SelectItem>
+                                  <SelectItem value="YYYY/MM/DD">YYYY/MM/DD</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
                           <Badge variant="secondary">{field.type}</Badge>
                         </div>
                       </div>
