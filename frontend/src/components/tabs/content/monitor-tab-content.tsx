@@ -56,6 +56,7 @@ import type {
   Rule,
   SchemaField,
   CreateSourceConfig,
+  UploadCheckResult,
 } from "@/lib/types";
 import Link from "next/link";
 import { useTabStore } from "@/stores/tab-store";
@@ -76,6 +77,11 @@ export function MonitorTabContent({
     recordsIngested: number;
     evaluationQueued: boolean;
   } | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [checkResult, setCheckResult] = useState<UploadCheckResult | null>(
+    null,
+  );
+  const [checking, setChecking] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState<{
     redFlagsGenerated: number;
@@ -152,21 +158,49 @@ export function MonitorTabContent({
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return;
-      setUploading(true);
-      setUploadResult(null);
+      const file = acceptedFiles[0];
+      setChecking(true);
       try {
-        const result = await monitorsApi.upload(id, acceptedFiles[0]);
-        setUploadResult(result);
-        loadMonitor();
-        loadData();
+        const check = await monitorsApi.uploadCheck(id, file);
+        if (!check.match || check.rowsThatWouldFail > 0) {
+          setPendingFile(file);
+          setCheckResult(check);
+          return;
+        }
+        await doUpload(file);
       } catch {
-        toastError("Error al subir archivo");
+        // Si la verificación misma falla (ej. red), se intenta subir
+        // directo — el endpoint real vuelve a validar de todas formas.
+        await doUpload(file);
       } finally {
-        setUploading(false);
+        setChecking(false);
       }
     },
     [id],
   );
+
+  async function doUpload(file: File) {
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const result = await monitorsApi.upload(id, file);
+      setUploadResult(result);
+      loadMonitor();
+      loadData();
+    } catch {
+      toastError("Error al subir archivo");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function confirmUploadAnyway() {
+    if (!pendingFile) return;
+    const file = pendingFile;
+    setPendingFile(null);
+    setCheckResult(null);
+    await doUpload(file);
+  }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -541,9 +575,9 @@ export function MonitorTabContent({
                     >
                       <input {...getInputProps()} />
                       <Upload className="mb-4 h-10 w-10 text-muted-foreground" />
-                      {uploading ? (
+                      {uploading || checking ? (
                         <p className="text-sm text-muted-foreground">
-                          Procesando archivo...
+                          {checking ? "Verificando archivo..." : "Procesando archivo..."}
                         </p>
                       ) : isDragActive ? (
                         <p className="text-sm">Suelta el archivo aqui</p>
@@ -760,6 +794,48 @@ export function MonitorTabContent({
           </TabsContent>
         </Tabs>
       </div>
+
+      <AlertDialog open={pendingFile !== null} onOpenChange={(open) => !open && setPendingFile(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>El archivo no coincide con la estructura esperada</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                {checkResult?.missingFields && checkResult.missingFields.length > 0 && (
+                  <p>
+                    <span className="font-medium text-foreground">Faltan columnas: </span>
+                    {checkResult.missingFields.join(", ")}
+                  </p>
+                )}
+                {checkResult?.extraFields && checkResult.extraFields.length > 0 && (
+                  <p>
+                    <span className="font-medium text-foreground">Columnas de más: </span>
+                    {checkResult.extraFields.join(", ")}
+                  </p>
+                )}
+                {checkResult?.typeMismatches && checkResult.typeMismatches.length > 0 && (
+                  <p>
+                    <span className="font-medium text-foreground">Tipo distinto: </span>
+                    {checkResult.typeMismatches
+                      .map((m) => `${m.field} (esperado ${m.expectedType}, encontrado ${m.actualType})`)
+                      .join(", ")}
+                  </p>
+                )}
+                {checkResult && checkResult.rowsThatWouldFail > 0 && (
+                  <p>
+                    {checkResult.rowsThatWouldFail} de {checkResult.totalRows} filas fallarían por tipo
+                    de dato incorrecto.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingFile(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmUploadAnyway}>Subir de todas formas</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
