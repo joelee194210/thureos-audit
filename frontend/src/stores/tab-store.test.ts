@@ -98,7 +98,7 @@ describe("tab-store", () => {
       recency: ["/monitors/abc123"],
       entityLabels: { abc123: "CBCG Tarjetas", huerfano: "Ya no está abierto" },
     };
-    const result = partialize(state as ReturnType<typeof useTabStore.getState>);
+    const result = partialize(state);
     expect(result.entityLabels).toEqual({ abc123: "CBCG Tarjetas" });
   });
 });

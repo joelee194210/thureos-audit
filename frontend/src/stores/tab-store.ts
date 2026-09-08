@@ -26,7 +26,7 @@ interface TabState {
  * sensibles en un producto AML) queden indefinidamente en localStorage
  * después de cerrar la tab que los mostraba. */
 export function partialize(
-  state: TabState,
+  state: Pick<TabState, "tabs" | "activeTabId" | "recency" | "entityLabels">,
 ): Pick<TabState, "tabs" | "activeTabId" | "recency" | "entityLabels"> {
   const idsInOpenTabs = new Set<string>();
   for (const tab of state.tabs) {
@@ -113,7 +113,7 @@ export const useTabStore = create<TabState>()(
     }),
     {
       name: "thureos-tabs",
-      partialize,
+      partialize: partialize as (state: TabState) => Pick<TabState, "tabs" | "activeTabId" | "recency" | "entityLabels">,
       storage: createJSONStorage(() => ({
         getItem: (name) => localStorage.getItem(name),
         setItem: (name, value) => {
