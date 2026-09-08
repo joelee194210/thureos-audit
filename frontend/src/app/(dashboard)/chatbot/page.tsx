@@ -15,6 +15,7 @@ import {
   type ChatConversation,
   type ChatMessage,
 } from "@/lib/api/chat";
+import { ArtifactCanvas } from "@/components/chat/artifact-canvas";
 
 export default function ChatbotPage() {
   const { toastError } = useToast();
@@ -28,6 +29,9 @@ export default function ChatbotPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [activeArtifact, setActiveArtifact] = useState<
+    ChatMessage["artifact"] | null
+  >(null);
 
   // Reset the active conversation/thread when the monitor changes. Adjusting
   // state during render (guarded by comparing against the previous prop) is
@@ -37,6 +41,7 @@ export default function ChatbotPage() {
     setPrevMonitorId(monitorId);
     setConversationId(null);
     setMessages([]);
+    setActiveArtifact(null);
   }
 
   useEffect(() => {
@@ -60,7 +65,11 @@ export default function ChatbotPage() {
     if (!conversationId) return;
     chatApi
       .listMessages(conversationId)
-      .then(setMessages)
+      .then((msgs) => {
+        setMessages(msgs);
+        const lastWithArtifact = [...msgs].reverse().find((m) => m.artifact);
+        setActiveArtifact(lastWithArtifact?.artifact ?? null);
+      })
       .catch(() => toastError("Error al cargar la conversación"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
@@ -110,6 +119,7 @@ export default function ChatbotPage() {
     try {
       const answer = await chatApi.ask(activeId!, question);
       setMessages((prev) => [...prev, answer]);
+      if (answer.artifact) setActiveArtifact(answer.artifact);
     } catch {
       toastError("Error al consultar al chatbot");
     } finally {
@@ -138,7 +148,13 @@ export default function ChatbotPage() {
         </div>
 
         {monitorId && (
-          <div className="grid grid-cols-[220px_1fr] gap-4">
+          <div
+            className={`grid gap-4 ${
+              activeArtifact
+                ? "grid-cols-[220px_1fr_1fr]"
+                : "grid-cols-[220px_1fr]"
+            }`}
+          >
             <div className="space-y-2">
               <Button
                 variant="outline"
@@ -204,6 +220,8 @@ export default function ChatbotPage() {
                 </Button>
               </form>
             </Card>
+
+            {activeArtifact && <ArtifactCanvas artifact={activeArtifact} />}
           </div>
         )}
       </div>
