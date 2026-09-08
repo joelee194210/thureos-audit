@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/lib/api/client";
 import type { User } from "@/lib/types";
+import { useTabStore } from "@/stores/tab-store";
 
 interface AuthState {
   user: User | null;
@@ -51,6 +52,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     api.clearToken();
     set({ user: null, token: null });
+    useTabStore.persist.clearStorage();
+    useTabStore.setState({
+      tabs: [],
+      activeTabId: null,
+      recency: [],
+      entityLabels: {},
+    });
   },
 
   loadUser: async () => {
