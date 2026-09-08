@@ -680,3 +680,47 @@ func (h *MonitorHandler) IngestPush(c *fiber.Ctx) error {
 		"evaluationQueued": queued,
 	})
 }
+
+// UpdateSchema reemplaza el schema del monitor, permitiendo configurar
+// por campo (hoy solo ImpliedDecimals) sin cambiar el conjunto de
+// campos — el schema recibido debe tener exactamente los mismos
+// nombres que el actual, o se rechaza. Esto evita que un bug de
+// frontend agregue/quite campos o cambie Name/Type por esta vía.
+func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+
+	var body struct {
+		Schema []models.SchemaField `json:"schema"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	currentNames := make(map[string]bool, len(monitor.Schema))
+	for _, f := range monitor.Schema {
+		currentNames[f.Name] = true
+	}
+	if len(body.Schema) != len(currentNames) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "el schema enviado debe tener los mismos campos que el actual"})
+	}
+	for _, f := range body.Schema {
+		if !currentNames[f.Name] {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "el schema enviado debe tener los mismos campos que el actual"})
+		}
+	}
+
+	monitor.Schema = body.Schema
+	if err := h.monitorRepo.Update(c.Context(), monitor.ID, bson.M{"schema": monitor.Schema}); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"schema": monitor.Schema})
+}
