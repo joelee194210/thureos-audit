@@ -386,3 +386,47 @@ func TestFirstInvalidField_MissingTrailingColumnsNotRejected(t *testing.T) {
 		t.Errorf("columnas faltantes al final no deberían rechazar la fila, obtuve field=%q reason=%q", field, reason)
 	}
 }
+
+func TestParseValue_ImpliedDecimalsDividesCorrectly(t *testing.T) {
+	schema := []models.SchemaField{{Name: "monto", Type: models.FieldNumber, ImpliedDecimals: 2}}
+	got := parseValue("500000", schema, "monto")
+	f, ok := got.(float64)
+	if !ok {
+		t.Fatalf("esperaba float64, obtuve %T", got)
+	}
+	if f != 5000.0 {
+		t.Errorf("got %v, want 5000.0", f)
+	}
+}
+
+func TestParseValue_ImpliedDecimalsZeroNoChange(t *testing.T) {
+	schema := []models.SchemaField{{Name: "monto", Type: models.FieldNumber, ImpliedDecimals: 0}}
+	got := parseValue("500000", schema, "monto")
+	f, ok := got.(float64)
+	if !ok {
+		t.Fatalf("esperaba float64, obtuve %T", got)
+	}
+	if f != 500000.0 {
+		t.Errorf("got %v, want 500000.0 (sin cambios cuando ImpliedDecimals=0)", f)
+	}
+}
+
+func TestParseValue_ImpliedDecimalsSmallValue(t *testing.T) {
+	schema := []models.SchemaField{{Name: "monto", Type: models.FieldNumber, ImpliedDecimals: 2}}
+	got := parseValue("5", schema, "monto")
+	f, ok := got.(float64)
+	if !ok {
+		t.Fatalf("esperaba float64, obtuve %T", got)
+	}
+	if f != 0.05 {
+		t.Errorf("got %v, want 0.05", f)
+	}
+}
+
+func TestParseValue_InvalidNumberFallsBackToRawString(t *testing.T) {
+	schema := []models.SchemaField{{Name: "monto", Type: models.FieldNumber, ImpliedDecimals: 2}}
+	got := parseValue("no-es-numero", schema, "monto")
+	if got != "no-es-numero" {
+		t.Errorf("got %v, want el string crudo sin parsear", got)
+	}
+}

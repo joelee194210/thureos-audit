@@ -26,10 +26,11 @@ const (
 )
 
 type SchemaField struct {
-	Name     string    `bson:"name" json:"name"`
-	Type     FieldType `bson:"type" json:"type"`
-	Required bool      `bson:"required" json:"required"`
-	Sample   string    `bson:"sample" json:"sample"`
+	Name            string    `bson:"name" json:"name"`
+	Type            FieldType `bson:"type" json:"type"`
+	Required        bool      `bson:"required" json:"required"`
+	Sample          string    `bson:"sample" json:"sample"`
+	ImpliedDecimals int       `bson:"implied_decimals,omitempty" json:"impliedDecimals,omitempty"`
 }
 
 type APIMode string

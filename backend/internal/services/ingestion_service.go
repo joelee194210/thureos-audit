@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"sort"
@@ -634,6 +635,9 @@ func parseValue(value string, schema []models.SchemaField, fieldName string) int
 			switch field.Type {
 			case models.FieldNumber:
 				if f, err := strconv.ParseFloat(value, 64); err == nil {
+					if field.ImpliedDecimals > 0 {
+						f = f / math.Pow(10, float64(field.ImpliedDecimals))
+					}
 					return f
 				}
 			case models.FieldBoolean:
