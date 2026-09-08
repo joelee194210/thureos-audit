@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { TopNav } from "@/components/layout/top-nav";
+import { TabSystem } from "@/components/tabs/tab-system";
 import { useAuthStore } from "@/stores/auth-store";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -30,7 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopNav />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <TabSystem>{children}</TabSystem>
     </div>
   );
 }
