@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { CATEGORY_CLASSES, STATUS_CLASSES } from "@/lib/semantic-colors";
 import { useAuthStore } from "@/stores/auth-store";
 import { uploadLogApi } from "@/lib/api/upload-log";
+import { useToast } from "@/lib/use-toast";
 import type { SourceType, UploadLogEntry, UploadStatus } from "@/lib/types";
 
 interface IngestionEntry {
@@ -137,6 +138,7 @@ export default function UploadsPage() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const canApprove = user != null && user.role !== "viewer";
+  const { toastError } = useToast();
 
   useEffect(() => {
     async function load() {
@@ -260,7 +262,7 @@ export default function UploadsPage() {
       const log = await uploadLogApi.list();
       setLogEntries(log);
     } catch {
-      setError("No se pudo aprobar la entrada");
+      toastError("No se pudo aprobar la entrada");
     } finally {
       setApprovingId(null);
     }
@@ -506,7 +508,11 @@ export default function UploadsPage() {
           <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
             Bitácora de archivos subidos
           </h2>
-          {filteredLog.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            </div>
+          ) : filteredLog.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Upload className="mb-3 h-10 w-10 text-muted-foreground/40" />
