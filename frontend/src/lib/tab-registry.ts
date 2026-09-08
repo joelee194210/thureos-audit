@@ -45,3 +45,13 @@ export function matchRegistryEntry(
 
   return null;
 }
+
+import { MonitorTabContent } from "@/components/tabs/content/monitor-tab-content";
+import { RedFlagTabContent } from "@/components/tabs/content/red-flag-tab-content";
+import { DashboardTabContent } from "@/components/tabs/content/dashboard-tab-content";
+
+export const TAB_CONTENT_REGISTRY: RegistryEntry[] = [
+  { pattern: "/monitors/[id]", Component: MonitorTabContent },
+  { pattern: "/red-flags/[id]", Component: RedFlagTabContent },
+  { pattern: "/dashboards/[id]", Component: DashboardTabContent },
+];
