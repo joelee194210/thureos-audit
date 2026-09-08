@@ -14,8 +14,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatArtifact } from "@/lib/api/chat";
+import { exportChartAsPNG, exportTableAsCSV } from "@/lib/chat-export";
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -31,8 +34,30 @@ const CHART_COLORS = [
 export function ArtifactCanvas({ artifact }: { artifact: ChatArtifact }) {
   return (
     <Card className="h-[70vh] flex flex-col">
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-2 flex flex-row items-center justify-between">
         <CardTitle className="text-base">{artifact.title}</CardTitle>
+        {artifact.type === "chart" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              exportChartAsPNG("artifact-canvas-content", `${artifact.title}.png`)
+            }
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
+        {artifact.type === "table" && artifact.chartSpec && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              exportTableAsCSV(artifact.chartSpec!.data, `${artifact.title}.csv`)
+            }
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="flex-1 overflow-auto" id="artifact-canvas-content">
         {artifact.type === "chart" && artifact.chartSpec && (
