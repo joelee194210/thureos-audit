@@ -90,6 +90,8 @@ func main() {
 	ingestionService := services.NewIngestionService(monitorRepo)
 	ruleEngine := services.NewRuleEngine(ruleRepo, redFlagRepo, monitorRepo, redFlagReportRepo, execLogRepo)
 	aiRulesService := services.NewAIRulesService(systemConfigRepo)
+	chatRepo := repository.NewChatRepository(mongo)
+	chatService := services.NewChatService(chatRepo, monitorRepo, systemConfigRepo)
 	notificationService := services.NewNotificationService(nil, systemConfigRepo)
 	ruleEngine.SetNotifier(notificationService)
 	watchmanClient := services.NewWatchmanClient(systemConfigRepo)
@@ -149,6 +151,7 @@ func main() {
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
 		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
 		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, redFlagRepo, aiRulesService, ruleEngine),
+		Chat:          handlers.NewChatHandler(chatRepo, chatService),
 		RuleTemplate:  handlers.NewRuleTemplateHandler(monitorRepo, ruleRepo, redFlagRepo),
 		Dashboard:     handlers.NewDashboardHandler(dashboardRepo, dashboardService),
 		RedFlag:       redFlagHandler,

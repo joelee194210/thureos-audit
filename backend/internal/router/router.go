@@ -30,6 +30,7 @@ type Handlers struct {
 	ConfigRepo    *repository.SystemConfigRepository
 	Notifier      *services.NotificationService
 	Screening     *handlers.ScreeningHandler
+	Chat          *handlers.ChatHandler
 }
 
 func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
@@ -114,6 +115,14 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	screening := protected.Group("/screening")
 	screening.Post("/search", middleware.RequireComplianceOrAbove(), h.Screening.Search)
 	screening.Post("/:id/dismiss", middleware.RequireComplianceOrAbove(), h.Screening.Dismiss)
+
+	// Chatbot Analista IA: solo lectura/consulta sobre datos ya visibles
+	// para el usuario, cualquier rol autenticado puede usarlo.
+	chat := protected.Group("/chat")
+	chat.Post("/conversations", h.Chat.CreateConversation)
+	chat.Get("/conversations", h.Chat.ListConversations)
+	chat.Get("/conversations/:id/messages", h.Chat.ListMessages)
+	chat.Post("/conversations/:id/messages", h.Chat.Ask)
 
 	// Dashboards
 	dashboards := protected.Group("/dashboards")
