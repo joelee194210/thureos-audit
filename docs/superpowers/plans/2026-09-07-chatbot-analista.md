@@ -1926,7 +1926,7 @@ function TableArtifact({ data }: { data: Record<string, unknown>[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm" id="artifact-canvas-table">
+      <table className="w-full text-sm">
         <thead>
           <tr className="border-b">
             {columns.map((col) => (
@@ -2043,7 +2043,7 @@ git commit -m "feat(chatbot): panel canvas de artefactos (chart/tabla/código sa
 - Modify: `frontend/src/components/chat/artifact-canvas.tsx`
 
 **Interfaces:**
-- Consumes: `ChatArtifact` (Tarea 7), el DOM montado por `ArtifactCanvas` (Tarea 9, vía los IDs `artifact-canvas-content`/`artifact-canvas-table` ya presentes).
+- Consumes: `ChatArtifact` (Tarea 7), el DOM montado por `ArtifactCanvas` (Tarea 9, vía el ID `artifact-canvas-content` ya presente — el export de tabla toma `chartSpec.data` directo, no lee del DOM).
 - Produces: `exportChartAsPNG(containerId: string, filename: string): void`, `exportTableAsCSV(data: Record<string, unknown>[], filename: string): void`.
 
 Export de gráfico: PNG vía serialización nativa del SVG que ya renderiza Recharts (sin dependencia nueva). Export de tabla: CSV nativo (sin dependencia — un CSV no necesita ninguna librería) usando `Blob`/`URL.createObjectURL`, mismo mecanismo de descarga que usaría un PDF pero mucho más simple para datos tabulares; se deja el PDF vía `jspdf`/`jspdf-autotable` (ya en el proyecto, patrón de `red-flag-report.ts`) fuera de esta tarea por YAGNI — el CSV cubre el caso de uso de "llevarme la tabla" sin agregar código nuevo de maquetado.
