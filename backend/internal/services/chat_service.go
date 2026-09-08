@@ -86,6 +86,21 @@ var queryToolJSONSchema = map[string]interface{}{
 
 var artifactBlockRe = regexp.MustCompile(`(?s)<artifact>\s*(.*?)\s*</artifact>`)
 
+// deepSeekSpecialTokenRune ('｜', U+FF5C — barra vertical fullwidth) es el
+// delimitador que DeepSeek usa para sus tokens especiales internos (ej.
+// "<｜｜DSML｜｜tool_calls>..."), que a veces se filtran como texto crudo en
+// "content" en vez de ir por el campo estructurado tool_calls — un quirk
+// conocido de su API, no algo arreglable del lado del proveedor. Un texto
+// normal en español nunca contiene este carácter, así que su sola
+// presencia basta para detectar el leak sin depender de la forma exacta
+// del tag. Nunca se le muestra esto al usuario: se trata como respuesta
+// inválida, igual que un JSON roto.
+const deepSeekSpecialTokenRune = '｜'
+
+func hasLeakedDeepSeekToolSyntax(content string) bool {
+	return strings.ContainsRune(content, deepSeekSpecialTokenRune)
+}
+
 const chatSystemPromptTemplate = `Sos un analista de datos que responde preguntas sobre el monitor %q.
 
 Schema de los datos disponibles (nombre de campo: tipo):
@@ -515,6 +530,9 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 		choice := parsed.Choices[0]
 
 		if choice.FinishReason != "tool_calls" || len(choice.Message.ToolCalls) == 0 {
+			if hasLeakedDeepSeekToolSyntax(choice.Message.Content) {
+				return "", nil, fmt.Errorf("el proveedor devolvió una respuesta con formato interno inválido")
+			}
 			text, artifact := extractArtifactAndText(choice.Message.Content)
 			text = finalizeArtifactText(text, artifact)
 			if text == "" {
@@ -568,6 +586,9 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 	}
 	if len(parsed.Choices) == 0 {
 		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
+	}
+	if hasLeakedDeepSeekToolSyntax(parsed.Choices[0].Message.Content) {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino con formato interno inválido", chatMaxToolIterations)
 	}
 	text, artifact := extractArtifactAndText(parsed.Choices[0].Message.Content)
 	text = finalizeArtifactText(text, artifact)
