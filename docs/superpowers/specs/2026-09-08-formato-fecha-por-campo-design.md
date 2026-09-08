@@ -94,10 +94,32 @@ para el mismo string.
 Reusa `PUT /monitors/:id/schema` (ya existe, agregado por el plan de decimales
 implícitos) — no hace falta un endpoint nuevo, el body ya es el array completo de
 `SchemaField`. El handler (`UpdateSchema`, `backend/internal/handlers/monitor_handler.go`)
-gana una validación adicional: para cada campo del body con `DateFormat != ""`, esa clave
-debe existir en `services.DateFormatPresets`; si no, `400` con mensaje explícito ("formato
-de fecha inválido: <valor>"). La validación de nombres de campo ya existente (el schema
-recibido debe tener los mismos nombres que el actual) no cambia.
+gana una validación adicional, delegada a una función pura nueva y exportada en el paquete
+`services` (junto a `DateFormatPresets`, mismo archivo `ingestion_service.go`):
+
+```go
+// IsValidDateFormatPreset reports whether key is either "" (sin formato
+// configurado) or a recognized entry of DateFormatPresets.
+func IsValidDateFormatPreset(key string) bool {
+    if key == "" {
+        return true
+    }
+    _, ok := DateFormatPresets[key]
+    return ok
+}
+```
+
+El handler recorre `body.Schema` y llama `services.IsValidDateFormatPreset(f.DateFormat)`
+por cada campo; si alguno devuelve `false`, `400` con mensaje explícito ("formato de fecha
+inválido: <valor>"). La validación de nombres de campo ya existente (el schema recibido
+debe tener los mismos nombres que el actual) no cambia.
+
+**Por qué una función pura separada, no un test HTTP del handler:** el proyecto no tiene
+infraestructura para testear handlers vía HTTP con repos mockeados — `monitorRepo` es
+`*repository.MonitorRepository`, un tipo concreto sin interfaz, no mockeable sin una
+instancia real de MongoDB. El patrón ya establecido (`internal/handlers/dashboard_handler_test.go`,
+`canReadDashboard`/`canWriteDashboard`) es extraer la lógica de decisión a una función pura
+y testear esa función directamente — `IsValidDateFormatPreset` sigue el mismo patrón.
 
 ### Parseo (`parseValue`, `ingestion_service.go`)
 
@@ -172,7 +194,11 @@ cambia de firma (ya manda el array completo).
 - `parseValue` extendido: TDD — con `DateFormat="DD/MM/YYYY"`, `"08/09/2026"` parsea al
   `time.Time` correcto (8 de septiembre, no 9 de agosto — confirma que no se está usando el
   layout equivocado).
-- `UpdateSchema` (handler): TDD — un `DateFormat` fuera de `DateFormatPresets` devuelve
-  `400`; un `DateFormat` válido se guarda y se refleja en la respuesta.
+- `IsValidDateFormatPreset`: TDD — `""` es válido; cada clave de `DateFormatPresets` es
+  válida; una clave arbitraria no reconocida (ej. `"YYYY-DD-MM"`, que no está en el mapa) es
+  inválida.
+- Sin test HTTP de `UpdateSchema` — el proyecto no tiene infraestructura para eso (ver
+  "Endpoint de configuración"); la validación que agrega ya queda cubierta por el test de
+  `IsValidDateFormatPreset`.
 - Sin tests de UI/componentes — mismo criterio que decimales implícitos y que el resto del
   proyecto.
