@@ -109,10 +109,15 @@ En el `case models.FieldDate`: si `field.DateFormat != ""`, resolver el layout d
 
 En el `case models.FieldDate`: mismo criterio — si `expected.DateFormat != ""`, validar
 exclusivamente contra `DateFormatPresets[expected.DateFormat]`; si `expected.DateFormat ==
-""`, mantener la validación actual (ISO o RFC3339). `firstInvalidField` ya expone el nombre
-del campo y una razón — la razón para este caso: `` `valor "<raw>" no coincide con el
-formato configurado (<DateFormat>)` `` (mismo estilo que la razón ya usada para
-`ImpliedDecimals`: `` `valor "<raw>" no es del tipo number` ``).
+""`, mantener la validación actual (ISO o RFC3339). `firstInvalidField` no distingue POR
+QUÉ `validateFieldValue` devolvió `false` — para cualquier campo `date` inválido (sin
+importar si el problema es que no es fecha en absoluto o que no matchea el `DateFormat`
+configurado) ya arma el mismo mensaje genérico existente, sin cambios:
+`` `valor "<raw>" no es del tipo date` `` (mismo mecanismo ya verificado en producción para
+`ImpliedDecimals`, que en la bitácora de cargas se ve como `valor "150.50" no es del tipo
+number`). No hace falta tocar `firstInvalidField` — el mensaje diferenciado por causa que
+mencionaba una versión anterior de este documento no existe en el código real y no se
+agrega acá.
 
 ### Frontend — edición en la pestaña "Esquema"
 
