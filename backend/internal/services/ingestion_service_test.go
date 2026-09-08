@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thureos/compliance/internal/models"
 )
@@ -333,6 +334,27 @@ func TestValidateFieldValue_DateInvalid(t *testing.T) {
 	}
 }
 
+func TestValidateFieldValue_DateFormatDDMMYYYY_Valid(t *testing.T) {
+	field := models.SchemaField{Type: models.FieldDate, DateFormat: "DD/MM/YYYY"}
+	if !validateFieldValue("08/09/2026", field) {
+		t.Error("'08/09/2026' debería ser válido con DateFormat=DD/MM/YYYY")
+	}
+}
+
+func TestValidateFieldValue_DateFormatConfigured_RejectsISO(t *testing.T) {
+	field := models.SchemaField{Type: models.FieldDate, DateFormat: "DD/MM/YYYY"}
+	if validateFieldValue("2026-09-08", field) {
+		t.Error("con DateFormat configurado, un valor en formato ISO debe rechazarse (validación estricta, no aditiva)")
+	}
+}
+
+func TestValidateFieldValue_NoDateFormat_StillAcceptsISO(t *testing.T) {
+	field := models.SchemaField{Type: models.FieldDate}
+	if !validateFieldValue("2026-09-08", field) {
+		t.Error("sin DateFormat configurado, ISO sigue siendo válido (comportamiento actual sin cambios)")
+	}
+}
+
 func TestValidateFieldValue_BooleanValid(t *testing.T) {
 	if !validateFieldValue("true", models.SchemaField{Type: models.FieldBoolean}) {
 		t.Error("esperaba que 'true' sea válido como boolean")
@@ -428,6 +450,30 @@ func TestParseValue_InvalidNumberFallsBackToRawString(t *testing.T) {
 	got := parseValue("no-es-numero", schema, "monto")
 	if got != "no-es-numero" {
 		t.Errorf("got %v, want el string crudo sin parsear", got)
+	}
+}
+
+func TestParseValue_DateFormatDDMMYYYY_ParsesCorrectLayout(t *testing.T) {
+	schema := []models.SchemaField{{Name: "fecha", Type: models.FieldDate, DateFormat: "DD/MM/YYYY"}}
+	got := parseValue("08/09/2026", schema, "fecha")
+	tm, ok := got.(time.Time)
+	if !ok {
+		t.Fatalf("esperaba time.Time, obtuve %T (%v)", got, got)
+	}
+	if tm.Year() != 2026 || tm.Month() != time.September || tm.Day() != 8 {
+		t.Errorf("got %v, want 8 de septiembre de 2026 (confirma que se usó DD/MM/YYYY, no MM/DD/YYYY)", tm)
+	}
+}
+
+func TestParseValue_NoDateFormat_StillParsesISO(t *testing.T) {
+	schema := []models.SchemaField{{Name: "fecha", Type: models.FieldDate}}
+	got := parseValue("2026-09-08", schema, "fecha")
+	tm, ok := got.(time.Time)
+	if !ok {
+		t.Fatalf("esperaba time.Time, obtuve %T", got)
+	}
+	if tm.Year() != 2026 || tm.Month() != time.September || tm.Day() != 8 {
+		t.Errorf("got %v, want 8 de septiembre de 2026 (regresión: sin DateFormat, ISO debe seguir parseando igual que hoy)", tm)
 	}
 }
 

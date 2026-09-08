@@ -666,6 +666,12 @@ func parseValue(value string, schema []models.SchemaField, fieldName string) int
 					return b
 				}
 			case models.FieldDate:
+				if field.DateFormat != "" {
+					if t, err := time.Parse(DateFormatPresets[field.DateFormat], value); err == nil {
+						return t
+					}
+					break
+				}
 				if t, err := time.Parse("2006-01-02", value); err == nil {
 					return t
 				}
@@ -693,6 +699,10 @@ func validateFieldValue(raw string, expected models.SchemaField) bool {
 		_, err := strconv.ParseBool(raw)
 		return err == nil
 	case models.FieldDate:
+		if expected.DateFormat != "" {
+			_, err := time.Parse(DateFormatPresets[expected.DateFormat], raw)
+			return err == nil
+		}
 		if _, err := time.Parse("2006-01-02", raw); err == nil {
 			return true
 		}
