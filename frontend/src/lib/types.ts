@@ -55,6 +55,7 @@ export interface SchemaField {
   required: boolean;
   sample: string;
   impliedDecimals?: number;
+  dateFormat?: string;
 }
 
 export type UploadStatus = "accepted" | "partial" | "rejected_structure" | "approved";

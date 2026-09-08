@@ -184,6 +184,12 @@ export function MonitorTabContent({
     );
   }
 
+  function updateDateFormat(fieldName: string, value: string) {
+    setSchemaEdits((prev) =>
+      prev.map((f) => (f.name === fieldName ? { ...f, dateFormat: value } : f)),
+    );
+  }
+
   async function handleSaveSchema() {
     setSavingSchema(true);
     try {
@@ -801,6 +807,25 @@ export function MonitorTabContent({
                                 <SelectItem value="2">2 decimales implícitos</SelectItem>
                                 <SelectItem value="3">3 decimales implícitos</SelectItem>
                                 <SelectItem value="4">4 decimales implícitos</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                          {field.type === "date" && user?.role !== "viewer" && (
+                            <Select
+                              value={field.dateFormat ?? "auto"}
+                              onValueChange={(v) =>
+                                updateDateFormat(field.name, v === "auto" ? "" : v)
+                              }
+                            >
+                              <SelectTrigger className="w-[180px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">Automático (ISO / RFC3339)</SelectItem>
+                                <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                                <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+                                <SelectItem value="DD-MM-YYYY">DD-MM-YYYY</SelectItem>
+                                <SelectItem value="YYYY/MM/DD">YYYY/MM/DD</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
