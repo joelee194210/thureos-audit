@@ -561,6 +561,51 @@ func parseValue(value string, schema []models.SchemaField, fieldName string) int
 	return value
 }
 
+func validateFieldValue(raw string, expected models.FieldType) bool {
+	if raw == "" {
+		return true
+	}
+	switch expected {
+	case models.FieldNumber:
+		_, err := strconv.ParseFloat(raw, 64)
+		return err == nil
+	case models.FieldBoolean:
+		_, err := strconv.ParseBool(raw)
+		return err == nil
+	case models.FieldDate:
+		if _, err := time.Parse("2006-01-02", raw); err == nil {
+			return true
+		}
+		_, err := time.Parse(time.RFC3339, raw)
+		return err == nil
+	default:
+		return true
+	}
+}
+
+// firstInvalidField returns the first field in fieldNames whose raw
+// string value in row doesn't parse as its schema type, or ("", "") if
+// the row is clean. A row shorter than fieldNames (missing trailing
+// columns) is not rejected here — that's tolerated today by the
+// doc-building loop in ingestDelimited/IngestExcel, and stays that way;
+// this only rejects values that ARE present but don't parse.
+func firstInvalidField(row []string, fieldNames []string, schema []models.SchemaField) (field string, reason string) {
+	for i, name := range fieldNames {
+		if i >= len(row) {
+			continue
+		}
+		for _, f := range schema {
+			if f.Name == name {
+				if !validateFieldValue(row[i], f.Type) {
+					return name, fmt.Sprintf("valor %q no es del tipo %s", row[i], f.Type)
+				}
+				break
+			}
+		}
+	}
+	return "", ""
+}
+
 func sanitizeFieldName(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.ToLower(name)

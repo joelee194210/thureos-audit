@@ -308,3 +308,81 @@ func TestCompareSchema_EmptyExpectedAlwaysMatches(t *testing.T) {
 		t.Errorf("un monitor sin base establecida (primer upload) siempre debería matchear, obtuve %+v", diff)
 	}
 }
+
+func TestValidateFieldValue_NumberValid(t *testing.T) {
+	if !validateFieldValue("1234.56", models.FieldNumber) {
+		t.Error("esperaba que '1234.56' sea válido como number")
+	}
+}
+
+func TestValidateFieldValue_NumberInvalid(t *testing.T) {
+	if validateFieldValue("n/a", models.FieldNumber) {
+		t.Error("esperaba que 'n/a' NO sea válido como number")
+	}
+}
+
+func TestValidateFieldValue_DateValid(t *testing.T) {
+	if !validateFieldValue("2026-09-08", models.FieldDate) {
+		t.Error("esperaba que '2026-09-08' sea válido como date")
+	}
+}
+
+func TestValidateFieldValue_DateInvalid(t *testing.T) {
+	if validateFieldValue("no es una fecha", models.FieldDate) {
+		t.Error("esperaba que 'no es una fecha' NO sea válido como date")
+	}
+}
+
+func TestValidateFieldValue_BooleanValid(t *testing.T) {
+	if !validateFieldValue("true", models.FieldBoolean) {
+		t.Error("esperaba que 'true' sea válido como boolean")
+	}
+}
+
+func TestValidateFieldValue_BooleanInvalid(t *testing.T) {
+	if validateFieldValue("tal vez", models.FieldBoolean) {
+		t.Error("esperaba que 'tal vez' NO sea válido como boolean")
+	}
+}
+
+func TestValidateFieldValue_StringAlwaysValid(t *testing.T) {
+	if !validateFieldValue("cualquier texto 123", models.FieldString) {
+		t.Error("un campo de tipo string siempre debería aceptar cualquier valor")
+	}
+}
+
+func TestValidateFieldValue_EmptyAlwaysValid(t *testing.T) {
+	if !validateFieldValue("", models.FieldNumber) {
+		t.Error("una celda vacía no debería rechazarse por tipo — es un campo opcional sin valor, no un valor inválido")
+	}
+}
+
+func TestFirstInvalidField_CleanRowReturnsEmpty(t *testing.T) {
+	schema := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("cliente", models.FieldString)}
+	field, reason := firstInvalidField([]string{"100.50", "Juan"}, []string{"monto", "cliente"}, schema)
+	if field != "" || reason != "" {
+		t.Errorf("fila válida no debería rechazar nada, obtuve field=%q reason=%q", field, reason)
+	}
+}
+
+func TestFirstInvalidField_BadTypeReturnsField(t *testing.T) {
+	schema := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("cliente", models.FieldString)}
+	field, reason := firstInvalidField([]string{"no-es-numero", "Juan"}, []string{"monto", "cliente"}, schema)
+	if field != "monto" {
+		t.Errorf("field = %q, esperaba 'monto'", field)
+	}
+	if reason == "" {
+		t.Error("esperaba una razón no vacía")
+	}
+}
+
+func TestFirstInvalidField_MissingTrailingColumnsNotRejected(t *testing.T) {
+	schema := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("cliente", models.FieldString)}
+	// Fila con menos columnas que headers — comportamiento ya tolerado hoy
+	// por el resto del código (ver doc-building loop), no es un motivo de
+	// rechazo por sí solo.
+	field, reason := firstInvalidField([]string{"100.50"}, []string{"monto", "cliente"}, schema)
+	if field != "" || reason != "" {
+		t.Errorf("columnas faltantes al final no deberían rechazar la fila, obtuve field=%q reason=%q", field, reason)
+	}
+}
