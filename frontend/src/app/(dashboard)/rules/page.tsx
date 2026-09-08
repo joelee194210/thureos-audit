@@ -734,6 +734,7 @@ function RulesContent() {
         name: suggestion.name,
         description: suggestion.description,
         conditionGroup: suggestion.conditionGroup,
+        aggregateConditions: suggestion.aggregateConditions,
         actions: suggestion.actions,
         severity: suggestion.severity,
         aiGenerated: true,

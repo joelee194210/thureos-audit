@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -16,12 +18,13 @@ import (
 
 // AIRuleSuggestion represents a single AI-generated rule suggestion.
 type AIRuleSuggestion struct {
-	Name           string                `json:"name"`
-	Description    string                `json:"description"`
-	ConditionGroup models.ConditionGroup `json:"conditionGroup"`
-	Severity       models.Severity       `json:"severity"`
-	Actions        []models.ActionType   `json:"actions"`
-	Reasoning      string                `json:"reasoning"`
+	Name                string                      `json:"name"`
+	Description         string                      `json:"description"`
+	ConditionGroup      models.ConditionGroup       `json:"conditionGroup"`
+	AggregateConditions []models.AggregateCondition `json:"aggregateConditions,omitempty"`
+	Severity            models.Severity             `json:"severity"`
+	Actions             []models.ActionType         `json:"actions"`
+	Reasoning           string                      `json:"reasoning"`
 }
 
 // systemPrompt is shared across all providers — the contract stays the same.
@@ -42,10 +45,40 @@ Return ONLY a JSON array of rule suggestions. Each rule must follow this exact s
       {"field": "field_name", "operator": "op", "value": value}
     ]
   },
+  "aggregateConditions": [
+    {
+      "field": "field_name",
+      "function": "sum|count|avg|min|max",
+      "groupBy": "field_name",
+      "timeField": "field_name",
+      "timeWindow": "60s|5min|24h|7d",
+      "operator": "op",
+      "threshold": value
+    }
+  ],
   "severity": "low|medium|high|critical",
   "actions": ["red_flag", "flag", "log"],
   "reasoning": "Por qué esta regla es importante, en español"
 }
+
+"conditionGroup" is REQUIRED (use an empty "conditions" array if the rule is
+purely aggregate-based). "aggregateConditions" is OPTIONAL — omit it entirely
+for simple single-record threshold rules.
+
+Every "field", "groupBy", and "timeField" value MUST be one of the exact
+field names present in the schema you were given. NEVER invent a field name
+to represent a concept the schema doesn't have a column for — if you can't
+express an idea with an existing field, don't include that rule.
+
+Use "conditionGroup" for a threshold check on a single record (e.g. "amount
+> 10000"). Use "aggregateConditions" for velocity/frequency/grouping
+patterns — "5 or more transactions within 60 seconds", "the same amount
+repeated 3+ times by the same client in 24h", structuring/smurfing
+detection, etc. For "function": "count", "field" is ignored by the engine
+but the JSON key is still required — reuse the same field you put in
+"groupBy". "timeWindow" only accepts these units: "s" (seconds), "min"
+(minutes), "h" (hours), "d" (days) — e.g. "60s", "5min", "24h", "7d". Never
+use "m" for minutes or months; it is not a valid unit for this field.
 
 Available operators: eq, neq, gt, lt, gte, lte, contains, regex, in, not_in, between, is_null, is_not_null, starts_with, ends_with
 
@@ -87,7 +120,12 @@ func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.Sche
 		return nil, err
 	}
 
-	return parseRuleSuggestions(responseText)
+	suggestions, err := parseRuleSuggestions(responseText)
+	if err != nil {
+		return nil, err
+	}
+
+	return filterValidSuggestions(suggestions, schema), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +278,53 @@ func parseRuleSuggestions(responseText string) ([]AIRuleSuggestion, error) {
 		}
 	}
 	return suggestions, nil
+}
+
+// validAITimeWindow matches only the units taught to the AI (s, min, h, d).
+// "m" (months) is deliberately excluded — it's never in the AI's vocabulary,
+// so a suggestion using it is treated as a hallucinated/ambiguous unit
+// rather than risk it meaning "minutes" to whoever generated it.
+var validAITimeWindow = regexp.MustCompile(`^\d+(s|min|h|d)$`)
+
+// filterValidSuggestions drops any suggestion that references a field name
+// not present in the monitor's schema — the AI has no other vocabulary to
+// express concepts the schema doesn't have a column for, and in the past
+// invented fake field names (e.g. "group_count_gte_5_seconds_lte_60") to
+// work around that instead. A suggestion with any invalid reference is
+// dropped whole, not partially repaired — a half-fixed rule is worse than
+// no suggestion.
+func filterValidSuggestions(suggestions []AIRuleSuggestion, schema []models.SchemaField) []AIRuleSuggestion {
+	fieldNames := make(map[string]bool, len(schema))
+	for _, f := range schema {
+		fieldNames[f.Name] = true
+	}
+
+	valid := make([]AIRuleSuggestion, 0, len(suggestions))
+	for _, s := range suggestions {
+		if suggestionReferencesUnknownField(s, fieldNames) {
+			log.Printf("ai-rules: descartando sugerencia %q — referencia un campo fuera del schema", s.Name)
+			continue
+		}
+		valid = append(valid, s)
+	}
+	return valid
+}
+
+func suggestionReferencesUnknownField(s AIRuleSuggestion, fieldNames map[string]bool) bool {
+	for _, cond := range s.ConditionGroup.Conditions {
+		if !fieldNames[cond.Field] {
+			return true
+		}
+	}
+	for _, agg := range s.AggregateConditions {
+		if !fieldNames[agg.Field] || !fieldNames[agg.GroupBy] || !fieldNames[agg.TimeField] {
+			return true
+		}
+		if !validAITimeWindow.MatchString(agg.TimeWindow) {
+			return true
+		}
+	}
+	return false
 }
 
 func extractJSON(text string) string {

@@ -372,6 +372,7 @@ export interface AIRuleSuggestion {
   name: string;
   description: string;
   conditionGroup: ConditionGroup;
+  aggregateConditions?: AggregateCondition[];
   severity: Severity;
   actions: ActionType[];
   reasoning: string;
