@@ -18,6 +18,7 @@ Este feature agrega:
 - **Limpieza de monitores ya mezclados** (ej. "CBCG Tarjetas"). La validación aplica desde el próximo upload en cualquier monitor — los datos ya ingeridos con estructuras mezcladas quedan como están. Es una tarea manual aparte.
 - **Alertas push/email** cuando se rechaza un archivo. La alerta es sincrónica, en el momento de la subida (ver Flujo 3) — no hay notificación asíncrona a terceros.
 - **Configurar la estrictitud de la comparación por monitor.** Es fija: mismos nombres de campo (sin importar el orden) + mismo tipo inferido por campo, para todos los monitores. No hay tolerancia configurable.
+- **Validación por fila para monitores de tipo `json`.** `ingestDelimited` (CSV/TXT) e `IngestExcel` comparten la misma forma de fila (`[]string`, valores sin tipar todavía) — la validación por fila se implementa una sola vez y cubre ambos. `IngestJSON` ya recibe valores tipados nativamente por el parser de JSON (`encoding/json`), una forma de dato distinta que necesitaría su propio validador — queda fuera de este plan, se agrega en una iteración aparte si hace falta. La validación de ESTRUCTURA completa (`compareSchema`, rechazo de archivo) sí aplica a los 4 formatos por igual.
 
 ## Diferencia con el comportamiento actual
 
