@@ -142,18 +142,21 @@ export default function UploadsPage() {
 
   useEffect(() => {
     async function load() {
-      try {
-        const [ingestion, log] = await Promise.all([
-          api.get<IngestionEntry[]>("/ingestion-history"),
-          uploadLogApi.list(),
-        ]);
-        setEntries(ingestion);
-        setLogEntries(log);
-      } catch {
+      const [ingestionResult, logResult] = await Promise.allSettled([
+        api.get<IngestionEntry[]>("/ingestion-history"),
+        uploadLogApi.list(),
+      ]);
+      if (ingestionResult.status === "fulfilled") {
+        setEntries(ingestionResult.value);
+      } else {
         setError("No se pudo cargar el historial de cargas");
-      } finally {
-        setLoading(false);
       }
+      if (logResult.status === "fulfilled") {
+        setLogEntries(logResult.value);
+      } else {
+        toastError("No se pudo cargar la bitácora detallada");
+      }
+      setLoading(false);
     }
     load();
   }, []);
@@ -261,8 +264,8 @@ export default function UploadsPage() {
       await uploadLogApi.approve(entry.monitorId, entry.id);
       const log = await uploadLogApi.list();
       setLogEntries(log);
-    } catch {
-      toastError("No se pudo aprobar la entrada");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "No se pudo aprobar la entrada");
     } finally {
       setApprovingId(null);
     }

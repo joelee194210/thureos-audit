@@ -187,8 +187,8 @@ export function MonitorTabContent({
       setUploadResult(result);
       loadMonitor();
       loadData();
-    } catch {
-      toastError("Error al subir archivo");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al subir archivo");
     } finally {
       setUploading(false);
     }

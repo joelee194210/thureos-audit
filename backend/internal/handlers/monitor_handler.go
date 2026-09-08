@@ -357,6 +357,9 @@ func (h *MonitorHandler) UploadData(c *fiber.Ctx) error {
 	}
 
 	if err != nil {
+		if errors.Is(err, services.ErrMalformedFile) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -460,6 +463,9 @@ func (h *MonitorHandler) UploadCheck(c *fiber.Ctx) error {
 	}
 
 	if err != nil {
+		if errors.Is(err, services.ErrMalformedFile) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -536,6 +542,9 @@ func (h *MonitorHandler) UploadLogApprove(c *fiber.Ctx) error {
 	if entry.Status != models.UploadStatusRejectedStructure {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "solo se pueden aprobar entradas rechazadas por estructura"})
 	}
+	if entry.MonitorID != monitorID {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "la entrada de bitácora no pertenece a este monitor"})
+	}
 
 	monitor, err := h.monitorRepo.FindByID(c.Context(), monitorID)
 	if err != nil {
@@ -568,10 +577,17 @@ func (h *MonitorHandler) UploadLogApprove(c *fiber.Ctx) error {
 		log.Printf("bitacora: marcando entrada aprobada: %v", approveErr)
 	}
 
+	queued := false
+	if h.jobQueue != nil {
+		qerr := h.jobQueue.Enqueue(c.Context(), services.EvalJob{MonitorID: monitorID.Hex()})
+		queued = qerr == nil
+	}
+
 	return c.JSON(fiber.Map{
-		"recordsIngested": outcome.RowsAccepted,
-		"rowsRejected":    len(outcome.RowRejections),
-		"schema":          monitor.Schema,
+		"recordsIngested":  outcome.RowsAccepted,
+		"rowsRejected":     len(outcome.RowRejections),
+		"schema":           monitor.Schema,
+		"evaluationQueued": queued,
 	})
 }
 

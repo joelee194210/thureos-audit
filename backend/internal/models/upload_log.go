@@ -59,6 +59,5 @@ type UploadLogEntry struct {
 	RowsRejected    int                 `bson:"rows_rejected" json:"rowsRejected"`
 	SchemaDiff      *SchemaDiff         `bson:"schema_diff,omitempty" json:"schemaDiff,omitempty"`
 	RowRejections   []RowRejection      `bson:"row_rejections,omitempty" json:"rowRejections,omitempty"`
-	SampleRows      []map[string]any    `bson:"sample_rows,omitempty" json:"sampleRows,omitempty"`
 	GridFSFileID    *primitive.ObjectID `bson:"gridfs_file_id,omitempty" json:"-"`
 }

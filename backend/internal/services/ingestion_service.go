@@ -55,6 +55,11 @@ func NewIngestionService(monitorRepo *repository.MonitorRepository) *IngestionSe
 // handler can map it to 400 instead of a gateway error status.
 var ErrPushModeSchemaDetection = errors.New("la detección automática solo está disponible para modo pull; en modo push, el schema se detecta con el primer envío")
 
+// ErrMalformedFile marks an error as a file parsing/reading failure (as
+// opposed to a downstream Mongo error) so handlers can map it to 400
+// instead of the generic 500.
+var ErrMalformedFile = errors.New("el archivo no se pudo leer o parsear")
+
 // maxSchemaDetectSampleRows caps how many records DetectAPISchema feeds into
 // detectSchemaFromJSON — a preview only needs enough rows to see the shape
 // of the data, not the whole response.
@@ -182,7 +187,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	if hasHeaderRow {
 		h, err := reader.Read()
 		if err != nil {
-			return nil, fmt.Errorf("reading headers: %w", err)
+			return nil, fmt.Errorf("reading headers: %w: %w", ErrMalformedFile, err)
 		}
 		headers = h
 	}
@@ -193,7 +198,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("reading row: %w", err)
+			return nil, fmt.Errorf("reading row: %w: %w", ErrMalformedFile, err)
 		}
 		if headers == nil {
 			// No header row: synthesize column names from the first row's width.
@@ -403,7 +408,7 @@ func toRecordSlice(v interface{}) ([]map[string]interface{}, error) {
 func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Monitor, file multipart.File, dryRun bool) (*IngestOutcome, error) {
 	f, err := excelize.OpenReader(file)
 	if err != nil {
-		return nil, fmt.Errorf("opening Excel: %w", err)
+		return nil, fmt.Errorf("opening Excel: %w: %w", ErrMalformedFile, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -413,11 +418,11 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	}
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
-		return nil, fmt.Errorf("reading Excel rows: %w", err)
+		return nil, fmt.Errorf("reading Excel rows: %w: %w", ErrMalformedFile, err)
 	}
 
 	if len(rows) < 2 {
-		return nil, fmt.Errorf("excel file has no data rows")
+		return nil, fmt.Errorf("%w: excel file has no data rows", ErrMalformedFile)
 	}
 
 	headers := rows[0]
