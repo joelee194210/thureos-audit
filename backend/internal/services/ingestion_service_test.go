@@ -310,6 +310,29 @@ func TestCompareSchema_EmptyExpectedAlwaysMatches(t *testing.T) {
 	}
 }
 
+func TestCompareSchema_DateFieldWithFormatToleratesStringDetection(t *testing.T) {
+	expected := []models.SchemaField{{Name: "fecha", Type: models.FieldDate, DateFormat: "DD/MM/YYYY"}}
+	actual := []models.SchemaField{schemaField("fecha", models.FieldString)}
+
+	diff := compareSchema(expected, actual)
+	if !diff.Match {
+		t.Errorf("un campo date con DateFormat configurado debería tolerar la detección como string, obtuve %+v", diff)
+	}
+}
+
+func TestCompareSchema_DateFieldWithoutFormatStillFlagsMismatch(t *testing.T) {
+	expected := []models.SchemaField{{Name: "fecha", Type: models.FieldDate, DateFormat: ""}}
+	actual := []models.SchemaField{schemaField("fecha", models.FieldString)}
+
+	diff := compareSchema(expected, actual)
+	if diff.Match {
+		t.Fatal("un campo date SIN DateFormat configurado debe seguir marcando mismatch string/date")
+	}
+	if len(diff.TypeMismatches) != 1 || diff.TypeMismatches[0].Field != "fecha" {
+		t.Errorf("TypeMismatches = %+v, esperaba un mismatch en 'fecha'", diff.TypeMismatches)
+	}
+}
+
 func TestValidateFieldValue_NumberValid(t *testing.T) {
 	if !validateFieldValue("1234.56", models.SchemaField{Type: models.FieldNumber}) {
 		t.Error("esperaba que '1234.56' sea válido como number")
@@ -462,6 +485,18 @@ func TestParseValue_DateFormatDDMMYYYY_ParsesCorrectLayout(t *testing.T) {
 	}
 	if tm.Year() != 2026 || tm.Month() != time.September || tm.Day() != 8 {
 		t.Errorf("got %v, want 8 de septiembre de 2026 (confirma que se usó DD/MM/YYYY, no MM/DD/YYYY)", tm)
+	}
+}
+
+func TestParseValue_DateFormatDDMMYYYY_ParsesSingleDigitDayMonth(t *testing.T) {
+	schema := []models.SchemaField{{Name: "fecha", Type: models.FieldDate, DateFormat: "DD/MM/YYYY"}}
+	got := parseValue("8/9/2026", schema, "fecha")
+	tm, ok := got.(time.Time)
+	if !ok {
+		t.Fatalf("esperaba time.Time, obtuve %T (%v)", got, got)
+	}
+	if tm.Year() != 2026 || tm.Month() != time.September || tm.Day() != 8 {
+		t.Errorf("got %v, want 8 de septiembre de 2026 (día/mes sin cero a la izquierda)", tm)
 	}
 }
 

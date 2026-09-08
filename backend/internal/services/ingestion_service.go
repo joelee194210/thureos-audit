@@ -629,11 +629,19 @@ func looksLikeDate(value string) bool {
 // DateFormatPresets maps a SchemaField.DateFormat key to the Go time
 // layout it represents. Only these 4 keys are valid — see
 // IsValidDateFormatPreset.
+//
+// The layouts are deliberately non-padded (e.g. "2/1/2006", not
+// "02/01/2006"): Go's time.Parse accepts both zero-padded and
+// non-padded input for a non-padded reference component, so this
+// widens acceptance to common single-digit day/month exports (e.g.
+// "8/9/2026") without rejecting the padded form ("08/09/2026"). Don't
+// "fix" these back to zero-padded layouts — that would reintroduce the
+// single-digit rejection.
 var DateFormatPresets = map[string]string{
-	"DD/MM/YYYY": "02/01/2006",
-	"MM/DD/YYYY": "01/02/2006",
-	"DD-MM-YYYY": "02-01-2006",
-	"YYYY/MM/DD": "2006/01/02",
+	"DD/MM/YYYY": "2/1/2006",
+	"MM/DD/YYYY": "1/2/2006",
+	"DD-MM-YYYY": "2-1-2006",
+	"YYYY/MM/DD": "2006/1/2",
 }
 
 // IsValidDateFormatPreset reports whether key is either "" (sin formato
@@ -670,7 +678,7 @@ func parseValue(value string, schema []models.SchemaField, fieldName string) int
 					if t, err := time.Parse(DateFormatPresets[field.DateFormat], value); err == nil {
 						return t
 					}
-					break
+					return value
 				}
 				if t, err := time.Parse("2006-01-02", value); err == nil {
 					return t
@@ -772,7 +780,8 @@ func compareSchema(expected []models.SchemaField, actual []models.SchemaField) m
 			missing = append(missing, name)
 			continue
 		}
-		if act.Type != exp.Type {
+		dateAsStringWithFormat := exp.Type == models.FieldDate && act.Type == models.FieldString && exp.DateFormat != ""
+		if act.Type != exp.Type && !dateAsStringWithFormat {
 			mismatches = append(mismatches, models.FieldTypeMismatch{
 				Field:        name,
 				ExpectedType: exp.Type,

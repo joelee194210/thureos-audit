@@ -682,8 +682,8 @@ func (h *MonitorHandler) IngestPush(c *fiber.Ctx) error {
 }
 
 // UpdateSchema reemplaza el schema del monitor, permitiendo configurar
-// por campo (hoy solo ImpliedDecimals) sin cambiar el conjunto de
-// campos — el schema recibido debe tener exactamente los mismos
+// por campo (hoy ImpliedDecimals y DateFormat) sin cambiar el conjunto
+// de campos — el schema recibido debe tener exactamente los mismos
 // nombres que el actual, o se rechaza. Esto evita que un bug de
 // frontend agregue/quite campos o cambie Name/Type por esta vía.
 func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
