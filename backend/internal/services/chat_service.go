@@ -340,7 +340,19 @@ func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, moni
 		messages = append(messages, anthropic.NewUserMessage(toolResults...))
 	}
 
-	return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas sin una respuesta final", chatMaxToolIterations)
+	// Se alcanzó el tope de iteraciones sin una respuesta final — una
+	// última llamada SIN el tool para forzar una respuesta de texto con lo
+	// que el LLM ya tenga, en vez de devolver un error crudo.
+	message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     model,
+		MaxTokens: 4096,
+		System:    []anthropic.TextBlockParam{{Text: systemPrompt, Type: "text"}},
+		Messages:  messages,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo obtener una respuesta final: %w", chatMaxToolIterations, err)
+	}
+	return extractAnthropicFinalAnswer(message)
 }
 
 func extractAnthropicFinalAnswer(message *anthropic.Message) (string, *models.ChatArtifact, error) {
@@ -494,5 +506,40 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 		}
 	}
 
-	return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas sin una respuesta final", chatMaxToolIterations)
+	// Se alcanzó el tope de iteraciones sin una respuesta final — una
+	// última petición SIN el tool para forzar una respuesta de texto con
+	// lo que el LLM ya tenga, en vez de devolver un error crudo.
+	reqBody := chatDeepSeekRequest{Model: model, Messages: messages, MaxTokens: 4096}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo armar la respuesta final: %w", chatMaxToolIterations, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo armar la respuesta final: %w", chatMaxToolIterations, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+ai.APIKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo obtener una respuesta final: %w", chatMaxToolIterations, err)
+	}
+	var parsed chatDeepSeekResponse
+	decodeErr := json.NewDecoder(resp.Body).Decode(&parsed)
+	_ = resp.Body.Close()
+	if decodeErr != nil {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final no es JSON válido: %w", chatMaxToolIterations, decodeErr)
+	}
+	if parsed.Error != nil {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas — deepseek: %s", chatMaxToolIterations, parsed.Error.Message)
+	}
+	if len(parsed.Choices) == 0 {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
+	}
+	text, artifact := extractArtifactAndText(parsed.Choices[0].Message.Content)
+	if text == "" {
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
+	}
+	return text, artifact, nil
 }
