@@ -804,11 +804,22 @@ func buildAggregatePipelineDateScoped(cond models.AggregateCondition, dayStart, 
 	return pipeline
 }
 
-// parseTimeWindow converts a time window string like "24h", "7d", "30d" to a time.Duration.
+// parseTimeWindow converts a time window string like "60s", "5min", "24h",
+// "7d", "30m" to a time.Duration. "min" is checked as a full suffix before
+// falling back to the last-character unit so it never collides with "m"
+// (months) — an existing rule's "30m" keeps meaning 30 months.
 func parseTimeWindow(window string) time.Duration {
 	window = strings.TrimSpace(strings.ToLower(window))
 	if len(window) < 2 {
 		return 0
+	}
+
+	if strings.HasSuffix(window, "min") {
+		num, err := strconv.Atoi(window[:len(window)-3])
+		if err != nil {
+			return 0
+		}
+		return time.Duration(num) * time.Minute
 	}
 
 	unit := window[len(window)-1:]
@@ -819,6 +830,8 @@ func parseTimeWindow(window string) time.Duration {
 	}
 
 	switch unit {
+	case "s":
+		return time.Duration(num) * time.Second
 	case "h":
 		return time.Duration(num) * time.Hour
 	case "d":

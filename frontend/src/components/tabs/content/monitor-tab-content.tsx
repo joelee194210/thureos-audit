@@ -29,6 +29,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Upload,
   FileUp,
   Table,
@@ -60,6 +67,7 @@ import type {
 } from "@/lib/types";
 import Link from "next/link";
 import { useTabStore } from "@/stores/tab-store";
+import { useAuthStore } from "@/stores/auth-store";
 
 export function MonitorTabContent({
   params,
@@ -70,6 +78,8 @@ export function MonitorTabContent({
 }) {
   const { id } = params;
   const [monitor, setMonitor] = useState<Monitor | null>(null);
+  const [schemaEdits, setSchemaEdits] = useState<SchemaField[]>([]);
+  const [savingSchema, setSavingSchema] = useState(false);
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -111,9 +121,10 @@ export function MonitorTabContent({
     token: string;
   } | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
-  const { toastError } = useToast();
+  const { toastError, toastSuccess } = useToast();
   const updateTabLabel = useTabStore((s) => s.updateTabLabel);
   const registerEntityLabel = useTabStore((s) => s.registerEntityLabel);
+  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     if (monitor?.name) {
@@ -129,6 +140,18 @@ export function MonitorTabContent({
       loadRules();
     }
   }, [id]);
+
+  useEffect(() => {
+    if (monitor?.schema) {
+      // debt: sincroniza el estado editable con monitor.schema al cargar
+      // o recargar el monitor (y tras guardar el esquema) — mismo tipo de
+      // deuda de react-hooks/set-state-in-effect que el resto del archivo
+      // (ver el useEffect de carga inicial, más arriba), aunque ese caso
+      // es un loader async y este es un sync directo de estado.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSchemaEdits(monitor.schema);
+    }
+  }, [monitor?.schema]);
 
   async function loadMonitor() {
     try {
@@ -152,6 +175,25 @@ export function MonitorTabContent({
       setRules(await rulesApi.list(id));
     } catch {
       toastError("Error al cargar reglas");
+    }
+  }
+
+  function updateImpliedDecimals(fieldName: string, value: number) {
+    setSchemaEdits((prev) =>
+      prev.map((f) => (f.name === fieldName ? { ...f, impliedDecimals: value } : f)),
+    );
+  }
+
+  async function handleSaveSchema() {
+    setSavingSchema(true);
+    try {
+      const result = await monitorsApi.updateSchema(id, schemaEdits);
+      setMonitor((prev) => (prev ? { ...prev, schema: result.schema } : prev));
+      toastSuccess("Esquema actualizado");
+    } catch {
+      toastError("No se pudo guardar el esquema");
+    } finally {
+      setSavingSchema(false);
     }
   }
 
@@ -716,8 +758,13 @@ export function MonitorTabContent({
 
           <TabsContent value="schema">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-base">Esquema detectado</CardTitle>
+                {monitor.schema && monitor.schema.length > 0 && user?.role !== "viewer" && (
+                  <Button size="sm" onClick={handleSaveSchema} disabled={savingSchema}>
+                    {savingSchema ? "Guardando..." : "Guardar"}
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {!monitor.schema || monitor.schema.length === 0 ? (
@@ -726,7 +773,7 @@ export function MonitorTabContent({
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {monitor.schema.map((field: SchemaField) => (
+                    {schemaEdits.map((field: SchemaField) => (
                       <div
                         key={field.name}
                         className="flex items-center justify-between rounded-md border p-3"
@@ -739,7 +786,26 @@ export function MonitorTabContent({
                             </p>
                           )}
                         </div>
-                        <Badge variant="secondary">{field.type}</Badge>
+                        <div className="flex items-center gap-2">
+                          {field.type === "number" && user?.role !== "viewer" && (
+                            <Select
+                              value={String(field.impliedDecimals ?? 0)}
+                              onValueChange={(v) => updateImpliedDecimals(field.name, Number(v))}
+                            >
+                              <SelectTrigger className="w-[180px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="0">Sin decimales implícitos</SelectItem>
+                                <SelectItem value="1">1 decimal implícito</SelectItem>
+                                <SelectItem value="2">2 decimales implícitos</SelectItem>
+                                <SelectItem value="3">3 decimales implícitos</SelectItem>
+                                <SelectItem value="4">4 decimales implícitos</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                          <Badge variant="secondary">{field.type}</Badge>
+                        </div>
                       </div>
                     ))}
                   </div>

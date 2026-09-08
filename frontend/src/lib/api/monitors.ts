@@ -33,6 +33,9 @@ export const monitorsApi = {
     },
   ) => api.put<{ message: string }>(`/monitors/${id}`, data),
 
+  updateSchema: (id: string, schema: SchemaField[]) =>
+    api.put<{ schema: SchemaField[] }>(`/monitors/${id}/schema`, { schema }),
+
   detectSchema: (
     sourceType: string,
     sourceConfig: Partial<CreateSourceConfig>,

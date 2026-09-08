@@ -54,6 +54,7 @@ export interface SchemaField {
   type: "string" | "number" | "date" | "boolean";
   required: boolean;
   sample: string;
+  impliedDecimals?: number;
 }
 
 export type UploadStatus = "accepted" | "partial" | "rejected_structure" | "approved";
@@ -372,6 +373,7 @@ export interface AIRuleSuggestion {
   name: string;
   description: string;
   conditionGroup: ConditionGroup;
+  aggregateConditions?: AggregateCondition[];
   severity: Severity;
   actions: ActionType[];
   reasoning: string;

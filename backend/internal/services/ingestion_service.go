@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"sort"
@@ -634,6 +635,9 @@ func parseValue(value string, schema []models.SchemaField, fieldName string) int
 			switch field.Type {
 			case models.FieldNumber:
 				if f, err := strconv.ParseFloat(value, 64); err == nil {
+					if field.ImpliedDecimals > 0 {
+						f = f / math.Pow(10, float64(field.ImpliedDecimals))
+					}
 					return f
 				}
 			case models.FieldBoolean:
@@ -653,12 +657,15 @@ func parseValue(value string, schema []models.SchemaField, fieldName string) int
 	return value
 }
 
-func validateFieldValue(raw string, expected models.FieldType) bool {
+func validateFieldValue(raw string, expected models.SchemaField) bool {
 	if raw == "" {
 		return true
 	}
-	switch expected {
+	switch expected.Type {
 	case models.FieldNumber:
+		if expected.ImpliedDecimals > 0 && strings.Contains(raw, ".") {
+			return false
+		}
 		_, err := strconv.ParseFloat(raw, 64)
 		return err == nil
 	case models.FieldBoolean:
@@ -688,7 +695,7 @@ func firstInvalidField(row []string, fieldNames []string, schema []models.Schema
 		}
 		for _, f := range schema {
 			if f.Name == name {
-				if !validateFieldValue(row[i], f.Type) {
+				if !validateFieldValue(row[i], f) {
 					return name, fmt.Sprintf("valor %q no es del tipo %s", row[i], f.Type)
 				}
 				break
