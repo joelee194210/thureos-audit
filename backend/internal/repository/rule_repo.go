@@ -42,7 +42,7 @@ func (r *RuleRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*
 }
 
 func (r *RuleRepository) FindByMonitor(ctx context.Context, monitorID primitive.ObjectID) ([]models.Rule, error) {
-	cursor, err := r.col.Find(ctx, bson.M{"monitor_id": monitorID})
+	cursor, err := r.col.Find(ctx, bson.M{"monitor_id": monitorID, "deleted_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, err
 	}
