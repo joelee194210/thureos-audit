@@ -626,6 +626,27 @@ func looksLikeDate(value string) bool {
 	return false
 }
 
+// DateFormatPresets maps a SchemaField.DateFormat key to the Go time
+// layout it represents. Only these 4 keys are valid — see
+// IsValidDateFormatPreset.
+var DateFormatPresets = map[string]string{
+	"DD/MM/YYYY": "02/01/2006",
+	"MM/DD/YYYY": "01/02/2006",
+	"DD-MM-YYYY": "02-01-2006",
+	"YYYY/MM/DD": "2006/01/02",
+}
+
+// IsValidDateFormatPreset reports whether key is either "" (sin formato
+// configurado, comportamiento por defecto) or a recognized entry of
+// DateFormatPresets.
+func IsValidDateFormatPreset(key string) bool {
+	if key == "" {
+		return true
+	}
+	_, ok := DateFormatPresets[key]
+	return ok
+}
+
 // parseValue expects fieldName already resolved to its final schema field
 // name (see dedupeFieldNames) — it matches schema entries exactly, without
 // re-sanitizing, so it still finds duplicate-derived names like "928_2".

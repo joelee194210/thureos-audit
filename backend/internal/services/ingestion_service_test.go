@@ -444,3 +444,23 @@ func TestValidateFieldValue_NoImpliedDecimalsAcceptsDotInRawValue(t *testing.T) 
 		t.Error("sin ImpliedDecimals configurado, un valor con punto decimal sigue siendo válido (comportamiento actual sin cambios)")
 	}
 }
+
+func TestIsValidDateFormatPreset_EmptyIsValid(t *testing.T) {
+	if !IsValidDateFormatPreset("") {
+		t.Error("un DateFormat vacío (sin formato configurado) debe ser válido")
+	}
+}
+
+func TestIsValidDateFormatPreset_KnownPresetsAreValid(t *testing.T) {
+	for key := range DateFormatPresets {
+		if !IsValidDateFormatPreset(key) {
+			t.Errorf("%q está en DateFormatPresets y debería ser válido", key)
+		}
+	}
+}
+
+func TestIsValidDateFormatPreset_UnknownKeyIsInvalid(t *testing.T) {
+	if IsValidDateFormatPreset("YYYY-DD-MM") {
+		t.Error("una clave que no está en DateFormatPresets debe ser inválida")
+	}
+}

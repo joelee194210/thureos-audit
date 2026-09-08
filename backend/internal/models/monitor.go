@@ -31,6 +31,7 @@ type SchemaField struct {
 	Required        bool      `bson:"required" json:"required"`
 	Sample          string    `bson:"sample" json:"sample"`
 	ImpliedDecimals int       `bson:"implied_decimals,omitempty" json:"impliedDecimals,omitempty"`
+	DateFormat      string    `bson:"date_format,omitempty" json:"dateFormat,omitempty"`
 }
 
 type APIMode string
