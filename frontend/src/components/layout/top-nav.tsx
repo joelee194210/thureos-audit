@@ -20,6 +20,7 @@ import {
   Moon,
   Sun,
   ScanSearch,
+  Bot,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ const areas: NavArea[] = [
       { name: "Reglas", href: "/rules", icon: ShieldCheck },
       { name: "Screening", href: "/screening", icon: ScanSearch },
       { name: "Dashboards", href: "/dashboards", icon: BarChart3 },
+      { name: "Analista IA", href: "/chatbot", icon: Bot },
     ],
   },
   {
