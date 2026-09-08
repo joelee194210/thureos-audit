@@ -85,6 +85,27 @@ func (h *ChatHandler) ListMessages(c *fiber.Ctx) error {
 	return c.JSON(msgs)
 }
 
+func (h *ChatHandler) DeleteConversation(c *fiber.Ctx) error {
+	convID, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "id inválido"})
+	}
+	userID, err := primitive.ObjectIDFromHex(c.Locals("userId").(string))
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "usuario inválido"})
+	}
+
+	conv, err := h.chatRepo.GetConversation(c.Context(), convID)
+	if err != nil || conv.UserID != userID {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "conversación no encontrada"})
+	}
+
+	if err := h.chatRepo.DeleteConversation(c.Context(), convID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"message": "conversación borrada"})
+}
+
 func (h *ChatHandler) Ask(c *fiber.Ctx) error {
 	convID, err := primitive.ObjectIDFromHex(c.Params("id"))
 	if err != nil {

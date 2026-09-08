@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Bot, Send, Plus } from "lucide-react";
+import { Bot, Send, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/lib/use-toast";
 import { monitorsApi } from "@/lib/api/monitors";
 import type { Monitor } from "@/lib/types";
@@ -32,6 +32,7 @@ export default function ChatbotPage() {
   const [activeArtifact, setActiveArtifact] = useState<
     ChatMessage["artifact"] | null
   >(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Reset the active conversation/thread when the monitor changes. Adjusting
   // state during render (guarded by comparing against the previous prop) is
@@ -73,6 +74,22 @@ export default function ChatbotPage() {
       .catch(() => toastError("Error al cargar la conversación"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  async function confirmDeleteConversation(id: string) {
+    try {
+      await chatApi.deleteConversation(id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (id === conversationId) {
+        setConversationId(null);
+        setMessages([]);
+        setActiveArtifact(null);
+      }
+    } catch {
+      toastError("Error al borrar la conversación");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function newConversation() {
     if (!monitorId) return;
@@ -165,19 +182,57 @@ export default function ChatbotPage() {
                 <Plus className="h-4 w-4" /> Nueva conversación
               </Button>
               <div className="space-y-1">
-                {conversations.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setConversationId(c.id)}
-                    className={`w-full text-left rounded-md px-2 py-1.5 text-sm truncate ${
-                      c.id === conversationId
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/50"
-                    }`}
-                  >
-                    {c.title}
-                  </button>
-                ))}
+                {conversations.map((c) =>
+                  deletingId === c.id ? (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1.5 text-xs"
+                    >
+                      <span className="flex-1 truncate text-muted-foreground">
+                        ¿Borrar?
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 text-destructive hover:text-destructive"
+                        onClick={() => confirmDeleteConversation(c.id)}
+                      >
+                        Sí
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5"
+                        onClick={() => setDeletingId(null)}
+                      >
+                        No
+                      </Button>
+                    </div>
+                  ) : (
+                    <div key={c.id} className="group flex items-center">
+                      <button
+                        onClick={() => setConversationId(c.id)}
+                        className={`flex-1 min-w-0 text-left rounded-md px-2 py-1.5 text-sm truncate ${
+                          c.id === conversationId
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/50"
+                        }`}
+                      >
+                        {c.title}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingId(c.id);
+                        }}
+                        className="shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                        aria-label={`Borrar conversación ${c.title}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ),
+                )}
               </div>
             </div>
 

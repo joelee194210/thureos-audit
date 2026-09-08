@@ -123,6 +123,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	chat.Get("/conversations", h.Chat.ListConversations)
 	chat.Get("/conversations/:id/messages", h.Chat.ListMessages)
 	chat.Post("/conversations/:id/messages", h.Chat.Ask)
+	chat.Delete("/conversations/:id", h.Chat.DeleteConversation)
 
 	// Dashboards
 	dashboards := protected.Group("/dashboards")

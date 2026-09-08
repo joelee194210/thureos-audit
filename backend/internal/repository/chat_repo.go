@@ -121,3 +121,16 @@ func (r *ChatRepository) ListMessagesByConversation(ctx context.Context, convers
 	}
 	return results, nil
 }
+
+// DeleteConversation borra la conversación y todos sus mensajes. El
+// llamador es responsable de verificar ownership antes de invocar esto
+// (mismo criterio que el resto del repositorio — ver chat_handler.go).
+func (r *ChatRepository) DeleteConversation(ctx context.Context, id primitive.ObjectID) error {
+	if _, err := r.messages.DeleteMany(ctx, bson.M{"conversation_id": id}); err != nil {
+		return fmt.Errorf("borrando mensajes de la conversación %s: %w", id.Hex(), err)
+	}
+	if _, err := r.conversations.DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+		return fmt.Errorf("borrando conversación %s: %w", id.Hex(), err)
+	}
+	return nil
+}

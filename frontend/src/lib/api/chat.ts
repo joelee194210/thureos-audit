@@ -52,4 +52,7 @@ export const chatApi = {
     api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, {
       content,
     }),
+
+  deleteConversation: (conversationId: string) =>
+    api.delete<{ message: string }>(`/chat/conversations/${conversationId}`),
 };
