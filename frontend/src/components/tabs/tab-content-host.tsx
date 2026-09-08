@@ -3,6 +3,7 @@
 import { useTabStore } from "@/stores/tab-store";
 import { matchRegistryEntry, type RegistryEntry } from "@/lib/tab-registry";
 import { useTabNavigation } from "./use-tab-navigation";
+import { TabErrorBoundary } from "./tab-error-boundary";
 
 export function TabContentHost({
   currentPath,
@@ -30,7 +31,9 @@ export function TabContentHost({
       <div hidden={visiblePath !== null}>{children}</div>
       {registeredOpenTabs.map(({ tab, entry, params }) => (
         <div key={tab.path} hidden={visiblePath !== tab.path}>
-          <entry.Component params={params} tabId={tab.id} />
+          <TabErrorBoundary tabLabel={tab.label}>
+            <entry.Component params={params} tabId={tab.id} />
+          </TabErrorBoundary>
         </div>
       ))}
     </>
