@@ -233,3 +233,78 @@ func TestDetectAPISchema_OversizedResponseReturnsSizeErrorNotJSONError(t *testin
 		t.Fatalf("expected a size-limit error, got: %v", err)
 	}
 }
+
+func schemaField(name string, t models.FieldType) models.SchemaField {
+	return models.SchemaField{Name: name, Type: t}
+}
+
+func TestCompareSchema_ExactMatchSameOrder(t *testing.T) {
+	expected := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("fecha", models.FieldDate)}
+	actual := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("fecha", models.FieldDate)}
+
+	diff := compareSchema(expected, actual)
+	if !diff.Match {
+		t.Errorf("esperaba match, obtuve %+v", diff)
+	}
+}
+
+func TestCompareSchema_OrderIrrelevant(t *testing.T) {
+	expected := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("fecha", models.FieldDate)}
+	actual := []models.SchemaField{schemaField("fecha", models.FieldDate), schemaField("monto", models.FieldNumber)}
+
+	diff := compareSchema(expected, actual)
+	if !diff.Match {
+		t.Errorf("el orden de las columnas no debería importar, obtuve %+v", diff)
+	}
+}
+
+func TestCompareSchema_MissingField(t *testing.T) {
+	expected := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("clavepais", models.FieldString)}
+	actual := []models.SchemaField{schemaField("monto", models.FieldNumber)}
+
+	diff := compareSchema(expected, actual)
+	if diff.Match {
+		t.Fatal("esperaba Match=false por campo faltante")
+	}
+	if len(diff.MissingFields) != 1 || diff.MissingFields[0] != "clavepais" {
+		t.Errorf("MissingFields = %v, esperaba [clavepais]", diff.MissingFields)
+	}
+}
+
+func TestCompareSchema_ExtraField(t *testing.T) {
+	expected := []models.SchemaField{schemaField("monto", models.FieldNumber)}
+	actual := []models.SchemaField{schemaField("monto", models.FieldNumber), schemaField("ticket", models.FieldString)}
+
+	diff := compareSchema(expected, actual)
+	if diff.Match {
+		t.Fatal("esperaba Match=false por campo de más")
+	}
+	if len(diff.ExtraFields) != 1 || diff.ExtraFields[0] != "ticket" {
+		t.Errorf("ExtraFields = %v, esperaba [ticket]", diff.ExtraFields)
+	}
+}
+
+func TestCompareSchema_TypeMismatch(t *testing.T) {
+	expected := []models.SchemaField{schemaField("monto", models.FieldNumber)}
+	actual := []models.SchemaField{schemaField("monto", models.FieldString)}
+
+	diff := compareSchema(expected, actual)
+	if diff.Match {
+		t.Fatal("esperaba Match=false por tipo distinto")
+	}
+	if len(diff.TypeMismatches) != 1 || diff.TypeMismatches[0].Field != "monto" {
+		t.Errorf("TypeMismatches = %+v, esperaba un mismatch en 'monto'", diff.TypeMismatches)
+	}
+	if diff.TypeMismatches[0].ExpectedType != models.FieldNumber || diff.TypeMismatches[0].ActualType != models.FieldString {
+		t.Errorf("tipos del mismatch incorrectos: %+v", diff.TypeMismatches[0])
+	}
+}
+
+func TestCompareSchema_EmptyExpectedAlwaysMatches(t *testing.T) {
+	actual := []models.SchemaField{schemaField("cualquier_cosa", models.FieldString)}
+
+	diff := compareSchema(nil, actual)
+	if !diff.Match {
+		t.Errorf("un monitor sin base establecida (primer upload) siempre debería matchear, obtuve %+v", diff)
+	}
+}

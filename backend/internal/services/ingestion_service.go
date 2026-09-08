@@ -568,3 +568,57 @@ func sanitizeFieldName(name string) string {
 	name = strings.ReplaceAll(name, ".", "_")
 	return name
 }
+
+// compareSchema compares a newly-detected file schema against a
+// monitor's established schema. Field order doesn't matter — only the
+// set of names and, per matching name, the type. An empty expected
+// schema (the monitor's first upload, nothing to compare against yet)
+// always matches.
+func compareSchema(expected []models.SchemaField, actual []models.SchemaField) models.SchemaDiff {
+	if len(expected) == 0 {
+		return models.SchemaDiff{Match: true}
+	}
+
+	expectedByName := make(map[string]models.SchemaField, len(expected))
+	for _, f := range expected {
+		expectedByName[f.Name] = f
+	}
+	actualByName := make(map[string]models.SchemaField, len(actual))
+	for _, f := range actual {
+		actualByName[f.Name] = f
+	}
+
+	var missing, extra []string
+	var mismatches []models.FieldTypeMismatch
+
+	for name, exp := range expectedByName {
+		act, ok := actualByName[name]
+		if !ok {
+			missing = append(missing, name)
+			continue
+		}
+		if act.Type != exp.Type {
+			mismatches = append(mismatches, models.FieldTypeMismatch{
+				Field:        name,
+				ExpectedType: exp.Type,
+				ActualType:   act.Type,
+			})
+		}
+	}
+	for name := range actualByName {
+		if _, ok := expectedByName[name]; !ok {
+			extra = append(extra, name)
+		}
+	}
+
+	sort.Strings(missing)
+	sort.Strings(extra)
+	sort.Slice(mismatches, func(i, j int) bool { return mismatches[i].Field < mismatches[j].Field })
+
+	return models.SchemaDiff{
+		Match:          len(missing) == 0 && len(extra) == 0 && len(mismatches) == 0,
+		MissingFields:  missing,
+		ExtraFields:    extra,
+		TypeMismatches: mismatches,
+	}
+}
