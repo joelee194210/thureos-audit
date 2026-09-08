@@ -14,6 +14,27 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Reemplaza fill/stroke="var(--chart-N)" por su valor real resuelto —
+ * el SVG clonado se serializa a un documento standalone sin acceso a las
+ * custom properties del documento padre. */
+function resolveChartColors(root: SVGElement) {
+  const style = getComputedStyle(document.documentElement);
+
+  function resolveElement(el: SVGElement) {
+    for (const attr of ["fill", "stroke"] as const) {
+      const value = el.getAttribute(attr);
+      const match = value?.match(/^var\((--chart-\d+)\)$/);
+      if (match) {
+        const resolved = style.getPropertyValue(match[1]).trim();
+        if (resolved) el.setAttribute(attr, resolved);
+      }
+    }
+  }
+
+  resolveElement(root);
+  root.querySelectorAll<SVGElement>("[fill], [stroke]").forEach(resolveElement);
+}
+
 /** Serializa el primer <svg> dentro de containerId y lo baja como PNG. */
 export function exportChartAsPNG(containerId: string, filename: string) {
   const container = document.getElementById(containerId);
@@ -24,6 +45,7 @@ export function exportChartAsPNG(containerId: string, filename: string) {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute("width", String(width));
   clone.setAttribute("height", String(height));
+  resolveChartColors(clone);
 
   const svgData = new XMLSerializer().serializeToString(clone);
   const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });

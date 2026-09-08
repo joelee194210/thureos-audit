@@ -105,8 +105,10 @@ func (h *ChatHandler) Ask(c *fiber.Ctx) error {
 	if err != nil {
 		// ChatService.Ask usa el mismo sentinel para "no es tuya" y "no
 		// existe" — nunca distingue cuál de las dos, ni filtra detalle
-		// interno en el body.
-		if errors.Is(err, services.ErrConversationNotFound) {
+		// interno en el body. ErrMonitorNotFound cubre el mismo caso para
+		// un monitor borrado mientras la conversación seguía apuntando a
+		// él — nunca se filtra el error crudo de Mongo en la respuesta.
+		if errors.Is(err, services.ErrConversationNotFound) || errors.Is(err, services.ErrMonitorNotFound) {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

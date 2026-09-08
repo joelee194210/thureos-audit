@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -29,6 +30,11 @@ const chatMaxToolIterations = 5
 // filtrar cuál de las dos ocurrió (ver Global Constraints: conversaciones
 // privadas por usuario).
 var ErrConversationNotFound = errors.New("conversación no encontrada")
+
+// ErrMonitorNotFound cubre un monitor borrado mientras una conversación
+// seguía apuntando a él — mismo criterio que ErrConversationNotFound:
+// nunca se filtra el error crudo de Mongo en la respuesta.
+var ErrMonitorNotFound = errors.New("monitor no encontrado")
 
 // queryToolDescription y queryToolJSONSchema definen el contrato de la
 // única herramienta que el chatbot expone — el mismo texto/schema se usa
@@ -196,6 +202,9 @@ func (s *ChatService) executeQuery(ctx context.Context, monitor *models.Monitor,
 // intente leer la conversación de otro usuario — se trata como "no
 // encontrada", no se filtra la existencia (ver Global Constraints).
 func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.ObjectID, userMessage string) (models.ChatMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
 	conv, err := s.chatRepo.GetConversation(ctx, conversationID)
 	if err != nil {
 		return models.ChatMessage{}, ErrConversationNotFound
@@ -206,7 +215,7 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 
 	monitor, err := s.monitorRepo.FindByID(ctx, conv.MonitorID)
 	if err != nil {
-		return models.ChatMessage{}, fmt.Errorf("cargando monitor: %w", err)
+		return models.ChatMessage{}, ErrMonitorNotFound
 	}
 
 	history, err := s.chatRepo.ListMessagesByConversation(ctx, conversationID)
@@ -362,6 +371,21 @@ func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, moni
 	return extractAnthropicFinalAnswer(message)
 }
 
+// chatEmptyArtifactOnlyText es el placeholder cuando la respuesta del LLM
+// es solo el bloque <artifact> sin texto alrededor — nunca se persiste un
+// ChatMessage con Content vacío (en Anthropic, reenviar un bloque de texto
+// vacío en el historial del turno siguiente puede romper la conversación
+// para siempre; en DeepSeek, un texto vacío hoy descarta un artefacto
+// válido con un error).
+const chatEmptyArtifactOnlyText = "Generé la visualización que se muestra en el panel."
+
+func finalizeArtifactText(text string, artifact *models.ChatArtifact) string {
+	if text == "" && artifact != nil {
+		return chatEmptyArtifactOnlyText
+	}
+	return text
+}
+
 func extractAnthropicFinalAnswer(message *anthropic.Message) (string, *models.ChatArtifact, error) {
 	var sb strings.Builder
 	for _, block := range message.Content {
@@ -373,7 +397,7 @@ func extractAnthropicFinalAnswer(message *anthropic.Message) (string, *models.Ch
 		return "", nil, fmt.Errorf("respuesta vacía del proveedor")
 	}
 	text, artifact := extractArtifactAndText(sb.String())
-	return text, artifact, nil
+	return finalizeArtifactText(text, artifact), artifact, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +516,7 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 
 		if choice.FinishReason != "tool_calls" || len(choice.Message.ToolCalls) == 0 {
 			text, artifact := extractArtifactAndText(choice.Message.Content)
+			text = finalizeArtifactText(text, artifact)
 			if text == "" {
 				return "", nil, fmt.Errorf("respuesta vacía del proveedor")
 			}
@@ -545,6 +570,7 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
 	}
 	text, artifact := extractArtifactAndText(parsed.Choices[0].Message.Content)
+	text = finalizeArtifactText(text, artifact)
 	if text == "" {
 		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
 	}
