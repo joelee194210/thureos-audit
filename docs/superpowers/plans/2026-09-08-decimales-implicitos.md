@@ -32,7 +32,7 @@
 **Interfaces:**
 - Produces: `models.SchemaField.ImpliedDecimals int` (Tareas 2-5 lo consumen). `parseValue` con soporte de división — Tarea 2 no lo modifica, pero corre en el mismo call-path.
 
-- [ ] **Step 1: Agregar el campo al modelo**
+- [x] **Step 1: Agregar el campo al modelo**
 
 En `backend/internal/models/monitor.go`, buscar:
 
@@ -57,7 +57,7 @@ type SchemaField struct {
 }
 ```
 
-- [ ] **Step 2: Escribir los tests de `parseValue` con decimales implícitos (deben fallar)**
+- [x] **Step 2: Escribir los tests de `parseValue` con decimales implícitos (deben fallar)**
 
 Agregar al final de `backend/internal/services/ingestion_service_test.go`:
 
@@ -107,12 +107,12 @@ func TestParseValue_InvalidNumberFallsBackToRawString(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Correr los tests, confirmar que fallan**
+- [x] **Step 3: Correr los tests, confirmar que fallan**
 
 Run: `cd backend && go test ./internal/services/... -run TestParseValue_ImpliedDecimals -v`
 Expected: FAIL — `f != 5000.0` (la división todavía no existe, así que `TestParseValue_ImpliedDecimalsDividesCorrectly` da `500000` en vez de `5000`). Los otros 3 tests pueden pasar de entrada (no dependen de la división) — igual confirmá que compilan y corren.
 
-- [ ] **Step 4: Implementar la división en `parseValue`**
+- [x] **Step 4: Implementar la división en `parseValue`**
 
 Agregar `"math"` al bloque de imports existente de `ingestion_service.go`.
 
@@ -137,7 +137,7 @@ Reemplazar por:
 				}
 ```
 
-- [ ] **Step 5: Correr los tests, confirmar que pasan**
+- [x] **Step 5: Correr los tests, confirmar que pasan**
 
 Run: `cd backend && go test ./internal/services/... -run TestParseValue_ImpliedDecimals -v`
 Expected: PASS (4/4)
@@ -145,7 +145,7 @@ Expected: PASS (4/4)
 Run también: `cd backend && go test ./internal/services/... -v` (suite completa) — confirmar que nada existente se rompió.
 Expected: todos los tests existentes (incluidos los de las Tareas 1-2 del plan de la bitácora) siguen en PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/models/monitor.go backend/internal/services/ingestion_service.go backend/internal/services/ingestion_service_test.go
@@ -166,7 +166,7 @@ git commit -m "feat(decimales): campo ImpliedDecimals y división en parseValue"
 
 ⚠️ **Esta tarea cambia la firma de una función ya aprobada y con tests existentes** (Tarea 2 del plan de la bitácora de cargas). Los 8 call-sites de test existentes deben actualizarse — están listados exactos en el Step 2, no hay que buscarlos a mano.
 
-- [ ] **Step 1: Escribir los 2 tests nuevos (deben fallar — todavía ni compila, porque la firma vieja no acepta un `models.SchemaField` como segundo argumento)**
+- [x] **Step 1: Escribir los 2 tests nuevos (deben fallar — todavía ni compila, porque la firma vieja no acepta un `models.SchemaField` como segundo argumento)**
 
 Agregar al final de `backend/internal/services/ingestion_service_test.go`:
 
@@ -186,7 +186,7 @@ func TestValidateFieldValue_NoImpliedDecimalsAcceptsDotInRawValue(t *testing.T) 
 }
 ```
 
-- [ ] **Step 2: Actualizar los 8 call-sites existentes de `validateFieldValue` en los tests**
+- [x] **Step 2: Actualizar los 8 call-sites existentes de `validateFieldValue` en los tests**
 
 En `backend/internal/services/ingestion_service_test.go`, hacer estos 8 reemplazos EXACTOS (buscar cada línea, reemplazar tal cual — son las únicas 8 llamadas directas a `validateFieldValue` en el archivo, dentro de las funciones `TestValidateFieldValue_*` ya existentes de la Tarea 2 del plan de la bitácora):
 
@@ -203,7 +203,7 @@ En `backend/internal/services/ingestion_service_test.go`, hacer estos 8 reemplaz
 
 No tocar ningún otro test (en particular, los tests de `firstInvalidField` y de `compareSchema` no llaman a `validateFieldValue` directamente, no necesitan cambios).
 
-- [ ] **Step 3: Cambiar la firma de `validateFieldValue` y actualizar `firstInvalidField`**
+- [x] **Step 3: Cambiar la firma de `validateFieldValue` y actualizar `firstInvalidField`**
 
 Buscar:
 
@@ -274,12 +274,12 @@ Reemplazar por:
 				if !validateFieldValue(row[i], f) {
 ```
 
-- [ ] **Step 4: Correr los tests, confirmar que todo pasa**
+- [x] **Step 4: Correr los tests, confirmar que todo pasa**
 
 Run: `cd backend && go test ./internal/services/... -v`
 Expected: PASS completo — los 2 tests nuevos, los 8 tests actualizados de `validateFieldValue`, y el resto de la suite (incluidos `TestFirstInvalidField_*`, `TestCompareSchema_*`, y los tests de `parseValue` de la Tarea 1) sin regresiones.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/services/ingestion_service.go backend/internal/services/ingestion_service_test.go
@@ -300,7 +300,7 @@ git commit -m "feat(decimales): rechazar filas con punto decimal cuando hay deci
 
 Sin TDD — plomería, mismo criterio que el resto de los endpoints de este plan y del de la bitácora (sin tests HTTP de handlers en este proyecto, salvo funciones puras extraídas).
 
-- [ ] **Step 1: Agregar el handler `UpdateSchema`**
+- [x] **Step 1: Agregar el handler `UpdateSchema`**
 
 Agregar a `backend/internal/handlers/monitor_handler.go`, después de cualquier handler existente relacionado a monitores (ej. después de `Update`):
 
@@ -350,7 +350,7 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 }
 ```
 
-- [ ] **Step 2: Registrar la ruta**
+- [x] **Step 2: Registrar la ruta**
 
 En `backend/internal/router/router.go`, agregar junto a las otras rutas de `/monitors/:id/...` (ej. después de la línea de `monitors.Put("/:id", ...)`):
 
@@ -358,16 +358,16 @@ En `backend/internal/router/router.go`, agregar junto a las otras rutas de `/mon
 	monitors.Put("/:id/schema", middleware.RequireComplianceOrAbove(), h.Monitor.UpdateSchema)
 ```
 
-- [ ] **Step 3: Verificar que compila**
+- [x] **Step 3: Verificar que compila**
 
 Run: `cd backend && go build ./...`
 Expected: sin errores.
 
-- [ ] **Step 4: Verificación manual**
+- [x] **Step 4: Verificación manual**
 
 Con un backend local corriendo contra Mongo real (ver notas de verificación de tareas anteriores de este roadmap para levantar el entorno si hace falta): elegir un monitor con `schema` no vacío, hacer `curl -X PUT http://localhost:8080/api/v1/monitors/<id>/schema -H "Authorization: Bearer <token-compliance>" -H "Content-Type: application/json" -d '{"schema": [...]}'` con el mismo array de campos pero un `impliedDecimals` distinto en uno de ellos — confirmar `200` con el schema actualizado, y que `GET /monitors/<id>` refleja el cambio. Probar también enviar un schema con un campo de menos → confirmar `400`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/handlers/monitor_handler.go backend/internal/router/router.go
@@ -387,7 +387,7 @@ git commit -m "feat(decimales): endpoint PUT /monitors/:id/schema"
 
 Sin tests — mismo criterio que el resto de `lib/api/*.ts`.
 
-- [ ] **Step 1: Agregar el campo al tipo `SchemaField`**
+- [x] **Step 1: Agregar el campo al tipo `SchemaField`**
 
 En `frontend/src/lib/types.ts`, buscar:
 
@@ -412,7 +412,7 @@ export interface SchemaField {
 }
 ```
 
-- [ ] **Step 2: Agregar el método al cliente**
+- [x] **Step 2: Agregar el método al cliente**
 
 En `frontend/src/lib/api/monitors.ts`, agregar al objeto `monitorsApi`, después de `update`:
 
@@ -423,12 +423,12 @@ En `frontend/src/lib/api/monitors.ts`, agregar al objeto `monitorsApi`, después
 
 `SchemaField` ya está importado en este archivo (lo usa `create`/`detectSchema`) — no hace falta agregar el import.
 
-- [ ] **Step 3: Verificar que compila**
+- [x] **Step 3: Verificar que compila**
 
 Run: `cd frontend && npx tsc --noEmit`
 Expected: sin errores.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/src/lib/types.ts frontend/src/lib/api/monitors.ts
@@ -447,7 +447,7 @@ git commit -m "feat(decimales): cliente API del frontend"
 
 Sin tests (componente React).
 
-- [ ] **Step 1: Agregar el import de `Select`**
+- [x] **Step 1: Agregar el import de `Select`**
 
 Agregar al bloque de imports de `frontend/src/components/tabs/content/monitor-tab-content.tsx`:
 
@@ -461,7 +461,7 @@ import {
 } from "@/components/ui/select";
 ```
 
-- [ ] **Step 2: Agregar `toastSuccess` a la destructuración existente de `useToast`**
+- [x] **Step 2: Agregar `toastSuccess` a la destructuración existente de `useToast`**
 
 Buscar:
 
@@ -475,7 +475,7 @@ Reemplazar por:
   const { toastError, toastSuccess } = useToast();
 ```
 
-- [ ] **Step 3: Agregar estado de edición del schema**
+- [x] **Step 3: Agregar estado de edición del schema**
 
 Cerca de la declaración de `const [monitor, setMonitor] = useState<Monitor | null>(null);`, agregar:
 
@@ -484,7 +484,7 @@ Cerca de la declaración de `const [monitor, setMonitor] = useState<Monitor | nu
   const [savingSchema, setSavingSchema] = useState(false);
 ```
 
-- [ ] **Step 4: Sincronizar `schemaEdits` cuando cambia `monitor.schema`**
+- [x] **Step 4: Sincronizar `schemaEdits` cuando cambia `monitor.schema`**
 
 Agregar, junto a los demás `useEffect` del componente:
 
@@ -496,7 +496,7 @@ Agregar, junto a los demás `useEffect` del componente:
   }, [monitor?.schema]);
 ```
 
-- [ ] **Step 5: Agregar el handler de edición y de guardado**
+- [x] **Step 5: Agregar el handler de edición y de guardado**
 
 Agregar cerca de las demás funciones del componente (ej. junto a `loadMonitor`):
 
@@ -521,7 +521,7 @@ Agregar cerca de las demás funciones del componente (ej. junto a `loadMonitor`)
   }
 ```
 
-- [ ] **Step 6: Reescribir la pestaña "Esquema" con el control editable**
+- [x] **Step 6: Reescribir la pestaña "Esquema" con el control editable**
 
 Buscar el bloque completo:
 
@@ -625,23 +625,23 @@ Reemplazar por:
 
 `user` (de `useAuthStore`) y `Button` ya están importados/declarados en este archivo (usados en otras partes del componente) — no hace falta agregarlos.
 
-- [ ] **Step 7: Verificar que compila**
+- [x] **Step 7: Verificar que compila**
 
 Run: `cd frontend && npx tsc --noEmit`
 Expected: sin errores.
 
-- [ ] **Step 8: Verificar lint**
+- [x] **Step 8: Verificar lint**
 
 Run: `cd frontend && npm run lint`
 Expected: 0 errores nuevos (warnings preexistentes sin cambios).
 
-- [ ] **Step 9: Verificación manual**
+- [x] **Step 9: Verificación manual**
 
 Levantar el dev server, navegar al detalle de un monitor con schema ya establecido, ir a la pestaña "Esquema" → confirmar que los campos `number` muestran el selector de decimales implícitos, que los campos de otro tipo NO lo muestran, que cambiar el valor y hacer click en "Guardar" persiste (recargar la página y confirmar que el valor elegido sigue ahí), y que un usuario `viewer` ve el esquema pero sin el selector editable ni el botón "Guardar".
 
 Subir después un archivo con un valor entero a ese campo (ej. `500000` con 2 decimales implícitos configurados) y confirmar en la pestaña "Datos" que el valor guardado es `5000` (o `5000.00` según cómo se muestre), no `500000`.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add frontend/src/components/tabs/content/monitor-tab-content.tsx
@@ -652,9 +652,9 @@ git commit -m "feat(decimales): editar decimales implícitos por campo en la pes
 
 ## Criterio de cierre del lote
 
-- Gate (`go build ./...`, `go test ./...`, `npx tsc --noEmit`, `npm run lint`, `npm run build`) sin bloqueantes en las 5 tareas.
-- Recorrido manual:
-  - Configurar 2 decimales implícitos en un campo `monto`, subir un archivo con valores enteros → los valores guardados quedan divididos correctamente.
-  - Subir al mismo monitor un archivo donde ese campo ya trae punto decimal → esa fila se rechaza (queda reflejado en la bitácora de cargas, si ese plan ya está mergeado).
-  - Dejar un campo sin decimales implícitos configurados (valor 0) → comportamiento idéntico al actual, sin cambios.
-  - Confirmar que un usuario `viewer` no puede editar el esquema.
+- [x] Gate (`go build ./...`, `go test ./...`, `npx tsc --noEmit`, `npm run lint`, `npm run build`) sin bloqueantes en las 5 tareas.
+- [x] Recorrido manual (verificado 2026-09-08 en `worktree-decimales-implicitos`, monitor "Verificacion E2E Decimales"):
+  - Configurar 2 decimales implícitos en un campo `monto`, subir un archivo con valores enteros → los valores guardados quedan divididos correctamente. Confirmado: `15050` → `150.5`, `27525` → `275.25`.
+  - Subir al mismo monitor un archivo donde ese campo ya trae punto decimal → esa fila se rechaza (queda reflejado en la bitácora de cargas). Confirmado: verificación previa detecta "1 de 1 filas fallarían"; tras subir de todas formas, bitácora registra estado "Parcial", 0 aceptados / 1 rechazado, motivo `monto — valor "150.50" no es del tipo number`.
+  - Dejar un campo sin decimales implícitos configurados (valor 0) → comportamiento idéntico al actual, sin cambios. Confirmado: la carga inicial (antes de configurar decimales) guardó `15050`/`27525` sin dividir.
+  - Confirmar que un usuario `viewer` no puede editar el esquema. Confirmado: la UI no muestra el control editable ni el botón "Guardar" para `viewer`; `PUT /monitors/:id/schema` con token de viewer devuelve `403 {"error":"insufficient permissions"}`.
