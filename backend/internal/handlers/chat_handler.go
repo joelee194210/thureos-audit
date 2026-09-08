@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
@@ -101,10 +103,10 @@ func (h *ChatHandler) Ask(c *fiber.Ctx) error {
 
 	msg, err := h.chatService.Ask(c.Context(), convID, userID, body.Content)
 	if err != nil {
-		// ChatService.Ask usa exactamente este texto para "no es tuya o no
-		// existe" (nunca filtra cuál de las dos) — mapear a 404 en vez de
-		// 500, que es lo que le corresponde semánticamente.
-		if err.Error() == "conversación no encontrada" {
+		// ChatService.Ask usa el mismo sentinel para "no es tuya" y "no
+		// existe" — nunca distingue cuál de las dos, ni filtra detalle
+		// interno en el body.
+		if errors.Is(err, services.ErrConversationNotFound) {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -22,6 +23,12 @@ import (
 // query_monitor_data para UNA pregunta — evita un loop infinito si el
 // proveedor insiste en pedir herramientas sin nunca responder.
 const chatMaxToolIterations = 5
+
+// ErrConversationNotFound cubre tanto "no existe" como "no es tuya" — el
+// handler nunca debe poder distinguir las dos por el mensaje de error, ni
+// filtrar cuál de las dos ocurrió (ver Global Constraints: conversaciones
+// privadas por usuario).
+var ErrConversationNotFound = errors.New("conversación no encontrada")
 
 // queryToolDescription y queryToolJSONSchema definen el contrato de la
 // única herramienta que el chatbot expone — el mismo texto/schema se usa
@@ -191,10 +198,10 @@ func (s *ChatService) executeQuery(ctx context.Context, monitor *models.Monitor,
 func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.ObjectID, userMessage string) (models.ChatMessage, error) {
 	conv, err := s.chatRepo.GetConversation(ctx, conversationID)
 	if err != nil {
-		return models.ChatMessage{}, fmt.Errorf("cargando conversación: %w", err)
+		return models.ChatMessage{}, ErrConversationNotFound
 	}
 	if conv.UserID != userID {
-		return models.ChatMessage{}, fmt.Errorf("conversación no encontrada")
+		return models.ChatMessage{}, ErrConversationNotFound
 	}
 
 	monitor, err := s.monitorRepo.FindByID(ctx, conv.MonitorID)
