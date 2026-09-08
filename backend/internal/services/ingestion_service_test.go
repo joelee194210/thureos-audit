@@ -310,49 +310,49 @@ func TestCompareSchema_EmptyExpectedAlwaysMatches(t *testing.T) {
 }
 
 func TestValidateFieldValue_NumberValid(t *testing.T) {
-	if !validateFieldValue("1234.56", models.FieldNumber) {
+	if !validateFieldValue("1234.56", models.SchemaField{Type: models.FieldNumber}) {
 		t.Error("esperaba que '1234.56' sea válido como number")
 	}
 }
 
 func TestValidateFieldValue_NumberInvalid(t *testing.T) {
-	if validateFieldValue("n/a", models.FieldNumber) {
+	if validateFieldValue("n/a", models.SchemaField{Type: models.FieldNumber}) {
 		t.Error("esperaba que 'n/a' NO sea válido como number")
 	}
 }
 
 func TestValidateFieldValue_DateValid(t *testing.T) {
-	if !validateFieldValue("2026-09-08", models.FieldDate) {
+	if !validateFieldValue("2026-09-08", models.SchemaField{Type: models.FieldDate}) {
 		t.Error("esperaba que '2026-09-08' sea válido como date")
 	}
 }
 
 func TestValidateFieldValue_DateInvalid(t *testing.T) {
-	if validateFieldValue("no es una fecha", models.FieldDate) {
+	if validateFieldValue("no es una fecha", models.SchemaField{Type: models.FieldDate}) {
 		t.Error("esperaba que 'no es una fecha' NO sea válido como date")
 	}
 }
 
 func TestValidateFieldValue_BooleanValid(t *testing.T) {
-	if !validateFieldValue("true", models.FieldBoolean) {
+	if !validateFieldValue("true", models.SchemaField{Type: models.FieldBoolean}) {
 		t.Error("esperaba que 'true' sea válido como boolean")
 	}
 }
 
 func TestValidateFieldValue_BooleanInvalid(t *testing.T) {
-	if validateFieldValue("tal vez", models.FieldBoolean) {
+	if validateFieldValue("tal vez", models.SchemaField{Type: models.FieldBoolean}) {
 		t.Error("esperaba que 'tal vez' NO sea válido como boolean")
 	}
 }
 
 func TestValidateFieldValue_StringAlwaysValid(t *testing.T) {
-	if !validateFieldValue("cualquier texto 123", models.FieldString) {
+	if !validateFieldValue("cualquier texto 123", models.SchemaField{Type: models.FieldString}) {
 		t.Error("un campo de tipo string siempre debería aceptar cualquier valor")
 	}
 }
 
 func TestValidateFieldValue_EmptyAlwaysValid(t *testing.T) {
-	if !validateFieldValue("", models.FieldNumber) {
+	if !validateFieldValue("", models.SchemaField{Type: models.FieldNumber}) {
 		t.Error("una celda vacía no debería rechazarse por tipo — es un campo opcional sin valor, no un valor inválido")
 	}
 }
@@ -428,5 +428,19 @@ func TestParseValue_InvalidNumberFallsBackToRawString(t *testing.T) {
 	got := parseValue("no-es-numero", schema, "monto")
 	if got != "no-es-numero" {
 		t.Errorf("got %v, want el string crudo sin parsear", got)
+	}
+}
+
+func TestValidateFieldValue_ImpliedDecimalsRejectsDotInRawValue(t *testing.T) {
+	field := models.SchemaField{Type: models.FieldNumber, ImpliedDecimals: 2}
+	if validateFieldValue("500.5", field) {
+		t.Error("un valor con punto decimal en un campo con ImpliedDecimals>0 debería ser inválido")
+	}
+}
+
+func TestValidateFieldValue_NoImpliedDecimalsAcceptsDotInRawValue(t *testing.T) {
+	field := models.SchemaField{Type: models.FieldNumber, ImpliedDecimals: 0}
+	if !validateFieldValue("500.5", field) {
+		t.Error("sin ImpliedDecimals configurado, un valor con punto decimal sigue siendo válido (comportamiento actual sin cambios)")
 	}
 }
