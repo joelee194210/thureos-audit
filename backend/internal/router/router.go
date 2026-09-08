@@ -88,9 +88,11 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	monitors.Post("/:id/rotate-push-token", middleware.RequireComplianceOrAbove(), h.Monitor.RotatePushToken)
 	monitors.Post("/:id/evaluate", middleware.RequireComplianceOrAbove(), h.Monitor.Evaluate)
 	monitors.Get("/:id/data", h.Monitor.GetData)
+	monitors.Post("/:id/upload-log/:logId/approve", middleware.RequireComplianceOrAbove(), h.Monitor.UploadLogApprove)
 
 	// Ingestion history
 	protected.Get("/ingestion-history", h.Monitor.IngestionHistory)
+	protected.Get("/upload-log", h.Monitor.UploadLogList)
 
 	// Rules
 	rules := protected.Group("/rules")

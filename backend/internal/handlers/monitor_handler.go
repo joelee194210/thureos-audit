@@ -492,6 +492,89 @@ func (h *MonitorHandler) IngestionHistory(c *fiber.Ctx) error {
 	return c.JSON(entries)
 }
 
+// UploadLogList devuelve la bitácora completa, opcionalmente filtrada
+// por monitor vía ?monitorId=. Mismo criterio de acceso que
+// IngestionHistory (cualquier usuario autenticado puede ver — no hay
+// restricción de rol para lectura, solo para aprobar).
+func (h *MonitorHandler) UploadLogList(c *fiber.Ctx) error {
+	var monitorID *primitive.ObjectID
+	if q := c.Query("monitorId"); q != "" {
+		id, err := primitive.ObjectIDFromHex(q)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitorId"})
+		}
+		monitorID = &id
+	}
+
+	entries, err := h.uploadLogRepo.List(c.Context(), monitorID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(entries)
+}
+
+// UploadLogApprove re-ingiere el archivo guardado de una entrada
+// rejected_structure, tratando su estructura como la nueva base del
+// monitor. Se limpia monitor.Schema antes de re-ingerir: compareSchema
+// trata un schema vacío como "primer upload" (siempre match), así el
+// mismo camino de Ingest* que ya existe detecta y fija la nueva
+// estructura sin necesitar un parámetro "forzar" aparte.
+func (h *MonitorHandler) UploadLogApprove(c *fiber.Ctx) error {
+	monitorID, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+	logID, err := primitive.ObjectIDFromHex(c.Params("logId"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid log ID"})
+	}
+
+	entry, err := h.uploadLogRepo.Get(c.Context(), logID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "upload log entry not found"})
+	}
+	if entry.Status != models.UploadStatusRejectedStructure {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "solo se pueden aprobar entradas rechazadas por estructura"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), monitorID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+
+	fileBytes, err := h.uploadLogRepo.DownloadRejectedFile(c.Context(), entry)
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	monitor.Schema = nil // fuerza a compareSchema a tratar esto como primer upload
+
+	var outcome *services.IngestOutcome
+	switch entry.SourceType {
+	case models.SourceCSV:
+		outcome, err = h.ingestionService.IngestCSV(c.Context(), monitor, &memFile{Reader: bytes.NewReader(fileBytes)}, false)
+	case models.SourceExcel:
+		outcome, err = h.ingestionService.IngestExcel(c.Context(), monitor, &memFile{Reader: bytes.NewReader(fileBytes)}, false)
+	case models.SourceTXT:
+		outcome, err = h.ingestionService.IngestTXT(c.Context(), monitor, &memFile{Reader: bytes.NewReader(fileBytes)}, false)
+	default:
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "tipo de fuente no soportado para aprobación"})
+	}
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	if approveErr := h.uploadLogRepo.MarkApproved(c.Context(), logID, outcome.TotalRows, outcome.RowsAccepted, len(outcome.RowRejections), outcome.RowRejections); approveErr != nil {
+		log.Printf("bitacora: marcando entrada aprobada: %v", approveErr)
+	}
+
+	return c.JSON(fiber.Map{
+		"recordsIngested": outcome.RowsAccepted,
+		"rowsRejected":    len(outcome.RowRejections),
+		"schema":          monitor.Schema,
+	})
+}
+
 func (h *MonitorHandler) Evaluate(c *fiber.Ctx) error {
 	id, err := primitive.ObjectIDFromHex(c.Params("id"))
 	if err != nil {
