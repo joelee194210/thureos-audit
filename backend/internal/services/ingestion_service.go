@@ -258,9 +258,13 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	}
 
 	monitor.Schema = schema
-	count, err := s.monitorRepo.InsertData(ctx, monitor.CollectionID, documents)
-	if err != nil {
-		return nil, fmt.Errorf("inserting data: %w", err)
+	var count int
+	if len(documents) > 0 {
+		var err error
+		count, err = s.monitorRepo.InsertData(ctx, monitor.CollectionID, documents)
+		if err != nil {
+			return nil, fmt.Errorf("inserting data: %w", err)
+		}
 	}
 	outcome.RowsAccepted = count
 
@@ -467,9 +471,13 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	}
 
 	monitor.Schema = schema
-	count, err := s.monitorRepo.InsertData(ctx, monitor.CollectionID, documents)
-	if err != nil {
-		return nil, fmt.Errorf("inserting data: %w", err)
+	var count int
+	if len(documents) > 0 {
+		var err error
+		count, err = s.monitorRepo.InsertData(ctx, monitor.CollectionID, documents)
+		if err != nil {
+			return nil, fmt.Errorf("inserting data: %w", err)
+		}
 	}
 	outcome.RowsAccepted = count
 
