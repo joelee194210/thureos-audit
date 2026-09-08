@@ -812,7 +812,7 @@ export function MonitorTabContent({
                           )}
                           {field.type === "date" && user?.role !== "viewer" && (
                             <Select
-                              value={field.dateFormat ?? "auto"}
+                              value={field.dateFormat || "auto"}
                               onValueChange={(v) =>
                                 updateDateFormat(field.name, v === "auto" ? "" : v)
                               }
