@@ -31,6 +31,21 @@ type IngestionService struct {
 	httpClient *http.Client
 }
 
+// IngestOutcome carries the result of a validated ingestion attempt for
+// CSV/TXT/Excel (the three formats sharing the raw-string-row shape).
+// Ingested is false only when the file's overall structure didn't match
+// the monitor's established schema (SchemaDiff.Match == false) — in
+// that case nothing was written to Mongo. When dryRun is true, Ingested
+// reflects what WOULD have happened, but nothing is written either way.
+type IngestOutcome struct {
+	Ingested       bool
+	DetectedSchema []models.SchemaField
+	SchemaDiff     models.SchemaDiff
+	TotalRows      int
+	RowsAccepted   int
+	RowRejections  []models.RowRejection
+}
+
 func NewIngestionService(monitorRepo *repository.MonitorRepository) *IngestionService {
 	return &IngestionService{monitorRepo: monitorRepo, httpClient: newSafeHTTPClient()}
 }
@@ -127,18 +142,18 @@ func (s *IngestionService) DetectAPISchema(ctx context.Context, cfg models.Sourc
 }
 
 // IngestCSV parses a CSV file, detects schema, and stores data
-func (s *IngestionService) IngestCSV(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
-	return s.ingestDelimited(ctx, monitor, file, ',')
+func (s *IngestionService) IngestCSV(ctx context.Context, monitor *models.Monitor, file multipart.File, dryRun bool) (*IngestOutcome, error) {
+	return s.ingestDelimited(ctx, monitor, file, ',', dryRun)
 }
 
 // IngestTXT parses a delimited text file (default: tab-separated), detects
 // schema, and stores data. Same parser as IngestCSV — only the default
 // delimiter differs, and SourceConfig.Delimiter always overrides either default.
-func (s *IngestionService) IngestTXT(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
-	return s.ingestDelimited(ctx, monitor, file, '\t')
+func (s *IngestionService) IngestTXT(ctx context.Context, monitor *models.Monitor, file multipart.File, dryRun bool) (*IngestOutcome, error) {
+	return s.ingestDelimited(ctx, monitor, file, '\t', dryRun)
 }
 
-func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.Monitor, file multipart.File, defaultDelimiter rune) (int, error) {
+func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.Monitor, file multipart.File, defaultDelimiter rune, dryRun bool) (*IngestOutcome, error) {
 	delimiter := defaultDelimiter
 	hasHeaderRow := true
 	if monitor.SourceConfig != nil {
@@ -167,7 +182,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	if hasHeaderRow {
 		h, err := reader.Read()
 		if err != nil {
-			return 0, fmt.Errorf("reading headers: %w", err)
+			return nil, fmt.Errorf("reading headers: %w", err)
 		}
 		headers = h
 	}
@@ -178,7 +193,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 			break
 		}
 		if err != nil {
-			return 0, fmt.Errorf("reading row: %w", err)
+			return nil, fmt.Errorf("reading row: %w", err)
 		}
 		if headers == nil {
 			// No header row: synthesize column names from the first row's width.
@@ -196,26 +211,58 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	// BSON document — the second silently overwrites the first, so a monitor
 	// can report N detected columns while actually storing fewer.
 	fieldNames := dedupeFieldNames(headers)
+	detectedSchema := detectSchemaFromCSV(fieldNames, allRows)
 
-	if len(monitor.Schema) == 0 {
-		monitor.Schema = detectSchemaFromCSV(fieldNames, allRows)
+	diff := compareSchema(monitor.Schema, detectedSchema)
+	if !diff.Match {
+		return &IngestOutcome{
+			Ingested:       false,
+			DetectedSchema: detectedSchema,
+			SchemaDiff:     diff,
+			TotalRows:      len(allRows),
+		}, nil
+	}
+
+	schema := monitor.Schema
+	if len(schema) == 0 {
+		schema = detectedSchema
 	}
 
 	documents := make([]interface{}, 0, len(allRows))
-	for _, row := range allRows {
+	var rejections []models.RowRejection
+	for i, row := range allRows {
+		if field, reason := firstInvalidField(row, fieldNames, schema); field != "" {
+			rejections = append(rejections, models.RowRejection{RowIndex: i + 1, Field: field, Reason: reason})
+			continue
+		}
 		doc := bson.M{"_ingested_at": time.Now()}
-		for i, name := range fieldNames {
-			if i < len(row) {
-				doc[name] = parseValue(row[i], monitor.Schema, name)
+		for j, name := range fieldNames {
+			if j < len(row) {
+				doc[name] = parseValue(row[j], schema, name)
 			}
 		}
 		documents = append(documents, doc)
 	}
 
+	outcome := &IngestOutcome{
+		Ingested:       true,
+		DetectedSchema: detectedSchema,
+		SchemaDiff:     diff,
+		TotalRows:      len(allRows),
+		RowsAccepted:   len(documents),
+		RowRejections:  rejections,
+	}
+
+	if dryRun {
+		return outcome, nil
+	}
+
+	monitor.Schema = schema
 	count, err := s.monitorRepo.InsertData(ctx, monitor.CollectionID, documents)
 	if err != nil {
-		return 0, fmt.Errorf("inserting data: %w", err)
+		return nil, fmt.Errorf("inserting data: %w", err)
 	}
+	outcome.RowsAccepted = count
 
 	now := time.Now()
 	if err := s.monitorRepo.Update(ctx, monitor.ID, bson.M{
@@ -226,7 +273,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 		log.Printf("ingestion: actualizando estado del monitor: %v", err)
 	}
 
-	return count, nil
+	return outcome, nil
 }
 
 // IngestJSON parses a JSON document, optionally drilling into a nested
@@ -349,10 +396,10 @@ func toRecordSlice(v interface{}) ([]map[string]interface{}, error) {
 }
 
 // IngestExcel parses an XLSX file and stores data
-func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Monitor, file multipart.File) (int, error) {
+func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Monitor, file multipart.File, dryRun bool) (*IngestOutcome, error) {
 	f, err := excelize.OpenReader(file)
 	if err != nil {
-		return 0, fmt.Errorf("opening Excel: %w", err)
+		return nil, fmt.Errorf("opening Excel: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -362,37 +409,69 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	}
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
-		return 0, fmt.Errorf("reading Excel rows: %w", err)
+		return nil, fmt.Errorf("reading Excel rows: %w", err)
 	}
 
 	if len(rows) < 2 {
-		return 0, fmt.Errorf("excel file has no data rows")
+		return nil, fmt.Errorf("excel file has no data rows")
 	}
 
 	headers := rows[0]
 	dataRows := rows[1:]
 
 	fieldNames := dedupeFieldNames(headers)
+	detectedSchema := detectSchemaFromCSV(fieldNames, dataRows)
 
-	if len(monitor.Schema) == 0 {
-		monitor.Schema = detectSchemaFromCSV(fieldNames, dataRows)
+	diff := compareSchema(monitor.Schema, detectedSchema)
+	if !diff.Match {
+		return &IngestOutcome{
+			Ingested:       false,
+			DetectedSchema: detectedSchema,
+			SchemaDiff:     diff,
+			TotalRows:      len(dataRows),
+		}, nil
+	}
+
+	schema := monitor.Schema
+	if len(schema) == 0 {
+		schema = detectedSchema
 	}
 
 	documents := make([]interface{}, 0, len(dataRows))
-	for _, row := range dataRows {
+	var rejections []models.RowRejection
+	for i, row := range dataRows {
+		if field, reason := firstInvalidField(row, fieldNames, schema); field != "" {
+			rejections = append(rejections, models.RowRejection{RowIndex: i + 1, Field: field, Reason: reason})
+			continue
+		}
 		doc := bson.M{"_ingested_at": time.Now()}
-		for i, name := range fieldNames {
-			if i < len(row) {
-				doc[name] = parseValue(row[i], monitor.Schema, name)
+		for j, name := range fieldNames {
+			if j < len(row) {
+				doc[name] = parseValue(row[j], schema, name)
 			}
 		}
 		documents = append(documents, doc)
 	}
 
+	outcome := &IngestOutcome{
+		Ingested:       true,
+		DetectedSchema: detectedSchema,
+		SchemaDiff:     diff,
+		TotalRows:      len(dataRows),
+		RowsAccepted:   len(documents),
+		RowRejections:  rejections,
+	}
+
+	if dryRun {
+		return outcome, nil
+	}
+
+	monitor.Schema = schema
 	count, err := s.monitorRepo.InsertData(ctx, monitor.CollectionID, documents)
 	if err != nil {
-		return 0, fmt.Errorf("inserting data: %w", err)
+		return nil, fmt.Errorf("inserting data: %w", err)
 	}
+	outcome.RowsAccepted = count
 
 	now := time.Now()
 	if err := s.monitorRepo.Update(ctx, monitor.ID, bson.M{
@@ -403,7 +482,7 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 		log.Printf("ingestion: actualizando estado del monitor: %v", err)
 	}
 
-	return count, nil
+	return outcome, nil
 }
 
 // Schema detection helpers

@@ -7,8 +7,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
@@ -23,6 +26,7 @@ type MonitorHandler struct {
 	ingestionService *services.IngestionService
 	jobQueue         *services.JobQueue
 	ruleEngine       *services.RuleEngine
+	uploadLogRepo    *repository.UploadLogRepository
 }
 
 func NewMonitorHandler(
@@ -30,12 +34,14 @@ func NewMonitorHandler(
 	ingestionService *services.IngestionService,
 	jobQueue *services.JobQueue,
 	ruleEngine *services.RuleEngine,
+	uploadLogRepo *repository.UploadLogRepository,
 ) *MonitorHandler {
 	return &MonitorHandler{
 		monitorRepo:      monitorRepo,
 		ingestionService: ingestionService,
 		jobQueue:         jobQueue,
 		ruleEngine:       ruleEngine,
+		uploadLogRepo:    uploadLogRepo,
 	}
 }
 
@@ -312,27 +318,40 @@ func (h *MonitorHandler) UploadData(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 	}
 
-	file, err := c.FormFile("file")
+	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "file is required"})
 	}
 
-	f, err := file.Open()
+	f, err := fileHeader.Open()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "opening file"})
 	}
 	defer func() { _ = f.Close() }()
 
-	var count int
+	// El archivo se lee una sola vez desde el multipart; si el intento se
+	// rechaza por estructura, se sube a GridFS desde estos mismos bytes
+	// (leídos antes de que Ingest* consuma el reader).
+	rawBytes, err := io.ReadAll(f)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "reading file"})
+	}
+	reReadable := &memFile{Reader: bytes.NewReader(rawBytes)}
+
+	var outcome *services.IngestOutcome
 	switch monitor.SourceType {
 	case models.SourceCSV:
-		count, err = h.ingestionService.IngestCSV(c.Context(), monitor, f)
+		outcome, err = h.ingestionService.IngestCSV(c.Context(), monitor, reReadable, false)
 	case models.SourceJSON:
-		count, err = h.ingestionService.IngestJSON(c.Context(), monitor, f)
+		count, jerr := h.ingestionService.IngestJSON(c.Context(), monitor, bytes.NewReader(rawBytes))
+		if jerr == nil {
+			outcome = &services.IngestOutcome{Ingested: true, TotalRows: count, RowsAccepted: count}
+		}
+		err = jerr
 	case models.SourceExcel:
-		count, err = h.ingestionService.IngestExcel(c.Context(), monitor, f)
+		outcome, err = h.ingestionService.IngestExcel(c.Context(), monitor, reReadable, false)
 	case models.SourceTXT:
-		count, err = h.ingestionService.IngestTXT(c.Context(), monitor, f)
+		outcome, err = h.ingestionService.IngestTXT(c.Context(), monitor, reReadable, false)
 	default:
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "unsupported source type"})
 	}
@@ -341,19 +360,69 @@ func (h *MonitorHandler) UploadData(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	userID, _ := primitive.ObjectIDFromHex(c.Locals("userId").(string))
+	userEmail, _ := c.Locals("email").(string)
+
+	entry := &models.UploadLogEntry{
+		MonitorID:       id,
+		MonitorName:     monitor.Name,
+		FileName:        fileHeader.Filename,
+		SourceType:      monitor.SourceType,
+		UploadedBy:      userID,
+		UploadedByEmail: userEmail,
+		UploadedAt:      time.Now(),
+		TotalRows:       outcome.TotalRows,
+	}
+
+	if !outcome.Ingested {
+		entry.Status = models.UploadStatusRejectedStructure
+		entry.SchemaDiff = &outcome.SchemaDiff
+		entry.RowsRejected = outcome.TotalRows
+		if saveErr := h.uploadLogRepo.Save(c.Context(), entry, rawBytes); saveErr != nil {
+			log.Printf("bitacora: guardando entrada rechazada: %v", saveErr)
+		}
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{
+			"error":      "el archivo no coincide con la estructura del monitor",
+			"schemaDiff": outcome.SchemaDiff,
+		})
+	}
+
+	entry.RowsAccepted = outcome.RowsAccepted
+	entry.RowsRejected = len(outcome.RowRejections)
+	entry.RowRejections = outcome.RowRejections
+	if entry.RowsRejected > 0 {
+		entry.Status = models.UploadStatusPartial
+	} else {
+		entry.Status = models.UploadStatusAccepted
+	}
+	if saveErr := h.uploadLogRepo.Save(c.Context(), entry, nil); saveErr != nil {
+		log.Printf("bitacora: guardando entrada aceptada: %v", saveErr)
+	}
+
 	// Enqueue rule evaluation (async via worker)
 	queued := false
 	if h.jobQueue != nil {
-		err = h.jobQueue.Enqueue(c.Context(), services.EvalJob{MonitorID: id.Hex()})
-		queued = err == nil
+		qerr := h.jobQueue.Enqueue(c.Context(), services.EvalJob{MonitorID: id.Hex()})
+		queued = qerr == nil
 	}
 
 	return c.JSON(fiber.Map{
-		"recordsIngested":  count,
+		"recordsIngested":  outcome.RowsAccepted,
+		"rowsRejected":     entry.RowsRejected,
 		"schema":           monitor.Schema,
 		"evaluationQueued": queued,
 	})
 }
+
+// memFile adapta un *bytes.Reader a multipart.File (io.Reader +
+// io.ReaderAt + io.Seeker + io.Closer) para poder re-parsear el mismo
+// archivo dos veces (una para detectar, otra si Ingest* lo necesita) sin
+// volver a leer del stream multipart original.
+type memFile struct {
+	*bytes.Reader
+}
+
+func (memFile) Close() error { return nil }
 
 func (h *MonitorHandler) IngestionHistory(c *fiber.Ctx) error {
 	entries, err := h.monitorRepo.GetIngestionHistory(c.Context())

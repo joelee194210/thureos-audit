@@ -44,6 +44,7 @@ func main() {
 	ruleRepo := repository.NewRuleRepository(mongo)
 	redFlagRepo := repository.NewRedFlagRepository(mongo)
 	redFlagReportRepo := repository.NewRedFlagReportRepository(mongo)
+	uploadLogRepo := repository.NewUploadLogRepository(mongo)
 	redFlagCaseRepo := repository.NewRedFlagCaseRepository(mongo)
 	redFlagLogRepo := repository.NewRedFlagLogRepository(mongo)
 	dashboardRepo := repository.NewDashboardRepository(mongo)
@@ -149,7 +150,7 @@ func main() {
 	// Initialize handlers
 	h := &router.Handlers{
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
-		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine),
+		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine, uploadLogRepo),
 		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, redFlagRepo, aiRulesService, ruleEngine),
 		Chat:          handlers.NewChatHandler(chatRepo, chatService),
 		RuleTemplate:  handlers.NewRuleTemplateHandler(monitorRepo, ruleRepo, redFlagRepo),
