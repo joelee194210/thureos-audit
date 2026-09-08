@@ -721,6 +721,12 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 		}
 	}
 
+	for _, f := range body.Schema {
+		if !services.IsValidDateFormatPreset(f.DateFormat) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("formato de fecha inválido: %s", f.DateFormat)})
+		}
+	}
+
 	monitor.Schema = body.Schema
 	if err := h.monitorRepo.Update(c.Context(), monitor.ID, bson.M{"schema": monitor.Schema}); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
