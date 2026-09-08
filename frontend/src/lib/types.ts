@@ -56,6 +56,53 @@ export interface SchemaField {
   sample: string;
 }
 
+export type UploadStatus = "accepted" | "partial" | "rejected_structure" | "approved";
+
+export interface FieldTypeMismatch {
+  field: string;
+  expectedType: string;
+  actualType: string;
+}
+
+export interface SchemaDiff {
+  match: boolean;
+  missingFields?: string[];
+  extraFields?: string[];
+  typeMismatches?: FieldTypeMismatch[];
+}
+
+export interface RowRejection {
+  rowIndex: number;
+  field: string;
+  reason: string;
+}
+
+export interface UploadLogEntry {
+  id: string;
+  monitorId: string;
+  monitorName: string;
+  fileName: string;
+  sourceType: SourceType;
+  uploadedByEmail: string;
+  uploadedAt: string;
+  status: UploadStatus;
+  totalRows: number;
+  rowsAccepted: number;
+  rowsRejected: number;
+  schemaDiff?: SchemaDiff;
+  rowRejections?: RowRejection[];
+}
+
+export interface UploadCheckResult {
+  match: boolean;
+  missingFields?: string[];
+  extraFields?: string[];
+  typeMismatches?: FieldTypeMismatch[];
+  totalRows: number;
+  rowsThatWouldPass: number;
+  rowsThatWouldFail: number;
+}
+
 export interface Monitor {
   id: string;
   name: string;

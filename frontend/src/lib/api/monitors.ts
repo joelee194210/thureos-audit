@@ -4,6 +4,7 @@ import type {
   SchemaField,
   SourceType,
   CreateSourceConfig,
+  UploadCheckResult,
 } from "@/lib/types";
 
 export const monitorsApi = {
@@ -55,6 +56,9 @@ export const monitorsApi = {
       schema: SchemaField[];
       evaluationQueued: boolean;
     }>(`/monitors/${id}/upload`, file),
+
+  uploadCheck: (id: string, file: File) =>
+    api.upload<UploadCheckResult>(`/monitors/${id}/upload/check`, file),
 
   getData: (id: string) =>
     api.get<{
