@@ -414,6 +414,66 @@ func (h *MonitorHandler) UploadData(c *fiber.Ctx) error {
 	})
 }
 
+// UploadCheck corre la misma validación que UploadData (comparación de
+// estructura + validación por fila) SIN escribir nada en Mongo ni en la
+// bitácora — un "dry run" para que el frontend alerte al usuario antes
+// de comprometer la subida real.
+func (h *MonitorHandler) UploadCheck(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "file is required"})
+	}
+
+	f, err := fileHeader.Open()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "opening file"})
+	}
+	defer func() { _ = f.Close() }()
+
+	rawBytes, err := io.ReadAll(f)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "reading file"})
+	}
+
+	var outcome *services.IngestOutcome
+	switch monitor.SourceType {
+	case models.SourceCSV:
+		outcome, err = h.ingestionService.IngestCSV(c.Context(), monitor, &memFile{Reader: bytes.NewReader(rawBytes)}, true)
+	case models.SourceExcel:
+		outcome, err = h.ingestionService.IngestExcel(c.Context(), monitor, &memFile{Reader: bytes.NewReader(rawBytes)}, true)
+	case models.SourceTXT:
+		outcome, err = h.ingestionService.IngestTXT(c.Context(), monitor, &memFile{Reader: bytes.NewReader(rawBytes)}, true)
+	default:
+		// JSON no tiene validación por fila en esta iteración (ver spec)
+		// ni necesita dry-run — se sube directo.
+		return c.JSON(fiber.Map{"match": true, "totalRows": 0, "rowsThatWouldPass": 0, "rowsThatWouldFail": 0})
+	}
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"match":             outcome.SchemaDiff.Match,
+		"missingFields":     outcome.SchemaDiff.MissingFields,
+		"extraFields":       outcome.SchemaDiff.ExtraFields,
+		"typeMismatches":    outcome.SchemaDiff.TypeMismatches,
+		"totalRows":         outcome.TotalRows,
+		"rowsThatWouldPass": outcome.RowsAccepted,
+		"rowsThatWouldFail": len(outcome.RowRejections),
+	})
+}
+
 // memFile adapta un *bytes.Reader a multipart.File (io.Reader +
 // io.ReaderAt + io.Seeker + io.Closer) para poder re-parsear el mismo
 // archivo dos veces (una para detectar, otra si Ingest* lo necesita) sin

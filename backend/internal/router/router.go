@@ -84,6 +84,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	monitors.Put("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Update)
 	monitors.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Delete)
 	monitors.Post("/:id/upload", middleware.RequireComplianceOrAbove(), h.Monitor.UploadData)
+	monitors.Post("/:id/upload/check", middleware.RequireComplianceOrAbove(), h.Monitor.UploadCheck)
 	monitors.Post("/:id/rotate-push-token", middleware.RequireComplianceOrAbove(), h.Monitor.RotatePushToken)
 	monitors.Post("/:id/evaluate", middleware.RequireComplianceOrAbove(), h.Monitor.Evaluate)
 	monitors.Get("/:id/data", h.Monitor.GetData)
