@@ -708,11 +708,15 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 	for _, f := range monitor.Schema {
 		currentNames[f.Name] = true
 	}
-	if len(body.Schema) != len(currentNames) {
+	bodyNames := make(map[string]bool, len(body.Schema))
+	for _, f := range body.Schema {
+		bodyNames[f.Name] = true
+	}
+	if len(bodyNames) != len(currentNames) {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "el schema enviado debe tener los mismos campos que el actual"})
 	}
-	for _, f := range body.Schema {
-		if !currentNames[f.Name] {
+	for name := range currentNames {
+		if !bodyNames[name] {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "el schema enviado debe tener los mismos campos que el actual"})
 		}
 	}
