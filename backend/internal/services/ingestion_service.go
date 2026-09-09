@@ -219,7 +219,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 	fieldNames := dedupeFieldNames(headers)
 	detectedSchema := detectSchemaFromCSV(fieldNames, allRows)
 
-	diff := compareSchema(monitor.Schema, detectedSchema)
+	diff := compareSchema(schemaForComparison(monitor.Schema, monitor.DerivedTimestamp), detectedSchema)
 	if !diff.Match {
 		return &IngestOutcome{
 			Ingested:       false,
@@ -434,7 +434,7 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 	fieldNames := dedupeFieldNames(headers)
 	detectedSchema := detectSchemaFromCSV(fieldNames, dataRows)
 
-	diff := compareSchema(monitor.Schema, detectedSchema)
+	diff := compareSchema(schemaForComparison(monitor.Schema, monitor.DerivedTimestamp), detectedSchema)
 	if !diff.Match {
 		return &IngestOutcome{
 			Ingested:       false,
@@ -668,6 +668,32 @@ func applyDerivedTimestamp(doc bson.M, cfg *models.DerivedTimestampConfig) {
 	if ts, ok := BuildDerivedTimestamp(*cfg, doc); ok {
 		doc[cfg.TargetName] = ts
 	}
+}
+
+// schemaForComparison devuelve el schema del monitor sin la entrada del
+// timestamp derivado, que es la única que compareSchema no debe mirar.
+//
+// El campo derivado se materializa durante la ingesta a partir de otras dos
+// columnas: por construcción NUNCA es una columna del archivo. Si participa
+// de la comparación de estructura aparece siempre en `missing`, compareSchema
+// devuelve Match=false y el monitor deja de ingerir (422) desde el momento en
+// que se configura el timestamp derivado — para siempre.
+//
+// El schema completo (con el campo derivado, tipado date) se sigue usando
+// para parseValue/firstInvalidField y se sigue persistiendo: solo se lo
+// excluye de la comparación contra los encabezados del archivo.
+func schemaForComparison(schema []models.SchemaField, cfg *models.DerivedTimestampConfig) []models.SchemaField {
+	if cfg == nil || cfg.TargetName == "" {
+		return schema
+	}
+	out := make([]models.SchemaField, 0, len(schema))
+	for _, f := range schema {
+		if f.Name == cfg.TargetName {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // parseValue expects fieldName already resolved to its final schema field

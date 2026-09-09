@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/thureos/compliance/internal/models"
+	"github.com/xuri/excelize/v2"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -591,5 +593,125 @@ func TestApplyDerivedTimestamp_InconstruibleNoAgregaCampo(t *testing.T) {
 	applyDerivedTimestamp(doc, cfg)
 	if _, existe := doc["timestamp"]; existe {
 		t.Error("no debería agregarse el campo si no se puede construir")
+	}
+}
+
+// fakeUploadFile adapta un string a multipart.File (Reader + ReaderAt +
+// Seeker + Closer) para poder ejercitar los caminos de ingesta sin subir
+// un archivo real.
+type fakeUploadFile struct{ *strings.Reader }
+
+func (fakeUploadFile) Close() error { return nil }
+
+func monitorConTimestampDerivado() *models.Monitor {
+	return &models.Monitor{
+		Name: "polizas",
+		Schema: []models.SchemaField{
+			{Name: "fechapoliza", Type: models.FieldNumber},
+			{Name: "horapoliza", Type: models.FieldNumber},
+			{Name: "tarjeta", Type: models.FieldString},
+			// El campo derivado vive en el schema (para reglas, chat y
+			// dashboards) pero nunca es una columna del archivo.
+			{Name: "timestamp", Type: models.FieldDate},
+		},
+		DerivedTimestamp: &models.DerivedTimestampConfig{
+			DateField: "fechapoliza", DateFormat: "YYYYMMDD",
+			TimeField: "horapoliza", TimeFormat: "HHMMSS",
+			TargetName: "timestamp",
+		},
+	}
+}
+
+// REGRESIÓN: configurar el timestamp derivado agregaba su campo al schema
+// del monitor, y compareSchema lo reportaba como columna faltante en cada
+// upload posterior — el monitor dejaba de ingerir para siempre (422).
+func TestIngestCSV_ArchivoSinLaColumnaDerivadaSigueIngiriendo(t *testing.T) {
+	monitor := monitorConTimestampDerivado()
+	csv := "fechapoliza,horapoliza,tarjeta\n20260907,21517,T4111\n20260907,21520,T4111\n"
+
+	svc := NewIngestionService(nil)
+	outcome, err := svc.IngestCSV(context.Background(), monitor, fakeUploadFile{strings.NewReader(csv)}, true)
+	if err != nil {
+		t.Fatalf("IngestCSV devolvió error: %v", err)
+	}
+	if !outcome.Ingested {
+		t.Errorf("el archivo debería ingerirse; diff = %+v", outcome.SchemaDiff)
+	}
+	// Ingested puede ser false por 'extra' o por 'mismatches' también: se
+	// fija el síntoma exacto, que el campo derivado no cuente como faltante.
+	for _, f := range outcome.SchemaDiff.MissingFields {
+		if f == "timestamp" {
+			t.Errorf("el campo derivado %q no debería participar de la comparación de estructura", f)
+		}
+	}
+	if len(outcome.SchemaDiff.MissingFields) != 0 {
+		t.Errorf("MissingFields = %v, want vacío", outcome.SchemaDiff.MissingFields)
+	}
+	if outcome.RowsAccepted != 2 {
+		t.Errorf("RowsAccepted = %d, want 2", outcome.RowsAccepted)
+	}
+}
+
+// El mismo camino, en Excel: compareSchema se llama igual en IngestExcel.
+func TestIngestExcel_ArchivoSinLaColumnaDerivadaSigueIngiriendo(t *testing.T) {
+	monitor := monitorConTimestampDerivado()
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	sheet := f.GetSheetName(0)
+	filas := [][]interface{}{
+		{"fechapoliza", "horapoliza", "tarjeta"},
+		{20260907, 21517, "T4111"},
+		{20260907, 21520, "T4111"},
+	}
+	for i, fila := range filas {
+		cell, err := excelize.CoordinatesToCellName(1, i+1)
+		if err != nil {
+			t.Fatalf("CoordinatesToCellName: %v", err)
+		}
+		if err := f.SetSheetRow(sheet, cell, &fila); err != nil {
+			t.Fatalf("SetSheetRow: %v", err)
+		}
+	}
+	var buf bytes.Buffer
+	if err := f.Write(&buf); err != nil {
+		t.Fatalf("escribiendo el xlsx: %v", err)
+	}
+
+	svc := NewIngestionService(nil)
+	outcome, err := svc.IngestExcel(context.Background(), monitor, fakeUploadFile{strings.NewReader(buf.String())}, true)
+	if err != nil {
+		t.Fatalf("IngestExcel devolvió error: %v", err)
+	}
+	if !outcome.Ingested {
+		t.Errorf("el archivo debería ingerirse; diff = %+v", outcome.SchemaDiff)
+	}
+	if len(outcome.SchemaDiff.MissingFields) != 0 {
+		t.Errorf("MissingFields = %v, want vacío", outcome.SchemaDiff.MissingFields)
+	}
+}
+
+func TestSchemaForComparison_ExcluyeSoloElCampoDerivado(t *testing.T) {
+	monitor := monitorConTimestampDerivado()
+	got := schemaForComparison(monitor.Schema, monitor.DerivedTimestamp)
+	if len(got) != 3 {
+		t.Fatalf("got %d campos, want 3: %+v", len(got), got)
+	}
+	for _, f := range got {
+		if f.Name == "timestamp" {
+			t.Error("el campo derivado no debería estar en el schema de comparación")
+		}
+	}
+	// El schema original no se toca: parseValue y firstInvalidField siguen
+	// necesitando saber que el campo derivado es de tipo date.
+	if len(monitor.Schema) != 4 {
+		t.Errorf("el schema del monitor fue mutado: %+v", monitor.Schema)
+	}
+}
+
+func TestSchemaForComparison_SinConfigDevuelveElMismoSchema(t *testing.T) {
+	schema := []models.SchemaField{{Name: "importe", Type: models.FieldNumber}}
+	got := schemaForComparison(schema, nil)
+	if len(got) != 1 || got[0].Name != "importe" {
+		t.Errorf("sin configuración el schema debe pasar intacto, got %+v", got)
 	}
 }
