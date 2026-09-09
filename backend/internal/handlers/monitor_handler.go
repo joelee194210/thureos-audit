@@ -867,22 +867,15 @@ func (h *MonitorHandler) BackfillDerivedTimestamp(c *fiber.Ctx) error {
 	}
 
 	cfg := *monitor.DerivedTimestamp
-	updated, skipped := 0, 0
-	err = h.monitorRepo.IterateData(c.Context(), monitor.CollectionID, func(doc bson.M) error {
-		if _, ya := doc[cfg.TargetName]; ya {
-			return nil
-		}
-		ts, ok := services.BuildDerivedTimestamp(cfg, doc)
-		if !ok {
-			skipped++
-			return nil
-		}
-		if err := h.monitorRepo.SetDataField(c.Context(), monitor.CollectionID, doc["_id"], cfg.TargetName, ts); err != nil {
-			return err
-		}
-		updated++
-		return nil
-	})
+	updated, skipped, err := h.monitorRepo.BackfillDataField(
+		c.Context(),
+		monitor.CollectionID,
+		cfg.TargetName,
+		[]string{cfg.DateField, cfg.TimeField},
+		func(doc bson.M) (interface{}, bool) {
+			return services.BuildDerivedTimestamp(cfg, doc)
+		},
+	)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

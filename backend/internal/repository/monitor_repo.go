@@ -241,34 +241,84 @@ func (r *MonitorRepository) GetIngestionHistory(ctx context.Context) ([]Ingestio
 // IterateData recorre todos los documentos de la colección de datos del
 // monitor, aplicando fn a cada uno. Se usa para el backfill del timestamp
 // derivado: cargar toda la colección en memoria no escala.
-func (r *MonitorRepository) IterateData(ctx context.Context, collectionID string, fn func(bson.M) error) error {
+// backfillBatchSize acota cuántas escrituras se agrupan por viaje a Mongo.
+const backfillBatchSize = 1000
+
+// BackfillDataField completa targetField en los documentos que no lo tienen,
+// calculando el valor con compute. Devuelve cuántos actualizó y cuántos no se
+// pudieron construir (compute devolvió false) — esos se dejan como están: un
+// valor inconstruible es dato incompleto, no dato inválido.
+//
+// El filtro por $exists corre del lado del servidor, así que los documentos ya
+// procesados ni se traen: de ahí sale la idempotencia, y una segunda corrida
+// no lee nada. Se proyectan solo los campos que compute necesita y las
+// escrituras van en lotes, porque el caso de uso es recorrer la colección
+// entera de un monitor.
+func (r *MonitorRepository) BackfillDataField(
+	ctx context.Context,
+	collectionID string,
+	targetField string,
+	sourceFields []string,
+	compute func(bson.M) (interface{}, bool),
+) (int, int, error) {
 	col := r.GetDataCollection(collectionID)
-	cursor, err := col.Find(ctx, bson.M{})
+
+	projection := bson.D{{Key: "_id", Value: 1}}
+	for _, f := range sourceFields {
+		projection = append(projection, bson.E{Key: f, Value: 1})
+	}
+
+	cursor, err := col.Find(ctx,
+		bson.M{targetField: bson.M{"$exists": false}},
+		options.Find().SetProjection(projection),
+	)
 	if err != nil {
-		return fmt.Errorf("finding data for backfill: %w", err)
+		return 0, 0, fmt.Errorf("finding data for backfill: %w", err)
 	}
 	defer func() { _ = cursor.Close(ctx) }()
+
+	updated, skipped := 0, 0
+	batch := make([]mongo.WriteModel, 0, backfillBatchSize)
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if _, err := col.BulkWrite(ctx, batch); err != nil {
+			return fmt.Errorf("writing backfill batch: %w", err)
+		}
+		updated += len(batch)
+		batch = batch[:0]
+		return nil
+	}
 
 	for cursor.Next(ctx) {
 		var doc bson.M
 		if err := cursor.Decode(&doc); err != nil {
-			return fmt.Errorf("decoding document: %w", err)
+			return updated, skipped, fmt.Errorf("decoding document: %w", err)
 		}
-		if err := fn(doc); err != nil {
-			return err
+		value, ok := compute(doc)
+		if !ok {
+			skipped++
+			continue
 		}
-	}
-	return cursor.Err()
-}
+		batch = append(batch, mongo.NewUpdateOneModel().
+			SetFilter(bson.M{"_id": doc["_id"]}).
+			SetUpdate(bson.M{"$set": bson.M{targetField: value}}))
 
-// SetDataField escribe un solo campo en un documento de la colección de datos.
-func (r *MonitorRepository) SetDataField(ctx context.Context, collectionID string, docID interface{}, field string, value interface{}) error {
-	col := r.GetDataCollection(collectionID)
-	_, err := col.UpdateByID(ctx, docID, bson.M{"$set": bson.M{field: value}})
-	if err != nil {
-		return fmt.Errorf("setting %s: %w", field, err)
+		if len(batch) >= backfillBatchSize {
+			if err := flush(); err != nil {
+				return updated, skipped, err
+			}
+		}
 	}
-	return nil
+	if err := cursor.Err(); err != nil {
+		return updated, skipped, fmt.Errorf("iterating data for backfill: %w", err)
+	}
+	if err := flush(); err != nil {
+		return updated, skipped, err
+	}
+	return updated, skipped, nil
 }
 
 // EnsureDataIndex crea un índice sobre la colección de datos del monitor si
