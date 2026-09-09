@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -262,5 +263,73 @@ func TestBuildAggregatePipelineDateScoped_VentanaDeTiempoUsaFechaNoString(t *tes
 	}
 	if want := dayEnd.Add(-35 * time.Second); !cutoff.Time().UTC().Equal(want.UTC()) {
 		t.Errorf("cutoff = %v, want %v (dayEnd - 35s)", cutoff.Time().UTC(), want.UTC())
+	}
+}
+
+func baseVelocityCond() models.VelocityCondition {
+	return models.VelocityCondition{
+		TimeField: "timestamp",
+		MaxGap:    "35s",
+		GroupBy:   "tarjeta",
+		MinEvents: 2,
+	}
+}
+
+// La forma del pipeline es el contrato: ordenar, calcular el evento
+// anterior por partición, medir la diferencia y quedarse con los pares
+// demasiado próximos.
+func TestBuildVelocityPipeline_Forma(t *testing.T) {
+	pipeline := buildVelocityPipeline(baseVelocityCond())
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$sort", "$setWindowFields", "$addFields", "$match"})
+}
+
+func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
+	cond := baseVelocityCond()
+	cond.Filter = []models.Condition{
+		{Field: "importe", Operator: models.OpGreaterThan, Value: 5000.0},
+		{Field: "mcc", Operator: models.OpEqual, Value: 7995.0},
+	}
+	pipeline := buildVelocityPipeline(cond)
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$sort", "$setWindowFields", "$addFields", "$match"})
+
+	wantFilter := BuildMongoFilter(models.ConditionGroup{Logic: models.LogicAND, Conditions: cond.Filter})
+	gotFilter := stageOperand(t, pipeline[0], "$match")
+	if fmt.Sprintf("%v", gotFilter) != fmt.Sprintf("%v", wantFilter) {
+		t.Errorf("el primer $match debería ser el filtro previo\ngot:  %v\nwant: %v", gotFilter, wantFilter)
+	}
+}
+
+// El $match final compara contra un número de segundos, no contra un string
+// ni una fecha: es la diferencia ya calculada por $dateDiff.
+func TestBuildVelocityPipeline_ComparaGapEnSegundos(t *testing.T) {
+	pipeline := buildVelocityPipeline(baseVelocityCond())
+	final := stageOperand(t, pipeline[len(pipeline)-1], "$match")
+
+	gapCond, ok := final["gapSeconds"].(bson.M)
+	if !ok {
+		t.Fatalf("esperaba una condición sobre gapSeconds, got %#v", final["gapSeconds"])
+	}
+	lte, ok := gapCond["$lte"]
+	if !ok {
+		t.Fatalf("esperaba $lte sobre gapSeconds, got %#v", gapCond)
+	}
+	if fmt.Sprintf("%v", lte) != "35" {
+		t.Errorf("$lte = %v, want 35 (segundos de '35s')", lte)
+	}
+	// La comparación de valor por sí sola no distingue un número de un
+	// string ("35" vs 35 imprimen igual) — que es exactamente el bug que
+	// dejó una regla sin disparar durante meses. Se verifica el tipo BSON.
+	if _, isNumber := lte.(int64); !isNumber {
+		t.Errorf("$lte llegó como %T (%#v), quiere un número de segundos (int64)", lte, lte)
+	}
+}
+
+// Sin evento anterior no hay gap que medir: la primera transacción de cada
+// partición no puede disparar por sí sola.
+func TestBuildVelocityPipeline_DescartaElPrimeroDeCadaParticion(t *testing.T) {
+	pipeline := buildVelocityPipeline(baseVelocityCond())
+	final := stageOperand(t, pipeline[len(pipeline)-1], "$match")
+	if _, ok := final["prevTime"]; !ok {
+		t.Error("el $match final debería descartar los documentos sin evento anterior (prevTime null)")
 	}
 }

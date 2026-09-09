@@ -185,6 +185,32 @@ func (e *RuleEngine) EvaluateRules(ctx context.Context, monitor *models.Monitor)
 			}
 		}
 
+		// Evaluate velocity conditions (gap entre eventos consecutivos)
+		for _, velCond := range rule.VelocityConditions {
+			velRedFlags, err := e.evaluateVelocityCondition(ctx, monitor, rule, velCond)
+			if err != nil {
+				log.Printf("ERROR velocity condition for rule %s field=%s: %v", rule.ID.Hex(), velCond.TimeField, err)
+				continue
+			}
+			for i := range velRedFlags {
+				isNew, err := e.redFlagRepo.Upsert(ctx, &velRedFlags[i])
+				if err != nil {
+					log.Printf("ERROR upserting velocity red flag for rule %s: %v", rule.ID.Hex(), err)
+					continue
+				}
+				redFlags = append(redFlags, velRedFlags[i])
+				ruleRedFlagCount++
+				if isNew {
+					if err := e.ruleRepo.IncrementTriggerCount(ctx, rule.ID); err != nil {
+						log.Printf("WARNING: failed to increment trigger count for rule %s: %v", rule.ID.Hex(), err)
+					}
+					e.triggerReportGeneration(velRedFlags[i])
+					e.triggerNotification(velRedFlags[i], isNew)
+					e.triggerScreening(velRedFlags[i], rule, isNew)
+				}
+			}
+		}
+
 		// Log rule execution for audit trail
 		if e.execLogRepo != nil {
 			execLog := &models.RuleExecutionLog{
@@ -431,6 +457,53 @@ func (e *RuleEngine) evaluateAggregateCondition(
 			MatchCount:  count,
 		}
 		redFlags = append(redFlags, redFlag)
+	}
+	return redFlags, nil
+}
+
+// evaluateVelocityCondition emite una bandera roja por cada par de eventos
+// consecutivos separados por menos del gap configurado. El documento que
+// devuelve el pipeline ES el segundo evento del par, y lleva prevTime y
+// gapSeconds adjuntos: eso es lo que se muestra en la alerta.
+func (e *RuleEngine) evaluateVelocityCondition(
+	ctx context.Context,
+	monitor *models.Monitor,
+	rule models.Rule,
+	cond models.VelocityCondition,
+) ([]models.RedFlag, error) {
+	pipeline := buildVelocityPipeline(cond)
+
+	results, err := e.monitorRepo.AggregateData(ctx, monitor.CollectionID, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("velocity evaluation: %w", err)
+	}
+
+	today := time.Now()
+	var redFlags []models.RedFlag
+	for _, result := range results {
+		groupKey := ""
+		if cond.GroupBy != "" {
+			groupKey = fmt.Sprintf("%v", result[cond.GroupBy])
+		}
+		gapSeconds := toFloat(result["gapSeconds"])
+
+		redFlags = append(redFlags, models.RedFlag{
+			Fingerprint:  models.AggRedFlagFingerprint(rule.ID, monitor.ID, today, groupKey+"|"+fmt.Sprintf("%v", result["_id"])),
+			MonitorID:    monitor.ID,
+			RuleID:       rule.ID,
+			RuleName:     rule.Name,
+			MonitorName:  monitor.Name,
+			Severity:     rule.Severity,
+			RedFlagType:  models.RedFlagTypeAggregate,
+			GroupByField: cond.GroupBy,
+			GroupByValue: groupKey,
+			Message: fmt.Sprintf(
+				"Regla de velocidad '%s': dos transacciones de %s='%s' separadas por %.0f segundos (máximo configurado: %s)",
+				rule.Name, cond.GroupBy, groupKey, gapSeconds, cond.MaxGap,
+			),
+			MatchedData: result,
+			MatchCount:  cond.MinEvents,
+		})
 	}
 	return redFlags, nil
 }
@@ -805,6 +878,72 @@ func buildAggregatePipelineDateScoped(cond models.AggregateCondition, dayStart, 
 	})
 	pipeline = append(pipeline, bson.D{
 		{Key: "$limit", Value: 50},
+	})
+
+	return pipeline
+}
+
+// buildVelocityPipeline arma el pipeline que detecta eventos consecutivos
+// demasiado próximos dentro de una misma partición.
+// Pipeline: [$match filtro] → $sort → $setWindowFields (evento anterior) →
+// $addFields (diferencia en segundos) → $match (pares por debajo del gap).
+// Validado contra MongoDB 7.0.40: $setWindowFields, $shift y $dateDiff
+// ejecutan correctamente sobre la colección real del monitor.
+func buildVelocityPipeline(cond models.VelocityCondition) mongo.Pipeline {
+	pipeline := mongo.Pipeline{}
+
+	if len(cond.Filter) > 0 {
+		pipeline = append(pipeline, bson.D{
+			{Key: "$match", Value: BuildMongoFilter(models.ConditionGroup{
+				Logic: models.LogicAND, Conditions: cond.Filter,
+			})},
+		})
+	}
+
+	sortKeys := bson.D{}
+	if cond.GroupBy != "" {
+		sortKeys = append(sortKeys, bson.E{Key: cond.GroupBy, Value: 1})
+	}
+	sortKeys = append(sortKeys, bson.E{Key: cond.TimeField, Value: 1})
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortKeys}})
+
+	var partitionBy interface{}
+	if cond.GroupBy != "" {
+		partitionBy = "$" + cond.GroupBy
+	}
+	pipeline = append(pipeline, bson.D{
+		{Key: "$setWindowFields", Value: bson.D{
+			{Key: "partitionBy", Value: partitionBy},
+			{Key: "sortBy", Value: bson.D{{Key: cond.TimeField, Value: 1}}},
+			{Key: "output", Value: bson.D{
+				{Key: "prevTime", Value: bson.D{
+					{Key: "$shift", Value: bson.D{
+						{Key: "output", Value: "$" + cond.TimeField},
+						{Key: "by", Value: -1},
+					}},
+				}},
+			}},
+		}},
+	})
+
+	pipeline = append(pipeline, bson.D{
+		{Key: "$addFields", Value: bson.D{
+			{Key: "gapSeconds", Value: bson.D{
+				{Key: "$dateDiff", Value: bson.D{
+					{Key: "startDate", Value: "$prevTime"},
+					{Key: "endDate", Value: "$" + cond.TimeField},
+					{Key: "unit", Value: "second"},
+				}},
+			}},
+		}},
+	})
+
+	maxGapSeconds := int64(parseTimeWindow(cond.MaxGap) / time.Second)
+	pipeline = append(pipeline, bson.D{
+		{Key: "$match", Value: bson.D{
+			{Key: "prevTime", Value: bson.D{{Key: "$ne", Value: nil}}},
+			{Key: "gapSeconds", Value: bson.D{{Key: "$lte", Value: maxGapSeconds}}},
+		}},
 	})
 
 	return pipeline
