@@ -393,7 +393,24 @@ func (h *RuleHandler) GenerateAIRules(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 	}
 
-	result, err := h.aiRulesService.GenerateRules(c.Context(), monitor.Schema, req.DataSample, req.Prompt, req.Fields)
+	// req.Fields llega de cualquier cliente autenticado, no solo de la UI: se
+	// filtra contra el esquema real del monitor antes de interpolarlo en el
+	// prompt. Un nombre inventado o desactualizado empuja al modelo hacia
+	// sugerencias que discardReason termina descartando — el modo guiado
+	// causando el mismo fallo silencioso que se armó para evitar — y de paso
+	// es higiene contra prompt injection.
+	schemaFields := make(map[string]bool, len(monitor.Schema))
+	for _, f := range monitor.Schema {
+		schemaFields[f.Name] = true
+	}
+	guidedFields := make([]string, 0, len(req.Fields))
+	for _, field := range req.Fields {
+		if schemaFields[field] {
+			guidedFields = append(guidedFields, field)
+		}
+	}
+
+	result, err := h.aiRulesService.GenerateRules(c.Context(), monitor.Schema, req.DataSample, req.Prompt, guidedFields)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

@@ -255,6 +255,30 @@ func TestPartitionSuggestions_ReportaGeneradasYDescartadas(t *testing.T) {
 	}
 }
 
+// partitionSuggestions arma Suggestions con make(...), no como nil slice:
+// el JSON tiene que emitir "[]" y no "null" aun cuando se descarta todo, ya
+// que el frontend hace result.suggestions.length sin guardas contra null.
+func TestPartitionSuggestions_SuggestionsNoNilCuandoTodoSeDescarta(t *testing.T) {
+	suggestions := []AIRuleSuggestion{
+		{
+			Name: "Campo inventado",
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "no_existe", Operator: models.OpGreaterThan, Value: 1}},
+			},
+		},
+	}
+
+	got := partitionSuggestions(suggestions, testSchema())
+
+	if got.Suggestions == nil {
+		t.Error("Suggestions es nil, quería un slice vacío no nil")
+	}
+	if len(got.Suggestions) != 0 {
+		t.Errorf("Suggestions = %+v, quería vacío", got.Suggestions)
+	}
+}
+
 // El caso que motivó el rediseño: dos transacciones de la misma tarjeta a
 // menos de 35s, filtradas por rubro. Si la IA lo devuelve bien armado, tiene
 // que sobrevivir a la validación.
@@ -315,6 +339,60 @@ func TestDiscardReason_DescartaVelocidadInvalida(t *testing.T) {
 				t.Error("discardReason = \"\", quería descartarla")
 			}
 		})
+	}
+}
+
+// El motor mete TimeField directo contra un time.Time en el $match del
+// agregado (rule_engine.go buildAggregatePipeline): si el campo no es date,
+// Mongo compara entre tipos BSON distintos y no matchea nada — el mismo bug
+// de Date-contra-string que velocidad ya rechazaba, pero que agregados
+// dejaba pasar.
+func TestDiscardReason_DescartaAgregadoTimeFieldNoDate(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+			TimeField: "cliente", TimeWindow: "24h",
+			Operator: models.OpGreaterThan, Threshold: 1,
+		}},
+	}
+	got := discardReason(s, testSchema())
+	if got == "" {
+		t.Error("discardReason = \"\", quería descartarla por timeField que no es date")
+	}
+	if !strings.Contains(got, "date") {
+		t.Errorf("discardReason = %q, quería que mencionara que se necesita un campo date", got)
+	}
+}
+
+// "0s"/"0d" pasan la regex de unidad válida pero parsean a cero:
+// buildAggregatePipeline se salta el $match de ventana entero y "5 en 0s" se
+// vuelve silenciosamente "5 alguna vez" — mucho más ruidoso que lo pedido,
+// sin ningún aviso al usuario.
+func TestDiscardReason_DescartaVentanaDeCero(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+			TimeField: "fecha", TimeWindow: "0s",
+			Operator: models.OpGreaterThan, Threshold: 1,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla por ventana de duración cero")
+	}
+}
+
+// Una función fuera del enum que sabe evaluar buildAggExpr (sum, count, avg,
+// min, max) cae en su default ($sum) sin avisar: el umbral terminaría
+// comparado contra la cantidad equivocada.
+func TestDiscardReason_DescartaFuncionAgregadaInvalida(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: "distinct", GroupBy: "cliente",
+			Operator: models.OpGreaterThan, Threshold: 1,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla por función agregada inválida")
 	}
 }
 

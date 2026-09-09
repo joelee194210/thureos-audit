@@ -358,6 +358,19 @@ func parseRuleSuggestions(responseText string) ([]AIRuleSuggestion, error) {
 // rather than risk it meaning "minutes" to whoever generated it.
 var validAITimeWindow = regexp.MustCompile(`^\d+(s|min|h|d)$`)
 
+// validAggFunctions es el enum real que buildAggExpr sabe evaluar
+// (rule_engine.go). Una función fuera de esta lista cae en el default de
+// buildAggExpr (`$sum`) sin avisar: un "distinct" alucinado o un function
+// vacío se convierten en una suma silenciosa, comparada contra el umbral
+// equivocado.
+var validAggFunctions = map[models.AggFunction]bool{
+	models.AggFuncSum:   true,
+	models.AggFuncCount: true,
+	models.AggFuncAvg:   true,
+	models.AggFuncMin:   true,
+	models.AggFuncMax:   true,
+}
+
 // partitionSuggestions separa las sugerencias que se pueden guardar de las
 // que hay que descartar por referenciar un campo que no está en el esquema
 // del monitor — la IA no tiene otro vocabulario para expresar conceptos que
@@ -388,13 +401,13 @@ func partitionSuggestions(suggestions []AIRuleSuggestion, schema []models.Schema
 // vacío como campo inexistente descartaba sugerencias perfectamente válidas
 // y dejaba al usuario mirando una lista vacía.
 func discardReason(s AIRuleSuggestion, schema []models.SchemaField) string {
-	fieldNames := make(map[string]bool, len(schema))
+	byName := make(map[string]models.SchemaField, len(schema))
 	for _, f := range schema {
-		fieldNames[f.Name] = true
+		byName[f.Name] = f
 	}
 
 	for _, cond := range s.ConditionGroup.Conditions {
-		if !fieldNames[cond.Field] {
+		if _, ok := byName[cond.Field]; !ok {
 			return fmt.Sprintf("la condición usa el campo %q, que no está en el esquema", cond.Field)
 		}
 	}
@@ -405,24 +418,50 @@ func discardReason(s AIRuleSuggestion, schema []models.SchemaField) string {
 		if agg.Function != models.AggFuncCount && agg.Field == "" {
 			return "el agregado no dice qué campo agregar"
 		}
-		if agg.Field != "" && !fieldNames[agg.Field] {
-			return fmt.Sprintf("el agregado usa el campo %q, que no está en el esquema", agg.Field)
+		if !validAggFunctions[agg.Function] {
+			return fmt.Sprintf("el agregado usa la función %q, que no es válida (sum, count, avg, min, max)", agg.Function)
 		}
-		if agg.GroupBy != "" && !fieldNames[agg.GroupBy] {
-			return fmt.Sprintf("el agregado agrupa por %q, que no está en el esquema", agg.GroupBy)
+		if agg.Field != "" {
+			if _, ok := byName[agg.Field]; !ok {
+				return fmt.Sprintf("el agregado usa el campo %q, que no está en el esquema", agg.Field)
+			}
 		}
-		if agg.TimeField != "" && !fieldNames[agg.TimeField] {
-			return fmt.Sprintf("el agregado mide el tiempo sobre %q, que no está en el esquema", agg.TimeField)
+		if agg.GroupBy != "" {
+			if _, ok := byName[agg.GroupBy]; !ok {
+				return fmt.Sprintf("el agregado agrupa por %q, que no está en el esquema", agg.GroupBy)
+			}
+		}
+		if agg.TimeField != "" {
+			f, ok := byName[agg.TimeField]
+			if !ok {
+				return fmt.Sprintf("el agregado mide el tiempo sobre %q, que no está en el esquema", agg.TimeField)
+			}
+			// Igual que en velocidad: el motor mete este campo directo en un
+			// $match contra un time.Time (rule_engine.go buildAggregatePipeline).
+			// Si el campo es string, Mongo compara entre tipos BSON distintos,
+			// no matchea nada y la regla no dispara nunca — en silencio.
+			if f.Type != models.FieldDate {
+				return fmt.Sprintf("el agregado mide el tiempo sobre %q, que es de tipo %s: se necesita un campo date", agg.TimeField, f.Type)
+			}
 		}
 		// Media ventana es intención a medio expresar: sin el par completo
 		// el motor ignora la ventana y "5 en 60s" se vuelve "5 alguna vez".
 		if (agg.TimeField == "") != (agg.TimeWindow == "") {
 			return "la ventana de tiempo está incompleta: hacen falta el campo de fecha y la duración"
 		}
-		if agg.TimeWindow != "" && !validAITimeWindow.MatchString(agg.TimeWindow) {
-			return fmt.Sprintf("la ventana %q no usa una unidad válida (s, min, h, d)", agg.TimeWindow)
+		if agg.TimeWindow != "" {
+			if !validAITimeWindow.MatchString(agg.TimeWindow) {
+				return fmt.Sprintf("la ventana %q no usa una unidad válida (s, min, h, d)", agg.TimeWindow)
+			}
+			// "0s"/"0d" pasan la regex pero parsean a cero: buildAggregatePipeline
+			// se salta el $match de ventana entero (rule_engine.go:627) y "5 en
+			// 0s" se vuelve silenciosamente "5 alguna vez" — igual de ruidoso
+			// que la ventana incompleta de arriba, pero sin ningún aviso.
+			if parseTimeWindow(agg.TimeWindow) <= 0 {
+				return fmt.Sprintf("la ventana %q no es una duración positiva", agg.TimeWindow)
+			}
 		}
-		if reason := filterFieldsReason(agg.Filter, fieldNames, "el filtro del agregado"); reason != "" {
+		if reason := filterFieldsReason(agg.Filter, byName, "el filtro del agregado"); reason != "" {
 			return reason
 		}
 	}
@@ -444,9 +483,9 @@ func discardReason(s AIRuleSuggestion, schema []models.SchemaField) string {
 // filterFieldsReason valida los campos del filtro previo de un agregado: el
 // filtro reduce el universo antes de agrupar, y un campo inexistente lo
 // vacía entero en vez de acotarlo.
-func filterFieldsReason(filter []models.Condition, fieldNames map[string]bool, que string) string {
+func filterFieldsReason(filter []models.Condition, byName map[string]models.SchemaField, que string) string {
 	for _, cond := range filter {
-		if !fieldNames[cond.Field] {
+		if _, ok := byName[cond.Field]; !ok {
 			return fmt.Sprintf("%s usa el campo %q, que no está en el esquema", que, cond.Field)
 		}
 	}
