@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -750,15 +751,30 @@ func (h *MonitorHandler) UpdateDerivedTimestamp(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 	}
 
+	// json.RawMessage preserva la diferencia entre "la clave no vino" (nil,
+	// slice vacío) y "la clave vino con valor null" (slice "null"): un
+	// *models.DerivedTimestampConfig directo en BodyParser no puede
+	// distinguirlas, y confundirlas es un borrado silencioso de la
+	// configuración del usuario ante un body incompleto o malformado.
 	var body struct {
-		DerivedTimestamp *models.DerivedTimestampConfig `json:"derivedTimestamp"`
+		DerivedTimestamp json.RawMessage `json:"derivedTimestamp"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
+	if len(body.DerivedTimestamp) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "falta el campo derivedTimestamp (mandá null explícito para limpiar la configuración)",
+		})
+	}
+
+	var cfg *models.DerivedTimestampConfig
+	if err := json.Unmarshal(body.DerivedTimestamp, &cfg); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid derivedTimestamp"})
+	}
 
 	update := bson.M{}
-	if body.DerivedTimestamp == nil {
+	if cfg == nil {
 		// Limpiar la configuración: se quita también el campo del schema.
 		schema := make([]models.SchemaField, 0, len(monitor.Schema))
 		for _, f := range monitor.Schema {
@@ -780,12 +796,12 @@ func (h *MonitorHandler) UpdateDerivedTimestamp(c *fiber.Ctx) error {
 			}
 			base = append(base, f)
 		}
-		if err := services.ValidateDerivedTimestamp(*body.DerivedTimestamp, base); err != nil {
+		if err := services.ValidateDerivedTimestamp(*cfg, base); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
-		update["derived_timestamp"] = body.DerivedTimestamp
+		update["derived_timestamp"] = cfg
 		update["schema"] = append(base, models.SchemaField{
-			Name:     body.DerivedTimestamp.TargetName,
+			Name:     cfg.TargetName,
 			Type:     models.FieldDate,
 			Required: false,
 			Sample:   "",
