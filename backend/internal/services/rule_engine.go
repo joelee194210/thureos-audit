@@ -352,8 +352,14 @@ func BuildMongoFilter(group models.ConditionGroup) bson.M {
 func conditionToMongo(cond models.Condition) bson.M {
 	switch cond.Operator {
 	case models.OpEqual:
+		if cands := equalityCandidates(cond.Value); len(cands) > 1 {
+			return bson.M{cond.Field: bson.M{"$in": cands}}
+		}
 		return bson.M{cond.Field: cond.Value}
 	case models.OpNotEqual:
+		if cands := equalityCandidates(cond.Value); len(cands) > 1 {
+			return bson.M{cond.Field: bson.M{"$nin": cands}}
+		}
 		return bson.M{cond.Field: bson.M{"$ne": cond.Value}}
 	case models.OpGreaterThan:
 		return bson.M{cond.Field: bson.M{"$gt": toFloat(cond.Value)}}
@@ -369,9 +375,9 @@ func conditionToMongo(cond models.Condition) bson.M {
 	case models.OpRegex:
 		return bson.M{cond.Field: bson.M{"$regex": fmt.Sprintf("%v", cond.Value)}}
 	case models.OpIn:
-		return bson.M{cond.Field: bson.M{"$in": cond.Value}}
+		return bson.M{cond.Field: bson.M{"$in": listCandidates(cond.Value)}}
 	case models.OpNotIn:
-		return bson.M{cond.Field: bson.M{"$nin": cond.Value}}
+		return bson.M{cond.Field: bson.M{"$nin": listCandidates(cond.Value)}}
 	case models.OpBetween:
 		arr, ok := cond.Value.([]interface{})
 		if ok && len(arr) == 2 {
@@ -391,6 +397,57 @@ func conditionToMongo(cond models.Condition) bson.M {
 	default:
 		return bson.M{cond.Field: cond.Value}
 	}
+}
+
+// equalityCandidates devuelve los valores con los que el campo puede estar
+// almacenado para el mismo dato. MongoDB no compara entre tipos BSON: un mcc
+// guardado como número nunca iguala al "7995" que manda el formulario, y el
+// filtro no descarta nada — descarta TODO, en silencio. Los operadores
+// numéricos ya salvan la diferencia con toFloat; los de igualdad la sufrían.
+//
+// El candidato numérico solo se agrega si el texto es su forma canónica, para
+// no convertir "0012" (un identificador con ceros a la izquierda) en el número
+// 12 y traer documentos que nadie pidió.
+func equalityCandidates(val interface{}) []interface{} {
+	switch v := val.(type) {
+	case string:
+		s := strings.TrimSpace(v)
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil || strconv.FormatFloat(f, 'f', -1, 64) != s {
+			return []interface{}{val}
+		}
+		return []interface{}{val, f}
+	case float64, float32, int, int32, int64:
+		return []interface{}{val, strconv.FormatFloat(toFloat(v), 'f', -1, 64)}
+	default:
+		return []interface{}{val}
+	}
+}
+
+// listCandidates arma la lista para $in/$nin. El formulario manda los códigos
+// separados por coma en un solo string (el selector de MCC, por ejemplo), y
+// $in sobre un string no es un filtro que no matchea: es un error de MongoDB
+// que aborta la evaluación entera de la regla.
+func listCandidates(val interface{}) []interface{} {
+	var items []interface{}
+	switch v := val.(type) {
+	case string:
+		for _, part := range strings.Split(v, ",") {
+			if part = strings.TrimSpace(part); part != "" {
+				items = append(items, part)
+			}
+		}
+	case []interface{}:
+		items = v
+	default:
+		items = []interface{}{val}
+	}
+
+	out := make([]interface{}, 0, len(items))
+	for _, item := range items {
+		out = append(out, equalityCandidates(item)...)
+	}
+	return out
 }
 
 func toFloat(val interface{}) float64 {
