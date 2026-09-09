@@ -160,6 +160,7 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 		}
+		req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
 		for _, vc := range req.VelocityConditions {
 			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
 				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
@@ -249,6 +250,7 @@ type updateRuleRequest struct {
 	Actions             []models.ActionType         `json:"actions" bson:"actions,omitempty"`
 	ConditionGroup      *models.ConditionGroup      `json:"conditionGroup" bson:"condition_group,omitempty"`
 	AggregateConditions []models.AggregateCondition `json:"aggregateConditions" bson:"aggregate_conditions,omitempty"`
+	VelocityConditions  []models.VelocityCondition  `json:"velocityConditions" bson:"velocity_conditions,omitempty"`
 	Schedule            *models.RuleSchedule        `json:"schedule" bson:"schedule,omitempty"`
 	ScreeningFields     []string                    `json:"screeningFields" bson:"screening_fields,omitempty"`
 }
@@ -286,6 +288,27 @@ func (h *RuleHandler) Update(c *fiber.Ctx) error {
 	}
 	if req.AggregateConditions != nil {
 		update["aggregate_conditions"] = req.AggregateConditions
+	}
+	if req.VelocityConditions != nil {
+		// Misma validación que al crear: sin esto, editar sería una puerta
+		// trasera para guardar una condición que jamás dispararía — el modo
+		// de falla silenciosa que toda esta funcionalidad evita.
+		rule, err := h.ruleRepo.FindByID(c.Context(), id)
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "rule not found"})
+		}
+		monitor, err := h.monitorRepo.FindByID(c.Context(), rule.MonitorID)
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+		}
+		req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
+		for _, vc := range req.VelocityConditions {
+			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+			}
+		}
+		h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+		update["velocity_conditions"] = req.VelocityConditions
 	}
 	if req.Schedule != nil {
 		sched := *req.Schedule

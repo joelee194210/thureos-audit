@@ -6,6 +6,28 @@ import (
 	"github.com/thureos/compliance/internal/models"
 )
 
+// velocityDefaultMinEvents es el par: dos transacciones consecutivas, que es
+// lo mínimo con lo que se puede medir un gap y el caso de uso natural.
+const velocityDefaultMinEvents = 2
+
+// NormalizeVelocityConditions completa los valores por defecto antes de
+// validar y guardar, para que lo persistido sea explícito y no haya que
+// reinterpretar un cero al evaluar. Omitir minEvents es lo natural para quien
+// solo quiere "dos transacciones muy seguidas": vale 2, no da error.
+func NormalizeVelocityConditions(conds []models.VelocityCondition) []models.VelocityCondition {
+	if conds == nil {
+		return nil
+	}
+	out := make([]models.VelocityCondition, len(conds))
+	copy(out, conds)
+	for i := range out {
+		if out[i].MinEvents == 0 {
+			out[i].MinEvents = velocityDefaultMinEvents
+		}
+	}
+	return out
+}
+
 // ValidateVelocityCondition rechaza al guardar las condiciones que no
 // podrían disparar nunca. El precedente que justifica esta severidad: la
 // ventana temporal rota vivió meses en producción porque fallaba en silencio

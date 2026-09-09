@@ -766,6 +766,19 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"schema": monitor.Schema})
 }
 
+// schemaSinCampoDerivado devuelve el schema del monitor sin la entrada del
+// campo derivado actual, si la hay.
+func schemaSinCampoDerivado(monitor *models.Monitor) []models.SchemaField {
+	schema := make([]models.SchemaField, 0, len(monitor.Schema))
+	for _, f := range monitor.Schema {
+		if monitor.DerivedTimestamp != nil && f.Name == monitor.DerivedTimestamp.TargetName {
+			continue
+		}
+		schema = append(schema, f)
+	}
+	return schema
+}
+
 // UpdateDerivedTimestamp configura (o limpia, mandando null) el timestamp
 // derivado del monitor. Al guardarlo, el campo derivado se agrega al schema
 // como tipo date para que aparezca en los selectores de campo de reglas,
@@ -803,29 +816,17 @@ func (h *MonitorHandler) UpdateDerivedTimestamp(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid derivedTimestamp"})
 	}
 
+	// El schema sin el campo derivado anterior sirve para las dos ramas: al
+	// limpiar es el resultado final, y al reconfigurar es la base contra la
+	// que se valida — sin excluirlo, reconfigurar con el mismo TargetName
+	// chocaría consigo mismo.
+	base := schemaSinCampoDerivado(monitor)
+
 	update := bson.M{}
 	if cfg == nil {
-		// Limpiar la configuración: se quita también el campo del schema.
-		schema := make([]models.SchemaField, 0, len(monitor.Schema))
-		for _, f := range monitor.Schema {
-			if monitor.DerivedTimestamp != nil && f.Name == monitor.DerivedTimestamp.TargetName {
-				continue
-			}
-			schema = append(schema, f)
-		}
 		update["derived_timestamp"] = nil
-		update["schema"] = schema
+		update["schema"] = base
 	} else {
-		// El schema contra el que se valida excluye el campo derivado
-		// anterior: de lo contrario reconfigurar con el mismo TargetName
-		// chocaría consigo mismo.
-		base := make([]models.SchemaField, 0, len(monitor.Schema))
-		for _, f := range monitor.Schema {
-			if monitor.DerivedTimestamp != nil && f.Name == monitor.DerivedTimestamp.TargetName {
-				continue
-			}
-			base = append(base, f)
-		}
 		if err := services.ValidateDerivedTimestamp(*cfg, base); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
