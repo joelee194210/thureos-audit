@@ -271,6 +271,19 @@ func (r *MonitorRepository) SetDataField(ctx context.Context, collectionID strin
 	return nil
 }
 
+// EnsureDataIndex crea un índice sobre la colección de datos del monitor si
+// todavía no existe (crear un índice ya existente es un no-op en MongoDB).
+// Lo usan las reglas de velocidad: su pipeline ordena por agrupación y tiempo
+// sobre toda la colección para poder formar pares que crucen lotes de
+// ingesta, así que sin índice ese $sort escala mal.
+func (r *MonitorRepository) EnsureDataIndex(ctx context.Context, collectionID string, keys bson.D) error {
+	col := r.GetDataCollection(collectionID)
+	if _, err := col.Indexes().CreateOne(ctx, mongo.IndexModel{Keys: keys}); err != nil {
+		return fmt.Errorf("creating index on data_%s: %w", collectionID, err)
+	}
+	return nil
+}
+
 func (r *MonitorRepository) AggregateData(ctx context.Context, collectionID string, pipeline mongo.Pipeline) ([]bson.M, error) {
 	col := r.GetDataCollection(collectionID)
 	cursor, err := col.Aggregate(ctx, pipeline)

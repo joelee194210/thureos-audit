@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -118,6 +120,24 @@ func (h *RuleHandler) Backtest(c *fiber.Ctx) error {
 	})
 }
 
+// ensureVelocityIndexes crea el índice que el pipeline de velocidad necesita
+// para ordenar por agrupación y tiempo. Es una optimización, no un requisito
+// de correctitud: si falla se registra y la regla se guarda igual, porque una
+// regla sin índice funciona (más lento) y una regla que no se puede guardar
+// por un índice no funciona en absoluto.
+func (h *RuleHandler) ensureVelocityIndexes(ctx context.Context, monitor *models.Monitor, conds []models.VelocityCondition) {
+	for _, vc := range conds {
+		keys := bson.D{}
+		if vc.GroupBy != "" {
+			keys = append(keys, bson.E{Key: vc.GroupBy, Value: 1})
+		}
+		keys = append(keys, bson.E{Key: vc.TimeField, Value: 1})
+		if err := h.monitorRepo.EnsureDataIndex(ctx, monitor.CollectionID, keys); err != nil {
+			log.Printf("WARNING: índice de velocidad para el monitor %s: %v", monitor.ID.Hex(), err)
+		}
+	}
+}
+
 func (h *RuleHandler) Create(c *fiber.Ctx) error {
 	var req models.CreateRuleRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -145,6 +165,7 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 			}
 		}
+		h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
 	}
 
 	rule := &models.Rule{
