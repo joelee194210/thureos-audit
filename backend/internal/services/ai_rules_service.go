@@ -4,17 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
 )
+
+// aiRequestTimeout acota cuánto puede tardar una llamada al proveedor de IA.
+// Sin deadline, la cadena entera queda colgada si el proveedor no responde:
+// http.DefaultClient no tiene timeout, el contexto de Fiber tampoco, y el
+// frontend se queda en "Generando..." para siempre sin mostrar error. Las
+// llamadas reales tardan 7-9s; 90s deja margen amplio sin dejar de acotar.
+const aiRequestTimeout = 90 * time.Second
 
 // AIRuleSuggestion represents a single AI-generated rule suggestion.
 type AIRuleSuggestion struct {
@@ -109,6 +118,10 @@ func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.Sche
 
 	userMessage := buildUserMessage(schema, dataSample, userPrompt)
 
+	// El deadline cubre a ambos proveedores: los dos reciben este ctx.
+	ctx, cancel := context.WithTimeout(ctx, aiRequestTimeout)
+	defer cancel()
+
 	var responseText string
 	switch cfg.AI.Provider {
 	case models.AIProviderDeepSeek:
@@ -117,6 +130,9 @@ func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.Sche
 		responseText, err = callAnthropic(ctx, cfg.AI, userMessage)
 	}
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("the AI provider did not respond within %s — try again, or check the provider settings", aiRequestTimeout)
+		}
 		return nil, err
 	}
 

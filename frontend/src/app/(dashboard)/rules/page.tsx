@@ -433,6 +433,7 @@ function RulesContent() {
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AIRuleSuggestion[]>([]);
+  const [aiNoResults, setAiNoResults] = useState(false);
   const [selectedMonitor, setSelectedMonitor] = useState(monitorIdParam || "");
   const [aiPrompt, setAiPrompt] = useState("");
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
@@ -711,12 +712,17 @@ function RulesContent() {
   async function generateAIRules() {
     if (!selectedMonitor) return;
     setAILoading(true);
+    setAiNoResults(false);
     try {
       const result = await rulesApi.generateAI({
         monitorId: selectedMonitor,
         prompt: aiPrompt || "Generate monitoring rules for anomaly detection",
       });
       setAiSuggestions(result.suggestions);
+      // El backend descarta en silencio las sugerencias que referencian
+      // campos fuera del esquema o ventanas de tiempo inválidas: sin este
+      // aviso, el usuario ve terminar "Generando..." y nada más.
+      setAiNoResults(result.suggestions.length === 0);
     } catch (err) {
       console.error("Failed to generate AI rules:", err);
       toastError(
@@ -1161,6 +1167,20 @@ function RulesContent() {
                       Puede tardar hasta un minuto — el modelo de IA está
                       analizando el esquema.
                     </p>
+                  )}
+
+                  {aiNoResults && !aiLoading && (
+                    <div className="rounded-md border border-dashed p-4">
+                      <p className="text-sm font-medium">
+                        La IA no devolvió ninguna sugerencia válida
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Se descartan las sugerencias que referencian campos
+                        fuera del esquema de este monitor. Probá describir el
+                        criterio usando los nombres exactos de los campos, o
+                        elegí otro monitor.
+                      </p>
+                    </div>
                   )}
 
                   {aiSuggestions.length > 0 && (
