@@ -194,9 +194,9 @@ type CreateRuleRequest struct {
 }
 
 type AIRuleRequest struct {
-	MonitorID  string   `json:"monitorId"`
-	Prompt     string   `json:"prompt"`
-	DataSample string   `json:"dataSample,omitempty"`
+	MonitorID  string `json:"monitorId"`
+	Prompt     string `json:"prompt"`
+	DataSample string `json:"dataSample,omitempty"`
 	// Fields es el modo guiado: los campos que el usuario eligió en el
 	// diálogo antes de describir el criterio. Vacío = modo libre de siempre.
 	Fields []string `json:"fields,omitempty"`
