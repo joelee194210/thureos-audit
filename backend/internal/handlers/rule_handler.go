@@ -151,22 +151,30 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 
 	userID, _ := primitive.ObjectIDFromHex(c.Locals("userId").(string))
 
-	// Las condiciones de velocidad se validan contra el schema del monitor
-	// al guardar: una condición que apunta a un campo que no es date jamás
-	// dispararía, y aceptarla en silencio repite el modo de falla que dejó
-	// la ventana temporal rota en producción.
-	if len(req.VelocityConditions) > 0 {
+	// Las condiciones de velocidad y agregadas se validan contra el schema del
+	// monitor al guardar: una condición que apunta a un campo que no es date,
+	// o una función que buildAggExpr no reconoce, jamás dispararía, y
+	// aceptarla en silencio repite el modo de falla que dejó la ventana
+	// temporal rota en producción.
+	if len(req.VelocityConditions) > 0 || len(req.AggregateConditions) > 0 {
 		monitor, err := h.monitorRepo.FindByID(c.Context(), monitorID)
 		if err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 		}
-		req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
-		for _, vc := range req.VelocityConditions {
-			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+		for _, ac := range req.AggregateConditions {
+			if err := services.ValidateAggregateCondition(ac, monitor.Schema); err != nil {
 				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 			}
 		}
-		h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+		if len(req.VelocityConditions) > 0 {
+			req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
+			for _, vc := range req.VelocityConditions {
+				if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+				}
+			}
+			h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+		}
 	}
 
 	rule := &models.Rule{
@@ -286,10 +294,7 @@ func (h *RuleHandler) Update(c *fiber.Ctx) error {
 	if req.ConditionGroup != nil {
 		update["condition_group"] = req.ConditionGroup
 	}
-	if req.AggregateConditions != nil {
-		update["aggregate_conditions"] = req.AggregateConditions
-	}
-	if req.VelocityConditions != nil {
+	if req.AggregateConditions != nil || req.VelocityConditions != nil {
 		// Misma validación que al crear: sin esto, editar sería una puerta
 		// trasera para guardar una condición que jamás dispararía — el modo
 		// de falla silenciosa que toda esta funcionalidad evita.
@@ -301,14 +306,24 @@ func (h *RuleHandler) Update(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 		}
-		req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
-		for _, vc := range req.VelocityConditions {
-			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
-				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		if req.AggregateConditions != nil {
+			for _, ac := range req.AggregateConditions {
+				if err := services.ValidateAggregateCondition(ac, monitor.Schema); err != nil {
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+				}
 			}
+			update["aggregate_conditions"] = req.AggregateConditions
 		}
-		h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
-		update["velocity_conditions"] = req.VelocityConditions
+		if req.VelocityConditions != nil {
+			req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
+			for _, vc := range req.VelocityConditions {
+				if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+				}
+			}
+			h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+			update["velocity_conditions"] = req.VelocityConditions
+		}
 	}
 	if req.Schedule != nil {
 		sched := *req.Schedule
