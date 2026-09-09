@@ -84,6 +84,19 @@ type AggregateCondition struct {
 	Filter []Condition `bson:"filter,omitempty" json:"filter,omitempty"`
 }
 
+// VelocityCondition detecta eventos consecutivos demasiado próximos en el
+// tiempo dentro de una misma entidad (tarjeta, cliente, comercio).
+// Es distinta de AggregateCondition: allí la ventana está anclada a "ahora"
+// y se cuenta cuántos eventos caen dentro; acá se mide la distancia entre un
+// evento y el inmediatamente anterior de la misma partición.
+type VelocityCondition struct {
+	TimeField string      `bson:"time_field" json:"timeField"` // campo date (típicamente el derivado)
+	MaxGap    string      `bson:"max_gap" json:"maxGap"`       // "35s", "5min" — mismo parser que TimeWindow
+	GroupBy   string      `bson:"group_by" json:"groupBy"`     // ej. "tarjeta"
+	MinEvents int         `bson:"min_events" json:"minEvents"` // 2 = un par (default)
+	Filter    []Condition `bson:"filter,omitempty" json:"filter,omitempty"`
+}
+
 type ConditionGroup struct {
 	Logic      LogicOperator `bson:"logic" json:"logic"`
 	Conditions []Condition   `bson:"conditions" json:"conditions"`
@@ -140,6 +153,7 @@ type Rule struct {
 	Description         string               `bson:"description" json:"description"`
 	ConditionGroup      ConditionGroup       `bson:"condition_group" json:"conditionGroup"`
 	AggregateConditions []AggregateCondition `bson:"aggregate_conditions,omitempty" json:"aggregateConditions,omitempty"`
+	VelocityConditions  []VelocityCondition  `bson:"velocity_conditions,omitempty" json:"velocityConditions,omitempty"`
 	Actions             []ActionType         `bson:"actions" json:"actions"`
 	Severity            Severity             `bson:"severity" json:"severity"`
 	Active              bool                 `bson:"active" json:"active"`
@@ -168,6 +182,7 @@ type CreateRuleRequest struct {
 	Description            string               `json:"description"`
 	ConditionGroup         ConditionGroup       `json:"conditionGroup"`
 	AggregateConditions    []AggregateCondition `json:"aggregateConditions,omitempty"`
+	VelocityConditions     []VelocityCondition  `json:"velocityConditions,omitempty"`
 	Actions                []ActionType         `json:"actions"`
 	Severity               Severity             `json:"severity"`
 	Schedule               *RuleSchedule        `json:"schedule,omitempty"`

@@ -131,12 +131,29 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 
 	userID, _ := primitive.ObjectIDFromHex(c.Locals("userId").(string))
 
+	// Las condiciones de velocidad se validan contra el schema del monitor
+	// al guardar: una condición que apunta a un campo que no es date jamás
+	// dispararía, y aceptarla en silencio repite el modo de falla que dejó
+	// la ventana temporal rota en producción.
+	if len(req.VelocityConditions) > 0 {
+		monitor, err := h.monitorRepo.FindByID(c.Context(), monitorID)
+		if err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+		}
+		for _, vc := range req.VelocityConditions {
+			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+			}
+		}
+	}
+
 	rule := &models.Rule{
 		MonitorID:           monitorID,
 		Name:                req.Name,
 		Description:         req.Description,
 		ConditionGroup:      req.ConditionGroup,
 		AggregateConditions: req.AggregateConditions,
+		VelocityConditions:  req.VelocityConditions,
 		Actions:             req.Actions,
 		Severity:            req.Severity,
 		AIGenerated:         req.AIGenerated,
