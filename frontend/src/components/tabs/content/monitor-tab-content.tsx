@@ -70,6 +70,21 @@ import Link from "next/link";
 import { useTabStore } from "@/stores/tab-store";
 import { useAuthStore } from "@/stores/auth-store";
 
+/**
+ * Con decimales implícitos, el archivo trae 500000 y la ingesta guarda
+ * 5000.00: son dos escalas distintas para el mismo dato. El ejemplo del
+ * esquema muestra la primera, pero las reglas comparan contra la segunda,
+ * así que hay que enseñar las dos. Devuelve null cuando no hay nada que
+ * aclarar — sin decimales implícitos, o con un ejemplo no numérico.
+ */
+function muestraConvertida(field: SchemaField): string | null {
+  const decimales = field.impliedDecimals ?? 0;
+  if (decimales <= 0 || !field.sample) return null;
+  const crudo = Number(field.sample.trim());
+  if (!Number.isFinite(crudo)) return null;
+  return (crudo / 10 ** decimales).toFixed(decimales);
+}
+
 export function MonitorTabContent({
   params,
   tabId,
@@ -790,6 +805,20 @@ export function MonitorTabContent({
                           {field.sample && (
                             <p className="text-xs text-muted-foreground">
                               Ejemplo: {field.sample}
+                              {/* El sample es el valor crudo del archivo, pero
+                                  con decimales implícitos se guarda dividido.
+                                  Sin mostrar las dos escalas, quien arma la
+                                  regla copia la magnitud del ejemplo y compara
+                                  contra un valor que no existe: cero
+                                  coincidencias y ningún error. */}
+                              {muestraConvertida(field) && (
+                                <>
+                                  {" → se guarda como "}
+                                  <span className="font-medium text-foreground">
+                                    {muestraConvertida(field)}
+                                  </span>
+                                </>
+                              )}
                             </p>
                           )}
                         </div>

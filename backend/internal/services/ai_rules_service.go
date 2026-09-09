@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -135,6 +137,13 @@ Both "aggregateConditions" and "velocityConditions" accept an optional
 before pairing. Use it to say "only casino transactions", "only amounts over
 5000" — e.g. mcc = 7995 combined with a 35s "maxGap" expresses "two casino
 transactions on the same card less than 35 seconds apart".
+
+A numeric field may carry "impliedDecimals". Those values are ALREADY
+converted when stored, so write every threshold in the converted,
+human-readable scale — 5000 for five thousand, never 500000. The field's
+"sample" is the raw value from the file, before conversion; never copy its
+magnitude into a threshold. When the schema has such fields, the user
+message lists them with their converted sample.
 
 Available operators: eq, neq, gt, lt, gte, lte, contains, regex, in, not_in, between, is_null, is_not_null, starts_with, ends_with
 
@@ -322,6 +331,7 @@ func callDeepSeek(ctx context.Context, ai models.AIConfig, userMessage string) (
 func buildUserMessage(schema []models.SchemaField, dataSample, userPrompt string, fields []string) string {
 	schemaJSON, _ := json.Marshal(schema)
 	msg := fmt.Sprintf("Schema:\n%s\n", string(schemaJSON))
+	msg += impliedDecimalsNote(schema)
 	if dataSample != "" {
 		msg += fmt.Sprintf("\nSample data:\n%s\n", dataSample)
 	}
@@ -338,6 +348,46 @@ func buildUserMessage(schema []models.SchemaField, dataSample, userPrompt string
 		msg += fmt.Sprintf("\nUser context: %s", userPrompt)
 	}
 	return msg
+}
+
+// impliedDecimalsNote desambigua la escala de los campos con decimales
+// implícitos. Sin esto el modelo razona bien y falla igual: ve
+// `{"sample": "500000", "impliedDecimals": 2}` y deduce que cinco mil se
+// escribe 500000 en las unidades crudas del campo — pero la ingesta YA
+// divide al guardar (ingestion_service.go, f/10^n), así que el umbral
+// correcto es 5000 y comparar contra 500000 no matchea ningún documento.
+// Cero resultados, cero errores: la regla parece configurada y no dispara
+// nunca. Verificado contra un archivo real de movimientos.
+//
+// El sample se deja como está a propósito: es el valor tal cual viene del
+// archivo, que es lo que sirve para diagnosticar la ingesta. Lo que faltaba
+// era decir en qué escala queda guardado.
+func impliedDecimalsNote(schema []models.SchemaField) string {
+	var lines []string
+	for _, f := range schema {
+		if f.ImpliedDecimals <= 0 {
+			continue
+		}
+		line := fmt.Sprintf("- %q has impliedDecimals %d", f.Name, f.ImpliedDecimals)
+		if raw, err := strconv.ParseFloat(strings.TrimSpace(f.Sample), 64); err == nil {
+			converted := raw / math.Pow(10, float64(f.ImpliedDecimals))
+			line += fmt.Sprintf(
+				": its file sample %q is stored as %s",
+				f.Sample, strconv.FormatFloat(converted, 'f', -1, 64),
+			)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return "\nImplied decimals — read this before writing any threshold on these fields:\n" +
+		strings.Join(lines, "\n") +
+		"\nThe file writes these numbers without a decimal point, but they are ALREADY" +
+		" converted when stored, so every threshold, value and aggregate you write must" +
+		" use the CONVERTED scale — write 5000 for five thousand, never 500000. The" +
+		" \"sample\" in the schema above is the raw value from the file, before conversion.\n"
 }
 
 func parseRuleSuggestions(responseText string) ([]AIRuleSuggestion, error) {
