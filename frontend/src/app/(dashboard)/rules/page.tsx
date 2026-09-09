@@ -41,7 +41,11 @@ import {
   CircleAlert,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { rulesApi, type BacktestResult } from "@/lib/api/rules";
+import {
+  rulesApi,
+  type BacktestResult,
+  type DiscardedSuggestion,
+} from "@/lib/api/rules";
 import { monitorsApi } from "@/lib/api/monitors";
 import { dashboardsApi } from "@/lib/api/dashboards";
 import type { Dashboard, WidgetType } from "@/lib/types";
@@ -437,6 +441,7 @@ function RulesContent() {
   const [aiLoading, setAILoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AIRuleSuggestion[]>([]);
   const [aiNoResults, setAiNoResults] = useState(false);
+  const [aiDiscarded, setAiDiscarded] = useState<DiscardedSuggestion[]>([]);
   const [selectedMonitor, setSelectedMonitor] = useState(monitorIdParam || "");
   const [aiPrompt, setAiPrompt] = useState("");
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
@@ -723,15 +728,14 @@ function RulesContent() {
     if (!selectedMonitor) return;
     setAILoading(true);
     setAiNoResults(false);
+    setAiDiscarded([]);
     try {
       const result = await rulesApi.generateAI({
         monitorId: selectedMonitor,
         prompt: aiPrompt || "Generate monitoring rules for anomaly detection",
       });
       setAiSuggestions(result.suggestions);
-      // El backend descarta en silencio las sugerencias que referencian
-      // campos fuera del esquema o ventanas de tiempo inválidas: sin este
-      // aviso, el usuario ve terminar "Generando..." y nada más.
+      setAiDiscarded(result.discarded ?? []);
       setAiNoResults(result.suggestions.length === 0);
     } catch (err) {
       console.error("Failed to generate AI rules:", err);
@@ -1202,12 +1206,22 @@ function RulesContent() {
                       <p className="text-sm font-medium">
                         La IA no devolvió ninguna sugerencia válida
                       </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Se descartan las sugerencias que referencian campos
-                        fuera del esquema de este monitor. Probá describir el
-                        criterio usando los nombres exactos de los campos, o
-                        elegí otro monitor.
-                      </p>
+                      {aiDiscarded.length > 0 ? (
+                        <ul className="mt-2 space-y-1">
+                          {aiDiscarded.map((d, i) => (
+                            <li key={i} className="text-xs text-muted-foreground">
+                              <span className="font-medium">{d.name || "Sin nombre"}</span>
+                              {": "}
+                              {d.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          El modelo no devolvió ninguna regla. Probá describir el
+                          criterio con los nombres exactos de los campos.
+                        </p>
+                      )}
                     </div>
                   )}
 

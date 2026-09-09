@@ -50,8 +50,7 @@ export const rulesApi = {
     monitorId: string;
     prompt: string;
     dataSample?: string;
-  }) =>
-    api.post<{ suggestions: AIRuleSuggestion[] }>("/rules/ai-generate", data),
+  }) => api.post<AIGenerationResult>("/rules/ai-generate", data),
 
   // Tipologías AML pre-armadas: catálogo + instanciación por monitor.
   listTemplates: () => api.get<RuleTemplate[]>("/rule-templates"),
@@ -94,6 +93,17 @@ export const rulesApi = {
 export interface BacktestResult {
   matchCount: number;
   sample: RedFlag[];
+}
+
+export interface DiscardedSuggestion {
+  name: string;
+  reason: string;
+}
+
+export interface AIGenerationResult {
+  suggestions: AIRuleSuggestion[];
+  generated: number;
+  discarded?: DiscardedSuggestion[];
 }
 
 export interface EffectivenessStats {

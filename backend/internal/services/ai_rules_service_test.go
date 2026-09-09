@@ -24,7 +24,7 @@ func TestFilterValidSuggestions_KeepsSuggestionWithValidConditionGroupOnly(t *te
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 1 {
 		t.Fatalf("got %d suggestions, want 1 (debería aceptarse — todos los campos existen)", len(got))
 	}
@@ -40,7 +40,7 @@ func TestFilterValidSuggestions_DropsUnknownConditionGroupField(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (el campo no existe en el schema)", len(got))
 	}
@@ -56,7 +56,7 @@ func TestFilterValidSuggestions_KeepsValidAggregateCondition(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 1 {
 		t.Fatalf("got %d suggestions, want 1 (aggregateCondition válida, todos los campos existen)", len(got))
 	}
@@ -71,7 +71,7 @@ func TestFilterValidSuggestions_DropsUnknownAggregateField(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (field agregado no existe en el schema)", len(got))
 	}
@@ -86,7 +86,7 @@ func TestFilterValidSuggestions_DropsUnknownGroupBy(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (groupBy no existe en el schema)", len(got))
 	}
@@ -101,7 +101,7 @@ func TestFilterValidSuggestions_DropsUnknownTimeField(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (timeField no existe en el schema)", len(got))
 	}
@@ -116,7 +116,7 @@ func TestFilterValidSuggestions_DropsInvalidTimeWindowFormat(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (timeWindow con formato inválido)", len(got))
 	}
@@ -133,7 +133,7 @@ func TestFilterValidSuggestions_DropsAmbiguousMonthsUnit(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 ('m' es ambiguo, no está en el vocabulario permitido para la IA)", len(got))
 	}
@@ -150,7 +150,7 @@ func TestFilterValidSuggestions_MixedListKeepsOnlyValid(t *testing.T) {
 			ConditionGroup: models.ConditionGroup{Logic: "AND", Conditions: []models.Condition{{Field: "campo_fantasma", Operator: models.OpGreaterThan, Value: 1000}}},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 1 {
 		t.Fatalf("got %d suggestions, want 1 (solo la válida sobrevive)", len(got))
 	}
@@ -215,6 +215,42 @@ func TestDiscardReason_DescartaVentanaIncompleta(t *testing.T) {
 	}
 	if got := discardReason(s, testSchema()); got == "" {
 		t.Error("discardReason = \"\", quería descartarla por ventana incompleta")
+	}
+}
+
+// Cuando todo se descarta, la respuesta tiene que poder explicar por qué:
+// el usuario ve terminar "Generando..." y necesita saber qué corregir.
+func TestPartitionSuggestions_ReportaGeneradasYDescartadas(t *testing.T) {
+	suggestions := []AIRuleSuggestion{
+		{
+			Name: "Válida",
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "monto", Operator: models.OpGreaterThan, Value: 10000}},
+			},
+		},
+		{
+			Name: "Campo inventado",
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "no_existe", Operator: models.OpGreaterThan, Value: 1}},
+			},
+		},
+	}
+
+	got := partitionSuggestions(suggestions, testSchema())
+
+	if got.Generated != 2 {
+		t.Errorf("Generated = %d, quería 2", got.Generated)
+	}
+	if len(got.Suggestions) != 1 || got.Suggestions[0].Name != "Válida" {
+		t.Errorf("Suggestions = %+v, quería solo la válida", got.Suggestions)
+	}
+	if len(got.Discarded) != 1 {
+		t.Fatalf("Discarded = %+v, quería una", got.Discarded)
+	}
+	if got.Discarded[0].Name != "Campo inventado" || got.Discarded[0].Reason == "" {
+		t.Errorf("Discarded[0] = %+v, quería el nombre y un motivo no vacío", got.Discarded[0])
 	}
 }
 

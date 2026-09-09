@@ -36,6 +36,22 @@ type AIRuleSuggestion struct {
 	Reasoning           string                      `json:"reasoning"`
 }
 
+// DiscardedSuggestion es una sugerencia que la IA devolvió y el backend no
+// puede guardar, con el motivo listo para mostrarle al usuario.
+type DiscardedSuggestion struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// AIGenerationResult acompaña a las sugerencias válidas con lo que hizo
+// falta descartar. Sin esto el frontend solo sabe que la lista vino vacía y
+// tiene que inventar una explicación genérica.
+type AIGenerationResult struct {
+	Suggestions []AIRuleSuggestion    `json:"suggestions"`
+	Generated   int                   `json:"generated"`
+	Discarded   []DiscardedSuggestion `json:"discarded,omitempty"`
+}
+
 // systemPrompt is shared across all providers — the contract stays the same.
 // The product has no language switcher anywhere (UI, settings, user prefs
 // are all Spanish-only), so "match the system's language" means Spanish,
@@ -105,15 +121,15 @@ func NewAIRulesService(configRepo *repository.SystemConfigRepository) *AIRulesSe
 	return &AIRulesService{configRepo: configRepo}
 }
 
-func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.SchemaField, dataSample string, userPrompt string) ([]AIRuleSuggestion, error) {
+func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.SchemaField, dataSample string, userPrompt string) (AIGenerationResult, error) {
 	// Read current AI config from DB (reflects admin changes in real time)
 	cfg, err := s.configRepo.Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("loading AI config: %w", err)
+		return AIGenerationResult{}, fmt.Errorf("loading AI config: %w", err)
 	}
 
 	if cfg.AI.APIKey == "" {
-		return nil, fmt.Errorf("AI API key not configured — go to Settings to add one")
+		return AIGenerationResult{}, fmt.Errorf("AI API key not configured — go to Settings to add one")
 	}
 
 	userMessage := buildUserMessage(schema, dataSample, userPrompt)
@@ -131,17 +147,17 @@ func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.Sche
 	}
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("the AI provider did not respond within %s — try again, or check the provider settings", aiRequestTimeout)
+			return AIGenerationResult{}, fmt.Errorf("the AI provider did not respond within %s — try again, or check the provider settings", aiRequestTimeout)
 		}
-		return nil, err
+		return AIGenerationResult{}, err
 	}
 
 	suggestions, err := parseRuleSuggestions(responseText)
 	if err != nil {
-		return nil, err
+		return AIGenerationResult{}, err
 	}
 
-	return filterValidSuggestions(suggestions, schema), nil
+	return partitionSuggestions(suggestions, schema), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -302,23 +318,27 @@ func parseRuleSuggestions(responseText string) ([]AIRuleSuggestion, error) {
 // rather than risk it meaning "minutes" to whoever generated it.
 var validAITimeWindow = regexp.MustCompile(`^\d+(s|min|h|d)$`)
 
-// filterValidSuggestions drops any suggestion that references a field name
-// not present in the monitor's schema — the AI has no other vocabulary to
-// express concepts the schema doesn't have a column for, and in the past
-// invented fake field names (e.g. "group_count_gte_5_seconds_lte_60") to
-// work around that instead. A suggestion with any invalid reference is
-// dropped whole, not partially repaired — a half-fixed rule is worse than
-// no suggestion.
-func filterValidSuggestions(suggestions []AIRuleSuggestion, schema []models.SchemaField) []AIRuleSuggestion {
-	valid := make([]AIRuleSuggestion, 0, len(suggestions))
+// partitionSuggestions separa las sugerencias que se pueden guardar de las
+// que hay que descartar por referenciar un campo que no está en el esquema
+// del monitor — la IA no tiene otro vocabulario para expresar conceptos que
+// el esquema no tiene, y en el pasado inventó nombres de campo falsos (p.
+// ej. "group_count_gte_5_seconds_lte_60") para eludir eso. Una sugerencia
+// con cualquier referencia inválida se descarta entera, no se repara a
+// medias — una regla medio arreglada es peor que ninguna sugerencia.
+func partitionSuggestions(suggestions []AIRuleSuggestion, schema []models.SchemaField) AIGenerationResult {
+	result := AIGenerationResult{
+		Suggestions: make([]AIRuleSuggestion, 0, len(suggestions)),
+		Generated:   len(suggestions),
+	}
 	for _, s := range suggestions {
 		if reason := discardReason(s, schema); reason != "" {
 			log.Printf("ai-rules: descartando sugerencia %q — %s", s.Name, reason)
+			result.Discarded = append(result.Discarded, DiscardedSuggestion{Name: s.Name, Reason: reason})
 			continue
 		}
-		valid = append(valid, s)
+		result.Suggestions = append(result.Suggestions, s)
 	}
-	return valid
+	return result
 }
 
 // discardReason devuelve por qué una sugerencia no se puede guardar, o ""
