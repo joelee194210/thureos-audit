@@ -15,10 +15,20 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// monitorDataSource es el subconjunto de MonitorRepository que consume el
+// motor de reglas. Existe como interfaz para poder ejercitar los caminos de
+// evaluación (incluido el date-scoped, del que dependen el scheduler,
+// "ejecutar ahora" y el backtest) sin una base real. En producción el
+// constructor sigue recibiendo *repository.MonitorRepository.
+type monitorDataSource interface {
+	QueryData(ctx context.Context, collectionID string, filter bson.M, limit int64) ([]bson.M, error)
+	AggregateData(ctx context.Context, collectionID string, pipeline mongo.Pipeline) ([]bson.M, error)
+}
+
 type RuleEngine struct {
 	ruleRepo    *repository.RuleRepository
 	redFlagRepo *repository.RedFlagRepository
-	monitorRepo *repository.MonitorRepository
+	monitorRepo monitorDataSource
 	reportRepo  *repository.RedFlagReportRepository
 	execLogRepo *repository.RuleExecutionLogRepository
 	notifier    *NotificationService
@@ -478,7 +488,45 @@ func (e *RuleEngine) evaluateVelocityCondition(
 		return nil, fmt.Errorf("velocity evaluation: %w", err)
 	}
 
-	today := time.Now()
+	return velocityRedFlagsFromResults(monitor, rule, cond, results, time.Now(), ""), nil
+}
+
+// evaluateVelocityConditionDateScoped es la variante acotada a
+// [dayStart, dayEnd) de evaluateVelocityCondition — la que usan el
+// scheduler, "ejecutar ahora" y el backtest a través de
+// matchRuleForDateRange. Misma relación que
+// evaluateAggregateConditionDateScoped con su hermana sin acotar: el
+// fingerprint se ancla a dayStart (no a time.Now()) para que un backlog de
+// varios días no colapse en una sola bandera roja.
+func (e *RuleEngine) evaluateVelocityConditionDateScoped(
+	ctx context.Context,
+	monitor *models.Monitor,
+	rule models.Rule,
+	cond models.VelocityCondition,
+	dayStart, dayEnd time.Time,
+) ([]models.RedFlag, error) {
+	pipeline := buildVelocityPipelineDateScoped(cond, dayStart, dayEnd)
+
+	results, err := e.monitorRepo.AggregateData(ctx, monitor.CollectionID, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("velocity evaluation (date-scoped): %w", err)
+	}
+
+	return velocityRedFlagsFromResults(monitor, rule, cond, results, dayStart, dayStart.Format("2006-01-02")), nil
+}
+
+// velocityRedFlagsFromResults arma una bandera roja por cada par que
+// devolvió el pipeline. `day` ancla el fingerprint (dedupe por día
+// evaluado); `dateLabel`, si no está vacío, se agrega al mensaje para
+// distinguir el día en el camino date-scoped.
+func velocityRedFlagsFromResults(
+	monitor *models.Monitor,
+	rule models.Rule,
+	cond models.VelocityCondition,
+	results []bson.M,
+	day time.Time,
+	dateLabel string,
+) []models.RedFlag {
 	var redFlags []models.RedFlag
 	for _, result := range results {
 		groupKey := ""
@@ -487,8 +535,16 @@ func (e *RuleEngine) evaluateVelocityCondition(
 		}
 		gapSeconds := toFloat(result["gapSeconds"])
 
+		message := fmt.Sprintf(
+			"Regla de velocidad '%s': dos transacciones de %s='%s' separadas por %.0f segundos (máximo configurado: %s)",
+			rule.Name, cond.GroupBy, groupKey, gapSeconds, cond.MaxGap,
+		)
+		if dateLabel != "" {
+			message += " [" + dateLabel + "]"
+		}
+
 		redFlags = append(redFlags, models.RedFlag{
-			Fingerprint:  models.AggRedFlagFingerprint(rule.ID, monitor.ID, today, groupKey+"|"+fmt.Sprintf("%v", result["_id"])),
+			Fingerprint:  models.AggRedFlagFingerprint(rule.ID, monitor.ID, day, groupKey+"|"+fmt.Sprintf("%v", result["_id"])),
 			MonitorID:    monitor.ID,
 			RuleID:       rule.ID,
 			RuleName:     rule.Name,
@@ -497,15 +553,12 @@ func (e *RuleEngine) evaluateVelocityCondition(
 			RedFlagType:  models.RedFlagTypeAggregate,
 			GroupByField: cond.GroupBy,
 			GroupByValue: groupKey,
-			Message: fmt.Sprintf(
-				"Regla de velocidad '%s': dos transacciones de %s='%s' separadas por %.0f segundos (máximo configurado: %s)",
-				rule.Name, cond.GroupBy, groupKey, gapSeconds, cond.MaxGap,
-			),
-			MatchedData: result,
-			MatchCount:  cond.MinEvents,
+			Message:      message,
+			MatchedData:  result,
+			MatchCount:   cond.MinEvents,
 		})
 	}
-	return redFlags, nil
+	return redFlags
 }
 
 // buildAggregatePipeline creates a MongoDB aggregation pipeline for an AggregateCondition.
@@ -742,6 +795,19 @@ func (e *RuleEngine) matchRuleForDateRange(
 		candidates = append(candidates, aggRedFlags...)
 	}
 
+	// Evaluate velocity conditions with date-scoped pipeline. Sin este
+	// bloque los tres consumidores de matchRuleForDateRange (scheduler,
+	// "ejecutar ahora" y backtest) ignoraban las condiciones de velocidad en
+	// silencio: la regla se guardaba, corría, devolvía cero y no fallaba.
+	for _, velCond := range rule.VelocityConditions {
+		velRedFlags, err := e.evaluateVelocityConditionDateScoped(ctx, monitor, rule, velCond, dayStart, dayEnd)
+		if err != nil {
+			log.Printf("ERROR velocity condition (date-scoped) for rule %s field=%s: %v", rule.ID.Hex(), velCond.TimeField, err)
+			continue
+		}
+		candidates = append(candidates, velRedFlags...)
+	}
+
 	return candidates
 }
 
@@ -884,13 +950,58 @@ func buildAggregatePipelineDateScoped(cond models.AggregateCondition, dayStart, 
 }
 
 // buildVelocityPipeline arma el pipeline que detecta eventos consecutivos
-// demasiado próximos dentro de una misma partición.
-// Pipeline: [$match filtro] → $sort → $setWindowFields (evento anterior) →
-// $addFields (diferencia en segundos) → $match (pares por debajo del gap).
+// demasiado próximos dentro de una misma partición, sobre toda la historia
+// de la colección.
+// Pipeline: $match (guarda de tipo) → [$match filtro] → $sort →
+// $setWindowFields (evento anterior) → $addFields (diferencia en segundos) →
+// $match (pares por debajo del gap) → $sort (gap ascendente) → $limit.
 // Validado contra MongoDB 7.0.40: $setWindowFields, $shift y $dateDiff
 // ejecutan correctamente sobre la colección real del monitor.
 func buildVelocityPipeline(cond models.VelocityCondition) mongo.Pipeline {
-	pipeline := mongo.Pipeline{}
+	return velocityPipelineStages(cond, nil)
+}
+
+// buildVelocityPipelineDateScoped es la variante acotada a los documentos
+// ingeridos en [dayStart, dayEnd), hermana de
+// buildAggregatePipelineDateScoped. La usan el scheduler, "ejecutar ahora" y
+// el backtest.
+//
+// OJO: acotar por _ingested_at acota la ventana en la que se FORMAN los
+// pares, no solo el conjunto de resultados. El evento anterior de cada par
+// tiene que haber sido ingerido dentro del mismo rango: en un monitor de
+// archivo diario, la última transacción del archivo de ayer y la primera del
+// de hoy nunca se emparejan por este camino. Es el mismo criterio que el de
+// agregados (que también agrupa solo lo ingerido en el rango); el camino de
+// ingesta —EvaluateRules→buildVelocityPipeline— sí ve la historia completa.
+func buildVelocityPipelineDateScoped(cond models.VelocityCondition, dayStart, dayEnd time.Time) mongo.Pipeline {
+	return velocityPipelineStages(cond, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "_ingested_at", Value: bson.D{
+				{Key: "$gte", Value: dayStart},
+				{Key: "$lt", Value: dayEnd},
+			}},
+		}}},
+	})
+}
+
+// velocityPipelineStages arma el pipeline de velocidad, insertando los
+// stages de acotamiento que le pase el llamador justo después del guarda de
+// tipo. Las dos variantes comparten todo lo demás.
+func velocityPipelineStages(cond models.VelocityCondition, scope mongo.Pipeline) mongo.Pipeline {
+	// Guarda de tipo, SIEMPRE el primer stage. Dos razones:
+	//  1. $sort ubica los documentos sin el campo de tiempo al principio de
+	//     cada partición, así que la primera transacción que sí lo tiene
+	//     tomaría su prevTime de una que no y quedaría descartada — cada
+	//     tarjeta perdía su primer evento real.
+	//  2. Si el campo llega como string en algunos documentos, $dateDiff los
+	//     mezclaría con las fechas: la vía de reentrada exacta del bug que
+	//     dejó la ventana temporal comparando Date contra string.
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: cond.TimeField, Value: bson.D{{Key: "$type", Value: "date"}}},
+		}}},
+	}
+	pipeline = append(pipeline, scope...)
 
 	if len(cond.Filter) > 0 {
 		pipeline = append(pipeline, bson.D{
@@ -944,6 +1055,14 @@ func buildVelocityPipeline(cond models.VelocityCondition) mongo.Pipeline {
 			{Key: "prevTime", Value: bson.D{{Key: "$ne", Value: nil}}},
 			{Key: "gapSeconds", Value: bson.D{{Key: "$lte", Value: maxGapSeconds}}},
 		}},
+	})
+
+	// Orden explícito antes del tope: sin él, el $limit se quedaba con los
+	// 50 pares que quedaran del $sort inicial (grupo alfabéticamente menor,
+	// evento más viejo), re-alertando siempre los mismos y ocultando el
+	// resto para siempre. Ascendente por gap = primero los peores casos.
+	pipeline = append(pipeline, bson.D{
+		{Key: "$sort", Value: bson.D{{Key: "gapSeconds", Value: 1}}},
 	})
 
 	// Mismo tope que buildAggregatePipeline: sin límite, un monitor con

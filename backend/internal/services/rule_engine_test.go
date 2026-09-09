@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // pipelineStageKeys returns each pipeline stage's operator ("$match",
@@ -280,7 +282,17 @@ func baseVelocityCond() models.VelocityCondition {
 // demasiado próximos.
 func TestBuildVelocityPipeline_Forma(t *testing.T) {
 	pipeline := buildVelocityPipeline(baseVelocityCond())
-	assertStages(t, pipelineStageKeys(pipeline), []string{"$sort", "$setWindowFields", "$addFields", "$match", "$limit"})
+	// $match inicial = guarda de tipo date; $sort final = orden por gap
+	// antes del tope.
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$sort", "$setWindowFields", "$addFields", "$match", "$sort", "$limit"})
+}
+
+func TestBuildVelocityPipelineDateScoped_Forma(t *testing.T) {
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	pipeline := buildVelocityPipelineDateScoped(baseVelocityCond(), dayStart, dayStart.Add(24*time.Hour))
+	// Igual que la variante sin acotar, con el $match de _ingested_at
+	// insertado justo después del guarda de tipo.
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$match", "$sort", "$setWindowFields", "$addFields", "$match", "$sort", "$limit"})
 }
 
 func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
@@ -290,22 +302,39 @@ func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
 		{Field: "mcc", Operator: models.OpEqual, Value: 7995.0},
 	}
 	pipeline := buildVelocityPipeline(cond)
-	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$sort", "$setWindowFields", "$addFields", "$match", "$limit"})
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$match", "$sort", "$setWindowFields", "$addFields", "$match", "$sort", "$limit"})
 
+	// El filtro del usuario va segundo: el primero es el guarda de tipo.
 	wantFilter := BuildMongoFilter(models.ConditionGroup{Logic: models.LogicAND, Conditions: cond.Filter})
-	gotFilter := stageOperand(t, pipeline[0], "$match")
+	gotFilter := stageOperand(t, pipeline[1], "$match")
 	if fmt.Sprintf("%v", gotFilter) != fmt.Sprintf("%v", wantFilter) {
-		t.Errorf("el primer $match debería ser el filtro previo\ngot:  %v\nwant: %v", gotFilter, wantFilter)
+		t.Errorf("el $match posterior al guarda debería ser el filtro previo\ngot:  %v\nwant: %v", gotFilter, wantFilter)
 	}
+}
+
+// gapMatchStage busca el $match que filtra por gapSeconds, sin depender de
+// su posición: indexar por número obligaba a renumerar cada test cada vez
+// que se agregaba un stage al pipeline.
+func gapMatchStage(t *testing.T, pipeline mongo.Pipeline) bson.M {
+	t.Helper()
+	for _, stage := range pipeline {
+		if stage[0].Key != "$match" {
+			continue
+		}
+		operand := stageOperand(t, stage, "$match")
+		if _, ok := operand["gapSeconds"]; ok {
+			return operand
+		}
+	}
+	t.Fatalf("el pipeline no tiene un $match sobre gapSeconds: %v", pipelineStageKeys(pipeline))
+	return nil
 }
 
 // El $match final compara contra un número de segundos, no contra un string
 // ni una fecha: es la diferencia ya calculada por $dateDiff.
 func TestBuildVelocityPipeline_ComparaGapEnSegundos(t *testing.T) {
 	pipeline := buildVelocityPipeline(baseVelocityCond())
-	// El $match final queda antepenúltimo/penúltimo: el último stage es
-	// $limit (tope de resultados), agregado después del $match de gap.
-	final := stageOperand(t, pipeline[len(pipeline)-2], "$match")
+	final := gapMatchStage(t, pipeline)
 
 	gapCond, ok := final["gapSeconds"].(bson.M)
 	if !ok {
@@ -330,9 +359,220 @@ func TestBuildVelocityPipeline_ComparaGapEnSegundos(t *testing.T) {
 // partición no puede disparar por sí sola.
 func TestBuildVelocityPipeline_DescartaElPrimeroDeCadaParticion(t *testing.T) {
 	pipeline := buildVelocityPipeline(baseVelocityCond())
-	// Igual que arriba: el $match de gap es el penúltimo stage, el último es $limit.
-	final := stageOperand(t, pipeline[len(pipeline)-2], "$match")
+	final := gapMatchStage(t, pipeline)
 	if _, ok := final["prevTime"]; !ok {
 		t.Error("el $match final debería descartar los documentos sin evento anterior (prevTime null)")
+	}
+}
+
+// assertGuardaDeTipoDate verifica que el PRIMER stage del pipeline descarte
+// los documentos cuyo campo de tiempo no es una fecha BSON. Dos motivos:
+// (1) $sort pone los documentos sin el campo al principio de cada partición,
+// así que el primer documento real tomaría su prevTime de uno vacío y
+// quedaría descartado; (2) si el campo llega como string en algunos
+// documentos, $dateDiff los mezclaría — la vía de reentrada exacta del bug
+// histórico de comparación entre tipos BSON.
+func assertGuardaDeTipoDate(t *testing.T, pipeline mongo.Pipeline, timeField string) {
+	t.Helper()
+	if len(pipeline) == 0 {
+		t.Fatal("pipeline vacío")
+	}
+	primero := stageOperand(t, pipeline[0], "$match")
+	cond, ok := primero[timeField].(bson.M)
+	if !ok {
+		t.Fatalf("el primer stage debería ser el guarda de tipo sobre %q, got %#v", timeField, primero)
+	}
+	if cond["$type"] != "date" {
+		t.Errorf("guarda de tipo = %#v, want {$type: \"date\"}", cond)
+	}
+}
+
+func TestBuildVelocityPipeline_GuardaDeTipoDateEsElPrimerStage(t *testing.T) {
+	assertGuardaDeTipoDate(t, buildVelocityPipeline(baseVelocityCond()), "timestamp")
+
+	// También cuando hay filtro de usuario: el guarda va antes.
+	cond := baseVelocityCond()
+	cond.Filter = []models.Condition{{Field: "importe", Operator: models.OpGreaterThan, Value: 5000.0}}
+	assertGuardaDeTipoDate(t, buildVelocityPipeline(cond), "timestamp")
+}
+
+func TestBuildVelocityPipelineDateScoped_GuardaDeTipoDateEsElPrimerStage(t *testing.T) {
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	assertGuardaDeTipoDate(t, buildVelocityPipelineDateScoped(baseVelocityCond(), dayStart, dayStart.Add(24*time.Hour)), "timestamp")
+}
+
+// Sin orden explícito, el $limit se quedaba con los 50 pares más viejos /
+// alfabéticamente menores, re-alertando siempre los mismos y ocultando el
+// resto. Los sobrevivientes tienen que ser los peores: los de gap más chico.
+func assertOrdenPorGapAntesDelLimite(t *testing.T, pipeline mongo.Pipeline) {
+	t.Helper()
+	keys := pipelineStageKeys(pipeline)
+	if keys[len(keys)-1] != "$limit" {
+		t.Fatalf("el último stage debería ser $limit, got %v", keys)
+	}
+	sortStage := pipeline[len(pipeline)-2]
+	if sortStage[0].Key != "$sort" {
+		t.Fatalf("el stage anterior a $limit debería ser $sort, got %v", keys)
+	}
+	operand := stageOperand(t, sortStage, "$sort")
+	if operand["gapSeconds"] == nil {
+		t.Fatalf("el $sort previo al $limit debería ordenar por gapSeconds, got %#v", operand)
+	}
+	if fmt.Sprintf("%v", operand["gapSeconds"]) != "1" {
+		t.Errorf("gapSeconds = %v, want 1 (ascendente: primero los gaps más chicos)", operand["gapSeconds"])
+	}
+}
+
+func TestBuildVelocityPipeline_OrdenaPorGapAscendenteAntesDelLimite(t *testing.T) {
+	assertOrdenPorGapAntesDelLimite(t, buildVelocityPipeline(baseVelocityCond()))
+}
+
+func TestBuildVelocityPipelineDateScoped_OrdenaPorGapAscendenteAntesDelLimite(t *testing.T) {
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	assertOrdenPorGapAntesDelLimite(t, buildVelocityPipelineDateScoped(baseVelocityCond(), dayStart, dayStart.Add(24*time.Hour)))
+}
+
+// El pipeline date-scoped acota por _ingested_at, igual que el de agregados.
+func TestBuildVelocityPipelineDateScoped_AcotaPorIngestedAt(t *testing.T) {
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	dayEnd := dayStart.Add(24 * time.Hour)
+	pipeline := buildVelocityPipelineDateScoped(baseVelocityCond(), dayStart, dayEnd)
+
+	bound := ingestedAtBound(t, pipeline)
+	if bound == nil {
+		t.Fatalf("el pipeline date-scoped debería acotar por _ingested_at: %v", pipelineStageKeys(pipeline))
+	}
+	gte, ok := bound["$gte"].(primitive.DateTime)
+	if !ok {
+		t.Fatalf("$gte debería ser una fecha BSON, got %T", bound["$gte"])
+	}
+	if !gte.Time().UTC().Equal(dayStart) {
+		t.Errorf("$gte = %v, want %v", gte.Time().UTC(), dayStart)
+	}
+	lt, ok := bound["$lt"].(primitive.DateTime)
+	if !ok {
+		t.Fatalf("$lt debería ser una fecha BSON, got %T", bound["$lt"])
+	}
+	if !lt.Time().UTC().Equal(dayEnd) {
+		t.Errorf("$lt = %v, want %v", lt.Time().UTC(), dayEnd)
+	}
+}
+
+// ingestedAtBound devuelve la condición sobre _ingested_at de cualquier
+// $match del pipeline, o nil si no hay ninguna.
+func ingestedAtBound(t *testing.T, pipeline mongo.Pipeline) bson.M {
+	t.Helper()
+	for _, stage := range pipeline {
+		if stage[0].Key != "$match" {
+			continue
+		}
+		operand := stageOperand(t, stage, "$match")
+		if cond, ok := operand["_ingested_at"].(bson.M); ok {
+			return cond
+		}
+	}
+	return nil
+}
+
+// fakeMonitorData reemplaza a MonitorRepository en los tests: registra los
+// pipelines que recibe y devuelve resultados preparados.
+type fakeMonitorData struct {
+	pipelines []mongo.Pipeline
+	results   []bson.M
+	queries   int
+}
+
+func (f *fakeMonitorData) QueryData(_ context.Context, _ string, _ bson.M, _ int64) ([]bson.M, error) {
+	f.queries++
+	return nil, nil
+}
+
+func (f *fakeMonitorData) AggregateData(_ context.Context, _ string, pipeline mongo.Pipeline) ([]bson.M, error) {
+	f.pipelines = append(f.pipelines, pipeline)
+	return f.results, nil
+}
+
+func reglaDeVelocidad() (*models.Monitor, models.Rule) {
+	monitor := &models.Monitor{
+		ID:           primitive.NewObjectID(),
+		Name:         "polizas",
+		CollectionID: "data_polizas",
+	}
+	rule := models.Rule{
+		ID:                 primitive.NewObjectID(),
+		Name:               "dos compras en menos de 35s",
+		Severity:           models.SeverityHigh,
+		VelocityConditions: []models.VelocityCondition{baseVelocityCond()},
+	}
+	return monitor, rule
+}
+
+// C2: las condiciones de velocidad solo se evaluaban en EvaluateRules (la
+// ingesta). El scheduler, "ejecutar ahora" y el backtest pasan todos por
+// matchRuleForDateRange, que las ignoraba en silencio: la regla se guardaba,
+// corría, devolvía cero y nunca fallaba. Este test falla si alguien vuelve a
+// sacar la velocidad del camino date-scoped.
+func TestMatchRuleForDateRange_EvaluaCondicionesDeVelocidad(t *testing.T) {
+	fake := &fakeMonitorData{results: []bson.M{
+		{"_id": "doc-1", "tarjeta": "T4111", "gapSeconds": int64(12)},
+	}}
+	engine := &RuleEngine{monitorRepo: fake}
+	monitor, rule := reglaDeVelocidad()
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+
+	// BacktestRule es el consumidor puro de matchRuleForDateRange (sin
+	// escrituras): EvaluateRuleForDateRange y EvaluateRuleNow lo comparten.
+	flags := engine.BacktestRule(context.Background(), monitor, rule, dayStart, dayStart.Add(24*time.Hour))
+
+	if len(flags) != 1 {
+		t.Fatalf("got %d banderas rojas, want 1 — la velocidad no se está evaluando en el camino date-scoped", len(flags))
+	}
+	if flags[0].GroupByValue != "T4111" {
+		t.Errorf("GroupByValue = %q, want \"T4111\"", flags[0].GroupByValue)
+	}
+	if flags[0].RuleID != rule.ID || flags[0].MonitorID != monitor.ID {
+		t.Error("la bandera roja no quedó atada a la regla y al monitor")
+	}
+	// El fingerprint tiene que anclarse al día evaluado, no a time.Now():
+	// si no, un backlog de varios días del scheduler colapsa en uno solo.
+	if want := models.AggRedFlagFingerprint(rule.ID, monitor.ID, dayStart, "T4111|doc-1"); flags[0].Fingerprint != want {
+		t.Errorf("Fingerprint = %q, want %q (anclado a dayStart)", flags[0].Fingerprint, want)
+	}
+
+	// Y el pipeline que se ejecutó tiene que estar acotado al rango: sin
+	// esto, cablear la velocidad sin scoping también pasaría el test.
+	if len(fake.pipelines) != 1 {
+		t.Fatalf("got %d pipelines ejecutados, want 1", len(fake.pipelines))
+	}
+	if ingestedAtBound(t, fake.pipelines[0]) == nil {
+		t.Error("el pipeline ejecutado no está acotado por _ingested_at")
+	}
+}
+
+// Aditividad: una regla sin condiciones de velocidad se comporta igual que
+// antes de esta rama — no ejecuta ningún pipeline extra.
+func TestMatchRuleForDateRange_SinVelocidadNoEjecutaPipelines(t *testing.T) {
+	fake := &fakeMonitorData{}
+	engine := &RuleEngine{monitorRepo: fake}
+	monitor := &models.Monitor{ID: primitive.NewObjectID(), CollectionID: "data_polizas"}
+	rule := models.Rule{
+		ID: primitive.NewObjectID(),
+		ConditionGroup: models.ConditionGroup{
+			Logic:      models.LogicAND,
+			Conditions: []models.Condition{{Field: "importe", Operator: models.OpGreaterThan, Value: 10000.0}},
+		},
+	}
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+
+	flags := engine.BacktestRule(context.Background(), monitor, rule, dayStart, dayStart.Add(24*time.Hour))
+
+	if len(flags) != 0 {
+		t.Errorf("got %d banderas rojas, want 0", len(flags))
+	}
+	if len(fake.pipelines) != 0 {
+		t.Errorf("una regla sin agregados ni velocidad no debería ejecutar pipelines, got %d", len(fake.pipelines))
+	}
+	if fake.queries != 1 {
+		t.Errorf("la consulta fila a fila debería seguir ejecutándose una vez, got %d", fake.queries)
 	}
 }
