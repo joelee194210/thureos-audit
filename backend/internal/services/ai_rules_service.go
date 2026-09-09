@@ -31,6 +31,7 @@ type AIRuleSuggestion struct {
 	Description         string                      `json:"description"`
 	ConditionGroup      models.ConditionGroup       `json:"conditionGroup"`
 	AggregateConditions []models.AggregateCondition `json:"aggregateConditions,omitempty"`
+	VelocityConditions  []models.VelocityCondition  `json:"velocityConditions,omitempty"`
 	Severity            models.Severity             `json:"severity"`
 	Actions             []models.ActionType         `json:"actions"`
 	Reasoning           string                      `json:"reasoning"`
@@ -81,6 +82,17 @@ Return ONLY a JSON array of rule suggestions. Each rule must follow this exact s
       "threshold": value
     }
   ],
+  "velocityConditions": [
+    {
+      "timeField": "field_name",
+      "maxGap": "35s|60s|5min",
+      "groupBy": "field_name",
+      "minEvents": 2,
+      "filter": [
+        {"field": "field_name", "operator": "op", "value": value}
+      ]
+    }
+  ],
   "severity": "low|medium|high|critical",
   "actions": ["red_flag", "flag", "log"],
   "reasoning": "Por qué esta regla es importante, en español"
@@ -104,6 +116,24 @@ but the JSON key is still required — reuse the same field you put in
 "groupBy". "timeWindow" only accepts these units: "s" (seconds), "min"
 (minutes), "h" (hours), "d" (days) — e.g. "60s", "5min", "24h", "7d". Never
 use "m" for minutes or months; it is not a valid unit for this field.
+
+Use "velocityConditions" when the user cares about how close two CONSECUTIVE
+events of the same entity are — "two transactions on the same card less than
+35 seconds apart", "two withdrawals from the same account within a minute".
+This is different from "aggregateConditions": there, the window is anchored
+to now and you count how many events fall inside it; here, the distance
+between one event and the previous one of the same entity is measured.
+"timeField" MUST be a field whose type is "date" in the schema you were
+given — the engine measures time differences and a non-date field silently
+matches nothing. "maxGap" takes the same units as "timeWindow". "minEvents"
+is always 2: the engine measures pairs, not streaks. If the schema has no
+date field, do not emit "velocityConditions" at all.
+
+Both "aggregateConditions" and "velocityConditions" accept an optional
+"filter": a list of conditions that reduces the universe BEFORE grouping or
+before pairing. Use it to say "only casino transactions", "only amounts over
+5000" — e.g. mcc = 7995 combined with a 35s "maxGap" expresses "two casino
+transactions on the same card less than 35 seconds apart".
 
 Available operators: eq, neq, gt, lt, gte, lte, contains, regex, in, not_in, between, is_null, is_not_null, starts_with, ends_with
 
@@ -382,8 +412,34 @@ func discardReason(s AIRuleSuggestion, schema []models.SchemaField) string {
 		if agg.TimeWindow != "" && !validAITimeWindow.MatchString(agg.TimeWindow) {
 			return fmt.Sprintf("la ventana %q no usa una unidad válida (s, min, h, d)", agg.TimeWindow)
 		}
+		if reason := filterFieldsReason(agg.Filter, fieldNames, "el filtro del agregado"); reason != "" {
+			return reason
+		}
 	}
 
+	// La validación de velocidad no se duplica: ValidateVelocityCondition ya
+	// rechaza todo lo que el motor no puede evaluar — campo de tiempo que no
+	// es date, gap no parseable, agrupación fuera del esquema, minEvents != 2
+	// y filtro sobre campos inexistentes. Es la MISMA función que corre al
+	// guardar la regla, así que una sugerencia que pasa acá se puede aplicar.
+	for _, vc := range NormalizeVelocityConditions(s.VelocityConditions) {
+		if err := ValidateVelocityCondition(vc, schema); err != nil {
+			return fmt.Sprintf("la condición de velocidad no es válida: %v", err)
+		}
+	}
+
+	return ""
+}
+
+// filterFieldsReason valida los campos del filtro previo de un agregado: el
+// filtro reduce el universo antes de agrupar, y un campo inexistente lo
+// vacía entero en vez de acotarlo.
+func filterFieldsReason(filter []models.Condition, fieldNames map[string]bool, que string) string {
+	for _, cond := range filter {
+		if !fieldNames[cond.Field] {
+			return fmt.Sprintf("%s usa el campo %q, que no está en el esquema", que, cond.Field)
+		}
+	}
 	return ""
 }
 

@@ -414,6 +414,7 @@ export interface AIRuleSuggestion {
   description: string;
   conditionGroup: ConditionGroup;
   aggregateConditions?: AggregateCondition[];
+  velocityConditions?: VelocityCondition[];
   severity: Severity;
   actions: ActionType[];
   reasoning: string;

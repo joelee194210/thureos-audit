@@ -254,6 +254,84 @@ func TestPartitionSuggestions_ReportaGeneradasYDescartadas(t *testing.T) {
 	}
 }
 
+// El caso que motivó el rediseño: dos transacciones de la misma tarjeta a
+// menos de 35s, filtradas por rubro. Si la IA lo devuelve bien armado, tiene
+// que sobrevivir a la validación.
+func TestDiscardReason_AceptaVelocidadValida(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Casino en ráfaga",
+		VelocityConditions: []models.VelocityCondition{{
+			TimeField: "fecha",
+			MaxGap:    "35s",
+			GroupBy:   "cliente",
+			MinEvents: 2,
+			Filter:    []models.Condition{{Field: "monto", Operator: models.OpGreaterThan, Value: 5000}},
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// minEvents omitido vale 2 (NormalizeVelocityConditions): pedirle a la IA que
+// lo repita sería exigirle un detalle que el propio formulario completa solo.
+func TestDiscardReason_AceptaVelocidadSinMinEvents(t *testing.T) {
+	s := AIRuleSuggestion{
+		VelocityConditions: []models.VelocityCondition{{
+			TimeField: "fecha", MaxGap: "60s", GroupBy: "cliente",
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// El motor mide diferencias de tiempo: un campo que no es date no matchea
+// nada y la regla no dispararía nunca. Es el bug de Date-contra-string.
+func TestDiscardReason_DescartaVelocidadInvalida(t *testing.T) {
+	casos := []struct {
+		nombre string
+		cond   models.VelocityCondition
+	}{
+		{"campo de tiempo que no es date", models.VelocityCondition{
+			TimeField: "cliente", MaxGap: "35s", GroupBy: "cliente", MinEvents: 2,
+		}},
+		{"gap no parseable", models.VelocityCondition{
+			TimeField: "fecha", MaxGap: "un rato", GroupBy: "cliente", MinEvents: 2,
+		}},
+		{"filtro sobre campo inexistente", models.VelocityCondition{
+			TimeField: "fecha", MaxGap: "35s", GroupBy: "cliente", MinEvents: 2,
+			Filter: []models.Condition{{Field: "no_existe", Operator: models.OpEqual, Value: 1}},
+		}},
+		{"racha en vez de par", models.VelocityCondition{
+			TimeField: "fecha", MaxGap: "35s", GroupBy: "cliente", MinEvents: 5,
+		}},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			s := AIRuleSuggestion{VelocityConditions: []models.VelocityCondition{c.cond}}
+			if got := discardReason(s, testSchema()); got == "" {
+				t.Error("discardReason = \"\", quería descartarla")
+			}
+		})
+	}
+}
+
+// El filtro previo de un agregado se valida igual que el de velocidad.
+func TestDiscardReason_DescartaFiltroDeAgregadoInexistente(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+			TimeField: "fecha", TimeWindow: "24h",
+			Operator: models.OpGreaterThan, Threshold: 1,
+			Filter: []models.Condition{{Field: "no_existe", Operator: models.OpEqual, Value: 1}},
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla")
+	}
+}
+
 func TestDiscardReason_DescartaCamposInexistentes(t *testing.T) {
 	casos := []struct {
 		nombre string
