@@ -1240,27 +1240,42 @@ function RulesContent() {
                     </p>
                   )}
 
-                  {aiNoResults && !aiLoading && (
+                  {/* Los descartes se muestran siempre que los haya, no solo
+                      cuando no quedó ninguna sugerencia válida: con 5
+                      generadas y 3 descartadas, ver 2 sin más contexto es
+                      justo el caso donde se asume que eso fue todo. */}
+                  {!aiLoading && aiDiscarded.length > 0 && (
+                    <div className="rounded-md border border-dashed p-4">
+                      <p className="text-sm font-medium">
+                        {aiSuggestions.length > 0
+                          ? `Se descartaron ${aiDiscarded.length} de ${
+                              aiDiscarded.length + aiSuggestions.length
+                            } sugerencias`
+                          : "La IA no devolvió ninguna sugerencia válida"}
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {aiDiscarded.map((d, i) => (
+                          <li key={i} className="text-xs text-muted-foreground">
+                            <span className="font-medium">
+                              {d.name || "Sin nombre"}
+                            </span>
+                            {": "}
+                            {d.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {aiNoResults && !aiLoading && aiDiscarded.length === 0 && (
                     <div className="rounded-md border border-dashed p-4">
                       <p className="text-sm font-medium">
                         La IA no devolvió ninguna sugerencia válida
                       </p>
-                      {aiDiscarded.length > 0 ? (
-                        <ul className="mt-2 space-y-1">
-                          {aiDiscarded.map((d, i) => (
-                            <li key={i} className="text-xs text-muted-foreground">
-                              <span className="font-medium">{d.name || "Sin nombre"}</span>
-                              {": "}
-                              {d.reason}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          El modelo no devolvió ninguna regla. Probá describir el
-                          criterio con los nombres exactos de los campos.
-                        </p>
-                      )}
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        El modelo no devolvió ninguna regla. Probá describir el
+                        criterio con los nombres exactos de los campos.
+                      </p>
                     </div>
                   )}
 
