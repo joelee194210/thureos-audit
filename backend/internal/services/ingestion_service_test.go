@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thureos/compliance/internal/models"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestDetectSchemaFromJSON_DetectsDatesMixedWithStringsAndNumbers(t *testing.T) {
@@ -543,5 +544,52 @@ func TestIsValidDateFormatPreset_KnownPresetsAreValid(t *testing.T) {
 func TestIsValidDateFormatPreset_UnknownKeyIsInvalid(t *testing.T) {
 	if IsValidDateFormatPreset("YYYY-DD-MM") {
 		t.Error("una clave que no está en DateFormatPresets debe ser inválida")
+	}
+}
+
+// El documento ingerido debe llevar el campo derivado como time.Time cuando
+// el monitor lo tiene configurado, y no llevarlo cuando no.
+func TestApplyDerivedTimestamp_AgregaCampoCuandoHayConfig(t *testing.T) {
+	cfg := &models.DerivedTimestampConfig{
+		DateField: "fechapoliza", DateFormat: "YYYYMMDD",
+		TimeField: "horapoliza", TimeFormat: "HHMMSS",
+		TargetName: "timestamp",
+	}
+	doc := bson.M{"fechapoliza": int32(20260907), "horapoliza": int32(21517)}
+
+	applyDerivedTimestamp(doc, cfg)
+
+	got, ok := doc["timestamp"].(time.Time)
+	if !ok {
+		t.Fatalf("esperaba un time.Time en 'timestamp', got %T", doc["timestamp"])
+	}
+	if want := time.Date(2026, 9, 7, 2, 15, 17, 0, time.UTC); !got.Equal(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestApplyDerivedTimestamp_SinConfigNoTocaElDocumento(t *testing.T) {
+	doc := bson.M{"fechapoliza": int32(20260907), "horapoliza": int32(21517)}
+	applyDerivedTimestamp(doc, nil)
+	if _, existe := doc["timestamp"]; existe {
+		t.Error("sin configuración no debería agregarse ningún campo derivado")
+	}
+	if len(doc) != 2 {
+		t.Errorf("el documento no debería cambiar, got %d campos", len(doc))
+	}
+}
+
+// Una fila con hora ilegible se ingiere igual, sin el campo derivado: un
+// timestamp inconstruible es dato incompleto, no dato inválido.
+func TestApplyDerivedTimestamp_InconstruibleNoAgregaCampo(t *testing.T) {
+	cfg := &models.DerivedTimestampConfig{
+		DateField: "fechapoliza", DateFormat: "YYYYMMDD",
+		TimeField: "horapoliza", TimeFormat: "HHMMSS",
+		TargetName: "timestamp",
+	}
+	doc := bson.M{"fechapoliza": int32(20260907)}
+	applyDerivedTimestamp(doc, cfg)
+	if _, existe := doc["timestamp"]; existe {
+		t.Error("no debería agregarse el campo si no se puede construir")
 	}
 }

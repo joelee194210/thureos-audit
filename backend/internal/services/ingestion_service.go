@@ -247,6 +247,7 @@ func (s *IngestionService) ingestDelimited(ctx context.Context, monitor *models.
 				doc[name] = parseValue(row[j], schema, name)
 			}
 		}
+		applyDerivedTimestamp(doc, monitor.DerivedTimestamp)
 		documents = append(documents, doc)
 	}
 
@@ -340,6 +341,7 @@ func (s *IngestionService) IngestJSON(ctx context.Context, monitor *models.Monit
 	documents := make([]interface{}, 0, len(records))
 	for _, record := range records {
 		record["_ingested_at"] = time.Now()
+		applyDerivedTimestamp(record, monitor.DerivedTimestamp)
 		documents = append(documents, record)
 	}
 
@@ -460,6 +462,7 @@ func (s *IngestionService) IngestExcel(ctx context.Context, monitor *models.Moni
 				doc[name] = parseValue(row[j], schema, name)
 			}
 		}
+		applyDerivedTimestamp(doc, monitor.DerivedTimestamp)
 		documents = append(documents, doc)
 	}
 
@@ -653,6 +656,18 @@ func IsValidDateFormatPreset(key string) bool {
 	}
 	_, ok := DateFormatPresets[key]
 	return ok
+}
+
+// applyDerivedTimestamp escribe el campo de fecha derivado en el documento
+// cuando el monitor lo tiene configurado. Sin configuración, o cuando el
+// timestamp no se puede construir, el documento queda intacto.
+func applyDerivedTimestamp(doc bson.M, cfg *models.DerivedTimestampConfig) {
+	if cfg == nil || cfg.TargetName == "" {
+		return
+	}
+	if ts, ok := BuildDerivedTimestamp(*cfg, doc); ok {
+		doc[cfg.TargetName] = ts
+	}
 }
 
 // parseValue expects fieldName already resolved to its final schema field
