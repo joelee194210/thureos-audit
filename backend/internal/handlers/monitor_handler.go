@@ -578,18 +578,48 @@ func (h *MonitorHandler) UploadLogApprove(c *fiber.Ctx) error {
 		log.Printf("bitacora: marcando entrada aprobada: %v", approveErr)
 	}
 
+	// La ingesta persistió el schema detectado del archivo aprobado, que no
+	// incluye el campo derivado. Devolverlo al schema mantiene coherentes la
+	// configuración y lo que ven los selectores y la validación de reglas.
+	timestampConflict := false
+	if monitor.DerivedTimestamp != nil {
+		saved, err := h.monitorRepo.FindByID(c.Context(), monitorID)
+		if err != nil {
+			log.Printf("bitacora: releyendo el monitor tras aprobar: %v", err)
+		} else {
+			schema, conflict := services.SchemaAfterApproval(saved.Schema, monitor.DerivedTimestamp)
+			timestampConflict = conflict
+			update := bson.M{"schema": schema}
+			if conflict {
+				// El archivo aprobado trae una columna real con ese nombre.
+				// Gana la columna del usuario: se limpia la configuración en
+				// vez de dejarla apuntando a un campo que ya no controla.
+				update["derived_timestamp"] = nil
+			}
+			if err := h.monitorRepo.Update(c.Context(), monitorID, update); err != nil {
+				log.Printf("bitacora: restaurando el campo derivado en el schema: %v", err)
+			} else {
+				monitor.Schema = schema
+			}
+		}
+	}
+
 	queued := false
 	if h.jobQueue != nil {
 		qerr := h.jobQueue.Enqueue(c.Context(), services.EvalJob{MonitorID: monitorID.Hex()})
 		queued = qerr == nil
 	}
 
-	return c.JSON(fiber.Map{
+	resp := fiber.Map{
 		"recordsIngested":  outcome.RowsAccepted,
 		"rowsRejected":     len(outcome.RowRejections),
 		"schema":           monitor.Schema,
 		"evaluationQueued": queued,
-	})
+	}
+	if timestampConflict {
+		resp["warning"] = "el archivo aprobado trae una columna con el mismo nombre que el timestamp derivado: se conservó la columna del archivo y se limpió la configuración del timestamp derivado"
+	}
+	return c.JSON(resp)
 }
 
 func (h *MonitorHandler) Evaluate(c *fiber.Ctx) error {
