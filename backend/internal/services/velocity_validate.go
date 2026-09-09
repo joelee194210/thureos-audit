@@ -37,6 +37,13 @@ func ValidateVelocityCondition(cond models.VelocityCondition, schema []models.Sc
 	if cond.MinEvents < 2 {
 		return fmt.Errorf("el mínimo de eventos debe ser al menos 2: hace falta un par para medir un gap")
 	}
+	// El pipeline mide gaps entre eventos consecutivos, o sea pares. Exigir
+	// rachas más largas requeriría contar gaps consecutivos por partición,
+	// que todavía no está implementado — se rechaza en vez de aceptarlo y
+	// comportarse como si fuera 2.
+	if cond.MinEvents > 2 {
+		return fmt.Errorf("por ahora solo se soporta minEvents = 2 (un par de transacciones consecutivas); rachas más largas todavía no están implementadas")
+	}
 	for _, f := range cond.Filter {
 		if _, ok := byName[f.Field]; !ok {
 			return fmt.Errorf("el filtro referencia un campo inexistente: %q", f.Field)

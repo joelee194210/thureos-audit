@@ -280,7 +280,7 @@ func baseVelocityCond() models.VelocityCondition {
 // demasiado próximos.
 func TestBuildVelocityPipeline_Forma(t *testing.T) {
 	pipeline := buildVelocityPipeline(baseVelocityCond())
-	assertStages(t, pipelineStageKeys(pipeline), []string{"$sort", "$setWindowFields", "$addFields", "$match"})
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$sort", "$setWindowFields", "$addFields", "$match", "$limit"})
 }
 
 func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
@@ -290,7 +290,7 @@ func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
 		{Field: "mcc", Operator: models.OpEqual, Value: 7995.0},
 	}
 	pipeline := buildVelocityPipeline(cond)
-	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$sort", "$setWindowFields", "$addFields", "$match"})
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$sort", "$setWindowFields", "$addFields", "$match", "$limit"})
 
 	wantFilter := BuildMongoFilter(models.ConditionGroup{Logic: models.LogicAND, Conditions: cond.Filter})
 	gotFilter := stageOperand(t, pipeline[0], "$match")
@@ -303,7 +303,9 @@ func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
 // ni una fecha: es la diferencia ya calculada por $dateDiff.
 func TestBuildVelocityPipeline_ComparaGapEnSegundos(t *testing.T) {
 	pipeline := buildVelocityPipeline(baseVelocityCond())
-	final := stageOperand(t, pipeline[len(pipeline)-1], "$match")
+	// El $match final queda antepenúltimo/penúltimo: el último stage es
+	// $limit (tope de resultados), agregado después del $match de gap.
+	final := stageOperand(t, pipeline[len(pipeline)-2], "$match")
 
 	gapCond, ok := final["gapSeconds"].(bson.M)
 	if !ok {
@@ -328,7 +330,8 @@ func TestBuildVelocityPipeline_ComparaGapEnSegundos(t *testing.T) {
 // partición no puede disparar por sí sola.
 func TestBuildVelocityPipeline_DescartaElPrimeroDeCadaParticion(t *testing.T) {
 	pipeline := buildVelocityPipeline(baseVelocityCond())
-	final := stageOperand(t, pipeline[len(pipeline)-1], "$match")
+	// Igual que arriba: el $match de gap es el penúltimo stage, el último es $limit.
+	final := stageOperand(t, pipeline[len(pipeline)-2], "$match")
 	if _, ok := final["prevTime"]; !ok {
 		t.Error("el $match final debería descartar los documentos sin evento anterior (prevTime null)")
 	}

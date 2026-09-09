@@ -70,3 +70,11 @@ func TestValidateVelocityCondition_MinEventsMenorADos(t *testing.T) {
 		t.Error("MinEvents < 2 no tiene sentido: hace falta un par para medir un gap")
 	}
 }
+
+func TestValidateVelocityCondition_MinEventsMayorADosNoSoportado(t *testing.T) {
+	cond := baseVelocityCondition()
+	cond.MinEvents = 3
+	if err := ValidateVelocityCondition(cond, schemaConTimestamp()); err == nil {
+		t.Error("MinEvents > 2 debería rechazarse mientras el pipeline solo mida pares")
+	}
+}

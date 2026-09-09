@@ -946,6 +946,12 @@ func buildVelocityPipeline(cond models.VelocityCondition) mongo.Pipeline {
 		}},
 	})
 
+	// Mismo tope que buildAggregatePipeline: sin límite, un monitor con
+	// tráfico alto podría emitir miles de banderas rojas de una sola corrida.
+	pipeline = append(pipeline, bson.D{
+		{Key: "$limit", Value: 50},
+	})
+
 	return pipeline
 }
 
