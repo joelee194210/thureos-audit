@@ -83,6 +83,50 @@ func setTextRGB(pdf *fpdf.Fpdf, c reportRGB) { pdf.SetTextColor(c.r, c.g, c.b) }
 func setFillRGB(pdf *fpdf.Fpdf, c reportRGB) { pdf.SetFillColor(c.r, c.g, c.b) }
 func setDrawRGB(pdf *fpdf.Fpdf, c reportRGB) { pdf.SetDrawColor(c.r, c.g, c.b) }
 
+// redFlagSummaryRows arma la ficha de la bandera roja.
+//
+// El bloque de agregación se omite cuando no hay función de agregación: las
+// banderas de las reglas de velocidad se guardan con RedFlagType "aggregate"
+// (no hay un tipo propio todavía) pero sin AggField/AggFunction/AggValue/
+// Threshold, y renderizarlo igual imprimía "Agregación: ( ) por tarjeta",
+// "Valor: 0" y "Umbral: 0" en el PDF que es el artefacto probatorio del caso.
+// El grupo sí se conserva: para una regla de velocidad es la entidad
+// señalada (la tarjeta), y es un dato correcto.
+func redFlagSummaryRows(rf *models.RedFlag) [][2]string {
+	isAggregate := rf.RedFlagType == models.RedFlagTypeAggregate
+	tipo := "Por coincidencia"
+	if isAggregate {
+		tipo = "Agregada"
+	}
+	summary := [][2]string{
+		{"Identificador", rf.ID.Hex()},
+		{"Monitor", rf.MonitorName},
+		{"Regla", rf.RuleName},
+		{"Tipo", tipo},
+		{"Detectada", formatDateEs(rf.CreatedAt)},
+		{"Coincidencias", strconv.Itoa(rf.MatchCount)},
+	}
+	hasAggDetail := isAggregate && rf.AggFunction != ""
+	if hasAggDetail {
+		summary = append(summary, [2]string{
+			"Agregación",
+			fmt.Sprintf("%s(%s) por %s", strings.ToUpper(rf.AggFunction), orDash(rf.AggField), orDash(rf.GroupByField)),
+		})
+	}
+	if isAggregate && rf.GroupByValue != "" {
+		summary = append(summary, [2]string{"Grupo", rf.GroupByValue})
+	}
+	if hasAggDetail {
+		summary = append(summary, [2]string{"Valor", formatReportFloat(rf.AggValue)})
+		summary = append(summary, [2]string{"Umbral", formatReportFloat(rf.Threshold)})
+		if rf.Threshold != 0 {
+			pct := (rf.AggValue / rf.Threshold) * 100
+			summary = append(summary, [2]string{"Sobre el umbral", fmt.Sprintf("%.0f%%", pct)})
+		}
+	}
+	return summary
+}
+
 // RenderRedFlagReportPDF arma el informe PDF de una bandera roja recién
 // creada. Replica las secciones de frontend/src/lib/red-flag-report.ts —
 // salvo la bitácora de auditoría, que todavía no existe en el momento de
@@ -158,35 +202,7 @@ func RenderRedFlagReportPDF(rf *models.RedFlag) ([]byte, error) {
 	// ---- Ficha ----
 	drawReportSectionTitle(pdf, "Ficha de la bandera roja", contentW)
 
-	isAggregate := rf.RedFlagType == models.RedFlagTypeAggregate
-	tipo := "Por coincidencia"
-	if isAggregate {
-		tipo = "Agregada"
-	}
-	summary := [][2]string{
-		{"Identificador", rf.ID.Hex()},
-		{"Monitor", rf.MonitorName},
-		{"Regla", rf.RuleName},
-		{"Tipo", tipo},
-		{"Detectada", formatDateEs(rf.CreatedAt)},
-		{"Coincidencias", strconv.Itoa(rf.MatchCount)},
-	}
-	if isAggregate {
-		summary = append(summary, [2]string{
-			"Agregación",
-			fmt.Sprintf("%s(%s) por %s", strings.ToUpper(rf.AggFunction), orDash(rf.AggField), orDash(rf.GroupByField)),
-		})
-		if rf.GroupByValue != "" {
-			summary = append(summary, [2]string{"Grupo", rf.GroupByValue})
-		}
-		summary = append(summary, [2]string{"Valor", formatReportFloat(rf.AggValue)})
-		summary = append(summary, [2]string{"Umbral", formatReportFloat(rf.Threshold)})
-		if rf.Threshold != 0 {
-			pct := (rf.AggValue / rf.Threshold) * 100
-			summary = append(summary, [2]string{"Sobre el umbral", fmt.Sprintf("%.0f%%", pct)})
-		}
-	}
-	drawReportKeyValueTable(pdf, summary, contentW)
+	drawReportKeyValueTable(pdf, redFlagSummaryRows(rf), contentW)
 	pdf.Ln(4)
 
 	// ---- Registros afectados ----
