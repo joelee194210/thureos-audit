@@ -985,8 +985,16 @@ func buildVelocityPipelineDateScoped(cond models.VelocityCondition, dayStart, da
 }
 
 // velocityPipelineStages arma el pipeline de velocidad, insertando los
-// stages de acotamiento que le pase el llamador justo después del guarda de
-// tipo. Las dos variantes comparten todo lo demás.
+// stages de acotamiento que le pase el llamador DESPUÉS de que los pares se
+// formaron. Las dos variantes comparten todo lo demás.
+//
+// El acotamiento va después y no antes a propósito: $setWindowFields solo ve
+// los documentos que le llegan, así que filtrar primero por _ingested_at deja
+// fuera el evento anterior de todo par que cruce dos lotes de ingesta — en un
+// monitor de archivo diario, la última transacción de ayer y la primera de hoy
+// nunca se emparejarían y esa alerta se perdería en silencio. Formando los
+// pares sobre la historia completa y recién después descartando los que caen
+// fuera de la ventana, se reporta lo que corresponde sin re-alertar el pasado.
 func velocityPipelineStages(cond models.VelocityCondition, scope mongo.Pipeline) mongo.Pipeline {
 	// Guarda de tipo, SIEMPRE el primer stage. Dos razones:
 	//  1. $sort ubica los documentos sin el campo de tiempo al principio de
@@ -1001,7 +1009,6 @@ func velocityPipelineStages(cond models.VelocityCondition, scope mongo.Pipeline)
 			{Key: cond.TimeField, Value: bson.D{{Key: "$type", Value: "date"}}},
 		}}},
 	}
-	pipeline = append(pipeline, scope...)
 
 	if len(cond.Filter) > 0 {
 		pipeline = append(pipeline, bson.D{
@@ -1048,6 +1055,10 @@ func velocityPipelineStages(cond models.VelocityCondition, scope mongo.Pipeline)
 			}},
 		}},
 	})
+
+	// Recién acá se acota: los pares ya están formados, así que descartar por
+	// ventana ahora reduce qué se reporta sin impedir que un par cruce lotes.
+	pipeline = append(pipeline, scope...)
 
 	maxGapSeconds := int64(parseTimeWindow(cond.MaxGap) / time.Second)
 	pipeline = append(pipeline, bson.D{

@@ -291,8 +291,56 @@ func TestBuildVelocityPipelineDateScoped_Forma(t *testing.T) {
 	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
 	pipeline := buildVelocityPipelineDateScoped(baseVelocityCond(), dayStart, dayStart.Add(24*time.Hour))
 	// Igual que la variante sin acotar, con el $match de _ingested_at
-	// insertado justo después del guarda de tipo.
-	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$match", "$sort", "$setWindowFields", "$addFields", "$match", "$sort", "$limit"})
+	// insertado DESPUÉS del $addFields — ver el test de abajo.
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$sort", "$setWindowFields", "$addFields", "$match", "$match", "$sort", "$limit"})
+}
+
+// El acotamiento por _ingested_at debe aplicarse DESPUÉS de que los pares se
+// formaron, no antes. Si se aplica antes, $setWindowFields solo ve los
+// documentos de la ventana, así que el evento anterior de un par que cruza
+// dos lotes de ingesta no existe para él: en un monitor de archivo diario,
+// la última transacción de ayer y la primera de hoy nunca se emparejan y esa
+// alerta se pierde en silencio.
+func TestBuildVelocityPipelineDateScoped_AcotaDespuesDeFormarLosPares(t *testing.T) {
+	dayStart := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	pipeline := buildVelocityPipelineDateScoped(baseVelocityCond(), dayStart, dayStart.Add(24*time.Hour))
+
+	idxWindow, idxScope := -1, -1
+	for i, stage := range pipeline {
+		switch stage[0].Key {
+		case "$setWindowFields":
+			idxWindow = i
+		case "$match":
+			operand := stageOperand(t, stage, "$match")
+			if _, ok := operand["_ingested_at"]; ok {
+				idxScope = i
+			}
+		}
+	}
+
+	if idxScope == -1 {
+		t.Fatal("no se encontró el $match de _ingested_at en el pipeline acotado")
+	}
+	if idxWindow == -1 {
+		t.Fatal("no se encontró el $setWindowFields en el pipeline")
+	}
+	if idxScope < idxWindow {
+		t.Errorf("el $match de _ingested_at está en la posición %d, antes del $setWindowFields (%d): "+
+			"acotar antes de formar los pares hace que un par que cruza dos lotes de ingesta nunca se forme", idxScope, idxWindow)
+	}
+}
+
+// La variante sin acotar no debe cambiar: no recibe stages de acotamiento.
+func TestBuildVelocityPipeline_SinAcotarNoTieneMatchDeIngestedAt(t *testing.T) {
+	pipeline := buildVelocityPipeline(baseVelocityCond())
+	for _, stage := range pipeline {
+		if stage[0].Key != "$match" {
+			continue
+		}
+		if _, ok := stageOperand(t, stage, "$match")["_ingested_at"]; ok {
+			t.Error("el pipeline sin acotar no debería filtrar por _ingested_at")
+		}
+	}
 }
 
 func TestBuildVelocityPipeline_ConFiltroAgregaMatchAlPrincipio(t *testing.T) {
