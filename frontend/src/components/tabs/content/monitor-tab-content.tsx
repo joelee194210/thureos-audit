@@ -96,6 +96,9 @@ export function MonitorTabContent({
   const [monitor, setMonitor] = useState<Monitor | null>(null);
   const [schemaEdits, setSchemaEdits] = useState<SchemaField[]>([]);
   const [savingSchema, setSavingSchema] = useState(false);
+  const [confirmarReescalado, setConfirmarReescalado] = useState<
+    { campo: string; de: number; a: number }[] | null
+  >(null);
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -206,16 +209,46 @@ export function MonitorTabContent({
     );
   }
 
+  /** Campos cuyos decimales implícitos cambiaron respecto del esquema guardado. */
+  function cambiosDeEscala() {
+    if (!monitor) return [];
+    return schemaEdits
+      .map((f) => {
+        const previo = monitor.schema.find((x) => x.name === f.name);
+        const de = previo?.impliedDecimals ?? 0;
+        const a = f.impliedDecimals ?? 0;
+        return de === a ? null : { campo: f.name, de, a };
+      })
+      .filter((x): x is { campo: string; de: number; a: number } => x !== null);
+  }
+
   async function handleSaveSchema() {
+    // Cambiar los decimales no recalcula lo ya guardado: sin este aviso, la
+    // colección queda con dos escalas del mismo campo y nada lo señala.
+    const cambios = cambiosDeEscala();
+    if (cambios.length > 0 && (monitor?.recordCount ?? 0) > 0) {
+      setConfirmarReescalado(cambios);
+      return;
+    }
+    await guardarEsquema(false);
+  }
+
+  async function guardarEsquema(rescaleExisting: boolean) {
     setSavingSchema(true);
     try {
-      const result = await monitorsApi.updateSchema(id, schemaEdits);
+      const result = await monitorsApi.updateSchema(id, schemaEdits, rescaleExisting);
       setMonitor((prev) => (prev ? { ...prev, schema: result.schema } : prev));
-      toastSuccess("Esquema actualizado");
+      const convertidos = Object.values(result.rescaled ?? {}).reduce((a, b) => a + b, 0);
+      toastSuccess(
+        convertidos > 0
+          ? `Esquema actualizado — ${convertidos} registros convertidos`
+          : "Esquema actualizado",
+      );
     } catch {
       toastError("No se pudo guardar el esquema");
     } finally {
       setSavingSchema(false);
+      setConfirmarReescalado(null);
     }
   }
 
@@ -972,6 +1005,41 @@ export function MonitorTabContent({
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setPendingFile(null)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmUploadAnyway}>Subir de todas formas</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmarReescalado !== null}
+        onOpenChange={(open) => !open && setConfirmarReescalado(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convertir los datos ya cargados</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  Este monitor tiene {monitor?.recordCount ?? 0} registros
+                  guardados en la escala actual. Al cambiar los decimales
+                  implícitos, sus valores se convierten:
+                </p>
+                <ul className="space-y-1">
+                  {(confirmarReescalado ?? []).map((c) => (
+                    <li key={c.campo} className="text-xs">
+                      <span className="font-medium">{c.campo}</span>
+                      {`: ${c.de} → ${c.a} decimales`}
+                    </li>
+                  ))}
+                </ul>
+                <p className="font-medium">Esta operación no se deshace sola.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => guardarEsquema(true)}>
+              Convertir y guardar
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

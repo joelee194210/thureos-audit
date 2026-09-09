@@ -321,6 +321,74 @@ func (r *MonitorRepository) BackfillDataField(
 	return updated, skipped, nil
 }
 
+// rescaleExpression arma la conversión de un campo entre dos escalas de
+// decimales implícitos. delta = decimalesNuevos - decimalesViejos:
+//
+//	delta > 0  el valor guardado se achica  → dividir por 10^delta
+//	delta < 0  el valor guardado se agranda → multiplicar por 10^-delta
+//
+// Siempre por una potencia de diez ENTERA, nunca multiplicando por su
+// recíproco: son montos, y `5000 * 0.1` en float64 da 500.00000000000006,
+// mientras que `5000 / 10` da 500 exacto.
+func rescaleExpression(field string, delta int) bson.D {
+	if delta == 0 {
+		return nil
+	}
+
+	op := "$divide"
+	exp := delta
+	if delta < 0 {
+		op = "$multiply"
+		exp = -delta
+	}
+
+	factor := int64(1)
+	for i := 0; i < exp; i++ {
+		factor *= 10
+	}
+
+	return bson.D{{Key: op, Value: bson.A{"$" + field, factor}}}
+}
+
+// RescaleDataField convierte un campo numérico entre dos escalas de
+// decimales implícitos, en una sola operación del servidor.
+//
+// Solo toca documentos ingeridos hasta `cutoff`: los posteriores ya se
+// guardaron con la configuración nueva y convertirlos otra vez los dejaría
+// mal. El llamador toma el cutoff ANTES de escribir el esquema, de modo que
+// la carrera que queda —una carga concurrente en la ventana de milisegundos
+// entre ambos— deje una fila en la escala vieja, que se ve al mirar los
+// datos, en vez de una convertida dos veces, que no se distingue de un monto
+// legítimo.
+//
+// Los documentos sin el campo, o donde no es numérico, se dejan como están.
+func (r *MonitorRepository) RescaleDataField(
+	ctx context.Context,
+	collectionID string,
+	field string,
+	delta int,
+	cutoff time.Time,
+) (int64, error) {
+	expr := rescaleExpression(field, delta)
+	if expr == nil {
+		return 0, nil
+	}
+
+	res, err := r.GetDataCollection(collectionID).UpdateMany(ctx,
+		bson.M{
+			field:          bson.M{"$type": "number"},
+			"_ingested_at": bson.M{"$lte": cutoff},
+		},
+		mongo.Pipeline{
+			{{Key: "$set", Value: bson.D{{Key: field, Value: expr}}}},
+		},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("rescaling %s: %w", field, err)
+	}
+	return res.ModifiedCount, nil
+}
+
 // EnsureDataIndex crea un índice sobre la colección de datos del monitor si
 // todavía no existe (crear un índice ya existente es un no-op en MongoDB).
 // Lo usan las reglas de velocidad: su pipeline ordena por agrupación y tiempo

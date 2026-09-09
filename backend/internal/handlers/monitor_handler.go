@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -730,6 +731,10 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 
 	var body struct {
 		Schema []models.SchemaField `json:"schema"`
+		// RescaleExisting confirma que se conviertan los documentos ya
+		// guardados. Sin él, un cambio de decimales sobre un monitor con
+		// datos se rechaza en vez de dejar dos escalas en la colección.
+		RescaleExisting bool `json:"rescaleExisting"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
@@ -758,12 +763,79 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 		}
 	}
 
+	// El schema enviado ya se validó arriba: tiene exactamente los mismos
+	// campos que el actual, así que comparar por nombre es seguro.
+	cambios := cambiosDeEscala(monitor.Schema, body.Schema)
+
+	if len(cambios) > 0 && !body.RescaleExisting {
+		registros, err := h.monitorRepo.GetDataCollection(monitor.CollectionID).
+			CountDocuments(c.Context(), bson.M{})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+		if registros > 0 {
+			campos := make([]string, 0, len(cambios))
+			for name := range cambios {
+				campos = append(campos, name)
+			}
+			sort.Strings(campos)
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": fmt.Sprintf(
+					"cambiar los decimales implícitos de %s deja los %d registros ya cargados en la escala vieja; mandá rescaleExisting para convertirlos",
+					strings.Join(campos, ", "), registros,
+				),
+				"fields":  campos,
+				"records": registros,
+			})
+		}
+	}
+
+	// El cutoff se toma ANTES de escribir el esquema: ver RescaleDataField.
+	cutoff := time.Now()
+
 	monitor.Schema = body.Schema
 	if err := h.monitorRepo.Update(c.Context(), monitor.ID, bson.M{"schema": monitor.Schema}); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"schema": monitor.Schema})
+	rescaled := map[string]int64{}
+	for name, delta := range cambios {
+		if !body.RescaleExisting {
+			continue
+		}
+		n, err := h.monitorRepo.RescaleDataField(c.Context(), monitor.CollectionID, name, delta, cutoff)
+		if err != nil {
+			// Los campos ya convertidos quedan convertidos: no hay rollback.
+			// Reintentar la misma petición los convertiría de nuevo, así que
+			// el error dice explícitamente qué se completó.
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error":    fmt.Sprintf("el esquema se guardó pero falló el reescalado de %q: %v. Revisá los datos antes de reintentar: los campos ya convertidos no se deshacen.", name, err),
+				"rescaled": rescaled,
+			})
+		}
+		rescaled[name] = n
+	}
+
+	return c.JSON(fiber.Map{"schema": monitor.Schema, "rescaled": rescaled})
+}
+
+// cambiosDeEscala devuelve, por campo, cuánto cambian sus decimales
+// implícitos entre el esquema guardado y el que se está por guardar. El
+// delta es `nuevo - viejo`, que es lo que espera RescaleDataField. Los
+// campos que no cambian no aparecen: un mapa vacío significa que no hay
+// nada que convertir.
+func cambiosDeEscala(actual, nuevo []models.SchemaField) map[string]int {
+	viejos := make(map[string]int, len(actual))
+	for _, f := range actual {
+		viejos[f.Name] = f.ImpliedDecimals
+	}
+	cambios := make(map[string]int)
+	for _, f := range nuevo {
+		if delta := f.ImpliedDecimals - viejos[f.Name]; delta != 0 {
+			cambios[f.Name] = delta
+		}
+	}
+	return cambios
 }
 
 // schemaSinCampoDerivado devuelve el schema del monitor sin la entrada del
