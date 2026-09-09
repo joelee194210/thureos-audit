@@ -34,6 +34,18 @@ type SchemaField struct {
 	DateFormat      string    `bson:"date_format,omitempty" json:"dateFormat,omitempty"`
 }
 
+// DerivedTimestampConfig construye un campo de fecha real a partir de dos
+// columnas numéricas separadas — patrón habitual en exports bancarios, donde
+// fecha y hora vienen en campos distintos. Nil en el monitor significa que no
+// hay timestamp derivado y todo se comporta como siempre.
+type DerivedTimestampConfig struct {
+	DateField  string `bson:"date_field" json:"dateField"`
+	DateFormat string `bson:"date_format" json:"dateFormat"` // "YYYYMMDD"
+	TimeField  string `bson:"time_field" json:"timeField"`
+	TimeFormat string `bson:"time_format" json:"timeFormat"` // "HHMMSS" | "HHMM"
+	TargetName string `bson:"target_name" json:"targetName"`
+}
+
 type APIMode string
 
 const (
@@ -121,18 +133,19 @@ func (in *SourceConfigInput) ToSourceConfig() *SourceConfig {
 }
 
 type Monitor struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name         string             `bson:"name" json:"name"`
-	Description  string             `bson:"description" json:"description"`
-	SourceType   SourceType         `bson:"source_type" json:"sourceType"`
-	SourceConfig *SourceConfig      `bson:"source_config,omitempty" json:"sourceConfig,omitempty"`
-	Schema       []SchemaField      `bson:"schema" json:"schema"`
-	CollectionID string             `bson:"collection_id" json:"collectionId"`
-	OwnerID      primitive.ObjectID `bson:"owner_id" json:"ownerId"`
-	RecordCount  int64              `bson:"record_count" json:"recordCount"`
-	LastIngested *time.Time         `bson:"last_ingested,omitempty" json:"lastIngested,omitempty"`
-	CreatedAt    time.Time          `bson:"created_at" json:"createdAt"`
-	UpdatedAt    time.Time          `bson:"updated_at" json:"updatedAt"`
+	ID               primitive.ObjectID      `bson:"_id,omitempty" json:"id"`
+	Name             string                  `bson:"name" json:"name"`
+	Description      string                  `bson:"description" json:"description"`
+	SourceType       SourceType              `bson:"source_type" json:"sourceType"`
+	SourceConfig     *SourceConfig           `bson:"source_config,omitempty" json:"sourceConfig,omitempty"`
+	Schema           []SchemaField           `bson:"schema" json:"schema"`
+	DerivedTimestamp *DerivedTimestampConfig `bson:"derived_timestamp,omitempty" json:"derivedTimestamp,omitempty"`
+	CollectionID     string                  `bson:"collection_id" json:"collectionId"`
+	OwnerID          primitive.ObjectID      `bson:"owner_id" json:"ownerId"`
+	RecordCount      int64                   `bson:"record_count" json:"recordCount"`
+	LastIngested     *time.Time              `bson:"last_ingested,omitempty" json:"lastIngested,omitempty"`
+	CreatedAt        time.Time               `bson:"created_at" json:"createdAt"`
+	UpdatedAt        time.Time               `bson:"updated_at" json:"updatedAt"`
 }
 
 type CreateMonitorRequest struct {
