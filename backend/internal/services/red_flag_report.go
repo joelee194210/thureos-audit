@@ -94,8 +94,14 @@ func setDrawRGB(pdf *fpdf.Fpdf, c reportRGB) { pdf.SetDrawColor(c.r, c.g, c.b) }
 // señalada (la tarjeta), y es un dato correcto.
 func redFlagSummaryRows(rf *models.RedFlag) [][2]string {
 	isAggregate := rf.RedFlagType.EsAgrupada()
+	// El label es "qué tipo de regla generó esto", no "está agrupada": una
+	// bandera de velocidad también agrupa (EsAgrupada() == true) pero no es
+	// una agregación, así que el label sale del tipo mismo.
 	tipo := "Por coincidencia"
-	if isAggregate {
+	switch rf.RedFlagType {
+	case models.RedFlagTypeVelocity:
+		tipo = "Velocidad"
+	case models.RedFlagTypeAggregate:
 		tipo = "Agregada"
 	}
 	summary := [][2]string{

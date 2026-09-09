@@ -35,10 +35,11 @@ export const monitorsApi = {
   ) => api.put<{ message: string }>(`/monitors/${id}`, data),
 
   updateSchema: (id: string, schema: SchemaField[], rescaleExisting = false) =>
-    api.put<{ schema: SchemaField[]; rescaled?: Record<string, number> }>(
-      `/monitors/${id}/schema`,
-      { schema, rescaleExisting },
-    ),
+    api.put<{
+      schema: SchemaField[];
+      rescaled?: Record<string, number>;
+      omitidos?: Record<string, number>;
+    }>(`/monitors/${id}/schema`, { schema, rescaleExisting }),
 
   /**
    * Configura el timestamp derivado, o lo limpia mandando null. La clave

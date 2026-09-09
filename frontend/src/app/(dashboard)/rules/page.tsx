@@ -68,6 +68,7 @@ import type {
   MCC,
   SchedulePreset,
   RuleSchedule,
+  SchemaField,
 } from "@/lib/types";
 import { ConditionRows } from "@/components/rules/condition-rows";
 import { VelocityConditionEditor } from "@/components/rules/velocity-condition-editor";
@@ -110,6 +111,33 @@ function severityVariant(
 
 function isMCCField(field: string): boolean {
   return /mcc/i.test(field);
+}
+
+/**
+ * Radix SelectItem no acepta value="". Este sentinel representa "sin
+ * ventana" (timeField y timeWindow vacíos) en los Select de campo de fecha
+ * de las condiciones agregadas; se traduce a "" al guardar en el form y de
+ * vuelta al sentinel al leer el valor actual para el Select.
+ */
+const SIN_VENTANA = "__sin_ventana__";
+
+/**
+ * Semilla de una condición agregada nueva: si el monitor tiene algún campo
+ * date, arranca con una ventana válida de 30 días sobre el primero; si no
+ * tiene ninguno, arranca sin ventana (par timeField/timeWindow vacío), la
+ * otra forma que ValidateAggregateCondition acepta.
+ */
+function nuevaCondicionAgregada(schema: SchemaField[]): AggregateCondition {
+  const primerFecha = schema.find((f) => f.type === "date");
+  return {
+    field: "",
+    function: "sum" as AggFunction,
+    groupBy: "",
+    timeField: primerFecha?.name ?? "",
+    timeWindow: primerFecha ? "30d" : "",
+    operator: "gt" as Operator,
+    threshold: 0,
+  };
 }
 
 // --- Schedule helpers ---
@@ -689,19 +717,13 @@ function RulesContent() {
     }));
   }
   function addCreateAggCondition() {
+    const schema =
+      monitors.find((m) => m.id === createForm.monitorId)?.schema ?? [];
     setCreateForm((prev) => ({
       ...prev,
       aggregateConditions: [
         ...prev.aggregateConditions,
-        {
-          field: "",
-          function: "sum" as AggFunction,
-          groupBy: "",
-          timeField: "",
-          timeWindow: "30d",
-          operator: "gt" as Operator,
-          threshold: 0,
-        },
+        nuevaCondicionAgregada(schema),
       ],
     }));
   }
@@ -838,19 +860,12 @@ function RulesContent() {
   }
 
   function addAggregateCondition() {
+    const schema = editMonitorSchema ?? [];
     setEditForm((prev) => ({
       ...prev,
       aggregateConditions: [
         ...prev.aggregateConditions,
-        {
-          field: "",
-          function: "sum" as AggFunction,
-          groupBy: "",
-          timeField: "",
-          timeWindow: "30d",
-          operator: "gt" as Operator,
-          threshold: 0,
-        },
+        nuevaCondicionAgregada(schema),
       ],
     }));
   }
@@ -928,6 +943,7 @@ function RulesContent() {
     numericFields && numericFields.length > 0
       ? numericFields
       : editMonitorSchema;
+  const editDateFields = editMonitorSchema?.filter((f) => f.type === "date");
 
   async function toggleRule(id: string, active: boolean) {
     try {
@@ -1081,6 +1097,9 @@ function RulesContent() {
     createNumericFields && createNumericFields.length > 0
       ? createNumericFields
       : createMonitorSchema;
+  const createDateFields = createMonitorSchema?.filter(
+    (f) => f.type === "date",
+  );
 
   const filteredRules = useMemo(() => {
     let filtered = rules.filter(
@@ -1617,6 +1636,15 @@ function RulesContent() {
                         <Plus className="mr-1 h-3 w-3" /> Agregar
                       </Button>
                     </div>
+                    {createMonitorSchema && !createDateFields?.length && (
+                      <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                        Este monitor no tiene ningún campo de tipo fecha, así
+                        que el agregado no puede acotarse a una ventana: cubre
+                        todo el historial. Si la fecha y la hora vienen en
+                        columnas numéricas separadas, configurá el timestamp
+                        derivado en la pestaña Esquema del monitor.
+                      </p>
+                    )}
                     {createForm.aggregateConditions.map((agg, i) => (
                       <div
                         key={i}
@@ -1708,15 +1736,22 @@ function RulesContent() {
                             </span>
                             <Select
                               value={agg.timeField}
-                              onValueChange={(v) =>
-                                updateCreateAggCondition(i, "timeField", v)
-                              }
+                              onValueChange={(v) => {
+                                updateCreateAggCondition(i, "timeField", v);
+                                if (!agg.timeWindow) {
+                                  updateCreateAggCondition(
+                                    i,
+                                    "timeWindow",
+                                    "30d",
+                                  );
+                                }
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue placeholder="Fecha" />
                               </SelectTrigger>
                               <SelectContent>
-                                {createMonitorSchema?.map((f) => (
+                                {createDateFields?.map((f) => (
                                   <SelectItem key={f.name} value={f.name}>
                                     {f.name}
                                   </SelectItem>
@@ -1729,15 +1764,23 @@ function RulesContent() {
                               Ventana
                             </span>
                             <Select
-                              value={agg.timeWindow}
-                              onValueChange={(v) =>
-                                updateCreateAggCondition(i, "timeWindow", v)
-                              }
+                              value={agg.timeWindow === "" ? SIN_VENTANA : agg.timeWindow}
+                              onValueChange={(v) => {
+                                if (v === SIN_VENTANA) {
+                                  updateCreateAggCondition(i, "timeWindow", "");
+                                  updateCreateAggCondition(i, "timeField", "");
+                                } else {
+                                  updateCreateAggCondition(i, "timeWindow", v);
+                                }
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value={SIN_VENTANA}>
+                                  Sin ventana
+                                </SelectItem>
                                 <SelectItem value="30s">30 segundos</SelectItem>
                                 <SelectItem value="60s">60 segundos</SelectItem>
                                 <SelectItem value="5min">5 minutos</SelectItem>
@@ -1818,8 +1861,11 @@ function RulesContent() {
                         </div>
                         <p className="text-[10px] text-muted-foreground italic">
                           {agg.function.toUpperCase()}({agg.field || "?"})
-                          agrupado por {agg.groupBy || "?"} en ultimos{" "}
-                          {agg.timeWindow} {operatorSymbol(agg.operator)}{" "}
+                          agrupado por {agg.groupBy || "?"}{" "}
+                          {agg.timeWindow
+                            ? `en ultimos ${agg.timeWindow}`
+                            : "sin ventana"}{" "}
+                          {operatorSymbol(agg.operator)}{" "}
                           {agg.threshold.toLocaleString()}
                         </p>
                       </div>
@@ -2590,6 +2636,15 @@ function RulesContent() {
                   <Plus className="mr-1 h-3 w-3" /> Agregar
                 </Button>
               </div>
+              {editMonitorSchema && !editDateFields?.length && (
+                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                  Este monitor no tiene ningún campo de tipo fecha, así que el
+                  agregado no puede acotarse a una ventana: cubre todo el
+                  historial. Si la fecha y la hora vienen en columnas
+                  numéricas separadas, configurá el timestamp derivado en la
+                  pestaña Esquema del monitor.
+                </p>
+              )}
               {editForm.aggregateConditions.map((agg, i) => (
                 <div
                   key={i}
@@ -2689,15 +2744,18 @@ function RulesContent() {
                       </span>
                       <Select
                         value={agg.timeField}
-                        onValueChange={(v) =>
-                          updateAggCondition(i, "timeField", v)
-                        }
+                        onValueChange={(v) => {
+                          updateAggCondition(i, "timeField", v);
+                          if (!agg.timeWindow) {
+                            updateAggCondition(i, "timeWindow", "30d");
+                          }
+                        }}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="Fecha" />
                         </SelectTrigger>
                         <SelectContent>
-                          {editMonitorSchema?.map((f) => (
+                          {editDateFields?.map((f) => (
                             <SelectItem key={f.name} value={f.name}>
                               {f.name}
                             </SelectItem>
@@ -2715,15 +2773,23 @@ function RulesContent() {
                         Ventana
                       </span>
                       <Select
-                        value={agg.timeWindow}
-                        onValueChange={(v) =>
-                          updateAggCondition(i, "timeWindow", v)
-                        }
+                        value={agg.timeWindow === "" ? SIN_VENTANA : agg.timeWindow}
+                        onValueChange={(v) => {
+                          if (v === SIN_VENTANA) {
+                            updateAggCondition(i, "timeWindow", "");
+                            updateAggCondition(i, "timeField", "");
+                          } else {
+                            updateAggCondition(i, "timeWindow", v);
+                          }
+                        }}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value={SIN_VENTANA}>
+                            Sin ventana
+                          </SelectItem>
                           <SelectItem value="30s">30 segundos</SelectItem>
                           <SelectItem value="60s">60 segundos</SelectItem>
                           <SelectItem value="5min">5 minutos</SelectItem>
@@ -2794,7 +2860,10 @@ function RulesContent() {
                   </div>
                   <p className="text-[10px] text-muted-foreground italic">
                     {agg.function.toUpperCase()}({agg.field || "?"}) agrupado
-                    por {agg.groupBy || "?"} en ultimos {agg.timeWindow}{" "}
+                    por {agg.groupBy || "?"}{" "}
+                    {agg.timeWindow
+                      ? `en ultimos ${agg.timeWindow}`
+                      : "sin ventana"}{" "}
                     {operatorSymbol(agg.operator)}{" "}
                     {agg.threshold.toLocaleString()}
                   </p>

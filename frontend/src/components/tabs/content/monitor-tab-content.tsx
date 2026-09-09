@@ -222,6 +222,38 @@ export function MonitorTabContent({
       .filter((x): x is { campo: string; de: number; a: number } => x !== null);
   }
 
+  /**
+   * Reglas que comparan contra alguno de los campos cuya escala está por
+   * cambiar. El reescalado no toca los umbrales de las reglas — un
+   * `importe > 500000` sobre un campo que pasa de 0 a 2 decimales queda
+   * comparando contra valores 100 veces más chicos y deja de dispararse en
+   * silencio, sin que nada lo señale. No se ajustan los umbrales solos: se
+   * avisa acá para que se corrijan a mano después de convertir.
+   */
+  function reglasAfectadas(campos: string[]) {
+    if (campos.length === 0) return [];
+    const nombres = new Set(campos);
+    return rules.filter((r) => {
+      const enCondiciones = (r.conditionGroup?.conditions ?? []).some((c) =>
+        nombres.has(c.field),
+      );
+      const enAgregadas = (r.aggregateConditions ?? []).some((a) =>
+        nombres.has(a.field),
+      );
+      // El filtro de una condición agregada (Condition[], igual que las
+      // condiciones simples) también compara contra un umbral en la escala
+      // vieja — ej. filtrar "monto > 500000" antes de agrupar. Mismo riesgo
+      // de silencio que el resto de los casos.
+      const enFiltroAgregado = (r.aggregateConditions ?? []).some((a) =>
+        (a.filter ?? []).some((c) => nombres.has(c.field)),
+      );
+      const enVelocidad = (r.velocityConditions ?? []).some((v) =>
+        (v.filter ?? []).some((c) => nombres.has(c.field)),
+      );
+      return enCondiciones || enAgregadas || enFiltroAgregado || enVelocidad;
+    });
+  }
+
   async function handleSaveSchema() {
     // Cambiar los decimales no recalcula lo ya guardado: sin este aviso, la
     // colección queda con dos escalas del mismo campo y nada lo señala.
@@ -239,11 +271,22 @@ export function MonitorTabContent({
       const result = await monitorsApi.updateSchema(id, schemaEdits, rescaleExisting);
       setMonitor((prev) => (prev ? { ...prev, schema: result.schema } : prev));
       const convertidos = Object.values(result.rescaled ?? {}).reduce((a, b) => a + b, 0);
-      toastSuccess(
-        convertidos > 0
-          ? `Esquema actualizado — ${convertidos} registros convertidos`
-          : "Esquema actualizado",
-      );
+      const omitidos = Object.values(result.omitidos ?? {}).reduce((a, b) => a + b, 0);
+      if (convertidos > 0 || omitidos > 0) {
+        // omitidos son registros que RescaleDataField no pudo convertir (ej.
+        // valor no numérico ya guardado): si el toast solo suma `rescaled`,
+        // una conversión parcial queda visible en la respuesta y no en la UI.
+        toastSuccess(
+          omitidos > 0
+            ? `Esquema actualizado — ${convertidos} registros convertidos, ${omitidos} omitidos`
+            : `Esquema actualizado — ${convertidos} registros convertidos`,
+        );
+        // El reescalado cambia los valores ya guardados: sin recargar, la
+        // tabla de datos sigue mostrando los montos en la escala vieja.
+        await loadData();
+      } else {
+        toastSuccess("Esquema actualizado");
+      }
     } catch (err) {
       // El cliente HTTP (lib/api/client.ts) arma el Error con el `error` que
       // manda el backend, así que esto ya muestra el texto real — incluido
@@ -851,7 +894,10 @@ export function MonitorTabContent({
                                   regla copia la magnitud del ejemplo y compara
                                   contra un valor que no existe: cero
                                   coincidencias y ningún error. */}
-                              {muestraConvertida(field) && (
+                              {(monitor.sourceType === "csv" ||
+                                monitor.sourceType === "txt" ||
+                                monitor.sourceType === "excel") &&
+                                muestraConvertida(field) && (
                                 <>
                                   {" → se guarda como "}
                                   <span className="font-medium text-foreground">
@@ -1050,6 +1096,33 @@ export function MonitorTabContent({
                   ))}
                 </ul>
                 <p className="font-medium">Esta operación no se deshace sola.</p>
+                {(() => {
+                  const afectadas = reglasAfectadas(
+                    (confirmarReescalado ?? []).map((c) => c.campo),
+                  );
+                  if (afectadas.length === 0) return null;
+                  return (
+                    <div className="rounded-md border border-warning-border bg-warning-bg p-2">
+                      <p className="text-xs font-medium text-warning-fg">
+                        {afectadas.length === 1
+                          ? "1 regla compara contra estos campos:"
+                          : `${afectadas.length} reglas comparan contra estos campos:`}
+                      </p>
+                      <ul className="mt-1 space-y-0.5 text-warning-fg">
+                        {afectadas.map((r) => (
+                          <li key={r.id} className="text-xs">
+                            {r.name}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-1 text-xs text-warning-fg">
+                        Sus umbrales están expresados en la escala actual y no
+                        se convierten solos: van a tener que actualizarse a
+                        mano después de esta conversión.
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

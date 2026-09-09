@@ -142,21 +142,38 @@ export async function generateRedFlagReport(redFlag: RedFlag): Promise<void> {
 
   // ---- Ficha --------------------------------------------------------------
   const isAggregate = esAgrupada(redFlag.redFlagType);
+  // El label es "qué tipo de regla generó esto", no "está agrupada": una
+  // bandera de velocidad también agrupa (esAgrupada() === true) pero no es
+  // una agregación, así que el label sale del tipo mismo — igual que su
+  // gemelo del backend, redFlagSummaryRows (red_flag_report.go).
+  let tipo = "Por coincidencia";
+  if (redFlag.redFlagType === "velocity") tipo = "Velocidad";
+  else if (redFlag.redFlagType === "aggregate") tipo = "Agregada";
   const summary: [string, string][] = [
     ["Identificador", redFlag.id],
     ["Monitor", redFlag.monitorName],
     ["Regla", redFlag.ruleName],
-    ["Tipo", isAggregate ? "Agregada" : "Por coincidencia"],
+    ["Tipo", tipo],
     ["Detectada", formatDate(redFlag.createdAt)],
     ["Última actualización", formatDate(redFlag.updatedAt)],
     ["Coincidencias", formatValue(redFlag.matchCount)],
   ];
-  if (isAggregate) {
+  // Mismo gate que el backend (red_flag_report.go, hasAggDetail): sin él una
+  // bandera de velocidad (isAggregate === true pero sin AggFunction) imprime
+  // "Agregación: ( ) por —".
+  const hasAggDetail = isAggregate && !!redFlag.aggFunction;
+  if (hasAggDetail) {
     summary.push([
       "Agregación",
       `${(redFlag.aggFunction ?? "").toUpperCase()}(${redFlag.aggField ?? "—"}) por ${redFlag.groupByField ?? "—"}`,
     ]);
-    if (redFlag.groupByValue) summary.push(["Grupo", redFlag.groupByValue]);
+  }
+  // El grupo sí se conserva para velocidad: es la entidad señalada (la
+  // tarjeta), un dato correcto aunque no haya función de agregación.
+  if (isAggregate && redFlag.groupByValue) {
+    summary.push(["Grupo", redFlag.groupByValue]);
+  }
+  if (hasAggDetail) {
     if (redFlag.aggValue !== undefined)
       summary.push(["Valor", formatValue(redFlag.aggValue)]);
     if (redFlag.threshold !== undefined)
