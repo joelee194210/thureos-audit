@@ -739,6 +739,8 @@ function RulesContent() {
         severity: suggestion.severity,
         aiGenerated: true,
       });
+      setAiSuggestions((prev) => prev.filter((s) => s !== suggestion));
+      toastSuccess(`Regla "${suggestion.name}" creada`);
       loadRules();
     } catch (err) {
       console.error("Failed to apply AI suggestion:", err);
@@ -1216,7 +1218,7 @@ function RulesContent() {
             >
               <DialogTrigger asChild>
                 <Button>
-                  <Plus className="h-4 Reglas" />
+                  <Plus className="h-4 w-4" />
                   Nueva regla
                 </Button>
               </DialogTrigger>
