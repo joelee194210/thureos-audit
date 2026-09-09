@@ -1771,6 +1771,19 @@ function RulesContent() {
                                   updateCreateAggCondition(i, "timeField", "");
                                 } else {
                                   updateCreateAggCondition(i, "timeWindow", v);
+                                  // Contraparte del autocompletado del Select
+                                  // de arriba: si el par estaba "sin ventana"
+                                  // (timeField también vacío), elegir una
+                                  // ventana sin completar el campo de fecha
+                                  // recrea el medio par que el validador
+                                  // rechaza (aggregate_validate.go:52).
+                                  if (!agg.timeField) {
+                                    updateCreateAggCondition(
+                                      i,
+                                      "timeField",
+                                      createDateFields?.[0]?.name ?? "",
+                                    );
+                                  }
                                 }
                               }}
                             >
@@ -1781,19 +1794,24 @@ function RulesContent() {
                                 <SelectItem value={SIN_VENTANA}>
                                   Sin ventana
                                 </SelectItem>
-                                <SelectItem value="30s">30 segundos</SelectItem>
-                                <SelectItem value="60s">60 segundos</SelectItem>
-                                <SelectItem value="5min">5 minutos</SelectItem>
-                                <SelectItem value="15min">15 minutos</SelectItem>
-                                <SelectItem value="1h">1 hora</SelectItem>
-                                <SelectItem value="6h">6 horas</SelectItem>
-                                <SelectItem value="12h">12 horas</SelectItem>
-                                <SelectItem value="24h">24 horas</SelectItem>
-                                <SelectItem value="7d">7 dias</SelectItem>
-                                <SelectItem value="15d">15 dias</SelectItem>
-                                <SelectItem value="30d">30 dias</SelectItem>
-                                <SelectItem value="90d">90 dias</SelectItem>
-                                <SelectItem value="365d">1 año</SelectItem>
+                                {/* Sin ningún campo date no hay par válido
+                                    posible salvo "sin ventana": deshabilitar
+                                    el resto evita el callejón sin salida de
+                                    elegir una ventana que ningún Select de
+                                    Campo fecha puede completar. */}
+                                <SelectItem value="30s" disabled={!createDateFields?.length}>30 segundos</SelectItem>
+                                <SelectItem value="60s" disabled={!createDateFields?.length}>60 segundos</SelectItem>
+                                <SelectItem value="5min" disabled={!createDateFields?.length}>5 minutos</SelectItem>
+                                <SelectItem value="15min" disabled={!createDateFields?.length}>15 minutos</SelectItem>
+                                <SelectItem value="1h" disabled={!createDateFields?.length}>1 hora</SelectItem>
+                                <SelectItem value="6h" disabled={!createDateFields?.length}>6 horas</SelectItem>
+                                <SelectItem value="12h" disabled={!createDateFields?.length}>12 horas</SelectItem>
+                                <SelectItem value="24h" disabled={!createDateFields?.length}>24 horas</SelectItem>
+                                <SelectItem value="7d" disabled={!createDateFields?.length}>7 dias</SelectItem>
+                                <SelectItem value="15d" disabled={!createDateFields?.length}>15 dias</SelectItem>
+                                <SelectItem value="30d" disabled={!createDateFields?.length}>30 dias</SelectItem>
+                                <SelectItem value="90d" disabled={!createDateFields?.length}>90 dias</SelectItem>
+                                <SelectItem value="365d" disabled={!createDateFields?.length}>1 año</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -2780,6 +2798,19 @@ function RulesContent() {
                             updateAggCondition(i, "timeField", "");
                           } else {
                             updateAggCondition(i, "timeWindow", v);
+                            // Contraparte del autocompletado del Select de
+                            // Campo fecha: si el par estaba "sin ventana"
+                            // (timeField también vacío), elegir una ventana
+                            // sin completar el campo de fecha recrea el
+                            // medio par que el validador rechaza
+                            // (aggregate_validate.go:52).
+                            if (!agg.timeField) {
+                              updateAggCondition(
+                                i,
+                                "timeField",
+                                editDateFields?.[0]?.name ?? "",
+                              );
+                            }
                           }
                         }}
                       >
@@ -2790,19 +2821,23 @@ function RulesContent() {
                           <SelectItem value={SIN_VENTANA}>
                             Sin ventana
                           </SelectItem>
-                          <SelectItem value="30s">30 segundos</SelectItem>
-                          <SelectItem value="60s">60 segundos</SelectItem>
-                          <SelectItem value="5min">5 minutos</SelectItem>
-                          <SelectItem value="15min">15 minutos</SelectItem>
-                          <SelectItem value="1h">1 hora</SelectItem>
-                          <SelectItem value="6h">6 horas</SelectItem>
-                          <SelectItem value="12h">12 horas</SelectItem>
-                          <SelectItem value="24h">24 horas</SelectItem>
-                          <SelectItem value="7d">7 dias</SelectItem>
-                          <SelectItem value="15d">15 dias</SelectItem>
-                          <SelectItem value="30d">30 dias</SelectItem>
-                          <SelectItem value="90d">90 dias</SelectItem>
-                          <SelectItem value="365d">1 año</SelectItem>
+                          {/* Sin ningún campo date no hay par válido posible
+                              salvo "sin ventana": deshabilitar el resto evita
+                              el callejón sin salida de elegir una ventana que
+                              ningún Select de Campo fecha puede completar. */}
+                          <SelectItem value="30s" disabled={!editDateFields?.length}>30 segundos</SelectItem>
+                          <SelectItem value="60s" disabled={!editDateFields?.length}>60 segundos</SelectItem>
+                          <SelectItem value="5min" disabled={!editDateFields?.length}>5 minutos</SelectItem>
+                          <SelectItem value="15min" disabled={!editDateFields?.length}>15 minutos</SelectItem>
+                          <SelectItem value="1h" disabled={!editDateFields?.length}>1 hora</SelectItem>
+                          <SelectItem value="6h" disabled={!editDateFields?.length}>6 horas</SelectItem>
+                          <SelectItem value="12h" disabled={!editDateFields?.length}>12 horas</SelectItem>
+                          <SelectItem value="24h" disabled={!editDateFields?.length}>24 horas</SelectItem>
+                          <SelectItem value="7d" disabled={!editDateFields?.length}>7 dias</SelectItem>
+                          <SelectItem value="15d" disabled={!editDateFields?.length}>15 dias</SelectItem>
+                          <SelectItem value="30d" disabled={!editDateFields?.length}>30 dias</SelectItem>
+                          <SelectItem value="90d" disabled={!editDateFields?.length}>90 dias</SelectItem>
+                          <SelectItem value="365d" disabled={!editDateFields?.length}>1 año</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
