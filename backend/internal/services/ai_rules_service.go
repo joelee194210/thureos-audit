@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -151,7 +152,7 @@ func NewAIRulesService(configRepo *repository.SystemConfigRepository) *AIRulesSe
 	return &AIRulesService{configRepo: configRepo}
 }
 
-func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.SchemaField, dataSample string, userPrompt string) (AIGenerationResult, error) {
+func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.SchemaField, dataSample string, userPrompt string, fields []string) (AIGenerationResult, error) {
 	// Read current AI config from DB (reflects admin changes in real time)
 	cfg, err := s.configRepo.Get(ctx)
 	if err != nil {
@@ -162,7 +163,7 @@ func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.Sche
 		return AIGenerationResult{}, fmt.Errorf("AI API key not configured — go to Settings to add one")
 	}
 
-	userMessage := buildUserMessage(schema, dataSample, userPrompt)
+	userMessage := buildUserMessage(schema, dataSample, userPrompt, fields)
 
 	// El deadline cubre a ambos proveedores: los dos reciben este ctx.
 	ctx, cancel := context.WithTimeout(ctx, aiRequestTimeout)
@@ -318,11 +319,20 @@ func callDeepSeek(ctx context.Context, ai models.AIConfig, userMessage string) (
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func buildUserMessage(schema []models.SchemaField, dataSample, userPrompt string) string {
+func buildUserMessage(schema []models.SchemaField, dataSample, userPrompt string, fields []string) string {
 	schemaJSON, _ := json.Marshal(schema)
 	msg := fmt.Sprintf("Schema:\n%s\n", string(schemaJSON))
 	if dataSample != "" {
 		msg += fmt.Sprintf("\nSample data:\n%s\n", dataSample)
+	}
+	// Modo guiado: el usuario señaló los campos antes de escribir el
+	// criterio. Nombrarlos explícitamente ataca la causa principal de
+	// sugerencias descartadas — la IA inventando nombres de campo.
+	if len(fields) > 0 {
+		msg += fmt.Sprintf(
+			"\nFields the user wants this rule to be about: %s. Build the rules around these fields; you may reference other schema fields only if the criteria require it.\n",
+			strings.Join(fields, ", "),
+		)
 	}
 	if userPrompt != "" {
 		msg += fmt.Sprintf("\nUser context: %s", userPrompt)

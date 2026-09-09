@@ -393,7 +393,7 @@ func (h *RuleHandler) GenerateAIRules(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 	}
 
-	result, err := h.aiRulesService.GenerateRules(c.Context(), monitor.Schema, req.DataSample, req.Prompt)
+	result, err := h.aiRulesService.GenerateRules(c.Context(), monitor.Schema, req.DataSample, req.Prompt, req.Fields)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

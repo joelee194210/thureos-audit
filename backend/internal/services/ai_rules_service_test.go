@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/thureos/compliance/internal/models"
@@ -363,5 +364,28 @@ func TestDiscardReason_DescartaCamposInexistentes(t *testing.T) {
 				t.Error("discardReason = \"\", quería descartarla")
 			}
 		})
+	}
+}
+
+func TestBuildUserMessage_IncluyeLosCamposElegidos(t *testing.T) {
+	msg := buildUserMessage(testSchema(), "", "montos raros", []string{"monto", "cliente"})
+	if !strings.Contains(msg, "monto, cliente") {
+		t.Errorf("el mensaje no nombra los campos elegidos:\n%s", msg)
+	}
+	if !strings.Contains(msg, "montos raros") {
+		t.Errorf("el mensaje perdió el contexto libre:\n%s", msg)
+	}
+}
+
+// El modo guiado es aditivo: sin campos elegidos el mensaje tiene que ser
+// exactamente el de antes, byte por byte.
+func TestBuildUserMessage_SinCamposNoCambia(t *testing.T) {
+	conNil := buildUserMessage(testSchema(), "", "hola", nil)
+	conVacio := buildUserMessage(testSchema(), "", "hola", []string{})
+	if conNil != conVacio {
+		t.Errorf("nil y slice vacío dieron mensajes distintos:\n%q\n%q", conNil, conVacio)
+	}
+	if strings.Contains(conNil, "Fields the user") {
+		t.Errorf("agregó la sección de campos sin campos:\n%s", conNil)
 	}
 }

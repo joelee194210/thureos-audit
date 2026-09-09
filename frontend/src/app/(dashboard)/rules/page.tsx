@@ -444,6 +444,7 @@ function RulesContent() {
   const [aiDiscarded, setAiDiscarded] = useState<DiscardedSuggestion[]>([]);
   const [selectedMonitor, setSelectedMonitor] = useState(monitorIdParam || "");
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiFields, setAiFields] = useState<string[]>([]);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -733,6 +734,7 @@ function RulesContent() {
       const result = await rulesApi.generateAI({
         monitorId: selectedMonitor,
         prompt: aiPrompt || "Generate monitoring rules for anomaly detection",
+        fields: aiFields,
       });
       setAiSuggestions(result.suggestions);
       setAiDiscarded(result.discarded ?? []);
@@ -1164,7 +1166,10 @@ function RulesContent() {
                     <Label>Monitor</Label>
                     <Select
                       value={selectedMonitor}
-                      onValueChange={setSelectedMonitor}
+                      onValueChange={(v) => {
+                        setSelectedMonitor(v);
+                        setAiFields([]);
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona un monitor" />
@@ -1177,6 +1182,39 @@ function RulesContent() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Campos sobre los que querés la regla (opcional)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Elegirlos primero evita que la IA invente nombres de
+                      campo, que es el motivo más común de que no salga
+                      ninguna sugerencia.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(monitors.find((m) => m.id === selectedMonitor)?.schema ?? []).map(
+                        (f) => {
+                          const active = aiFields.includes(f.name);
+                          return (
+                            <button
+                              key={f.name}
+                              type="button"
+                              onClick={() =>
+                                setAiFields((prev) =>
+                                  active
+                                    ? prev.filter((n) => n !== f.name)
+                                    : [...prev, f.name],
+                                )
+                              }
+                              className={`rounded-md border px-2 py-1 text-xs ${
+                                active ? "border-primary bg-primary/10" : ""
+                              }`}
+                            >
+                              {f.name}
+                            </button>
+                          );
+                        },
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Contexto (opcional)</Label>

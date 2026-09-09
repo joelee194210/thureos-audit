@@ -50,6 +50,7 @@ export const rulesApi = {
     monitorId: string;
     prompt: string;
     dataSample?: string;
+    fields?: string[];
   }) => api.post<AIGenerationResult>("/rules/ai-generate", data),
 
   // Tipologías AML pre-armadas: catálogo + instanciación por monitor.
