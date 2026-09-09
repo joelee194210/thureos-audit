@@ -60,10 +60,13 @@ import type {
   Operator,
   AggregateCondition,
   AggFunction,
+  VelocityCondition,
   MCC,
   SchedulePreset,
   RuleSchedule,
 } from "@/lib/types";
+import { ConditionRows } from "@/components/rules/condition-rows";
+import { VelocityConditionEditor } from "@/components/rules/velocity-condition-editor";
 
 function wasTriggeredToday(lastTriggered?: string): boolean {
   if (!lastTriggered) return false;
@@ -444,6 +447,7 @@ function RulesContent() {
     logic: "AND" as "AND" | "OR",
     conditions: [] as Condition[],
     aggregateConditions: [] as AggregateCondition[],
+    velocityConditions: [] as VelocityCondition[],
     scheduleEnabled: false,
     scheduleFrequency: "daily",
     scheduleDay: "1",
@@ -485,6 +489,7 @@ function RulesContent() {
       { field: "", operator: "gt" as Operator, value: "" as unknown },
     ] as Condition[],
     aggregateConditions: [] as AggregateCondition[],
+    velocityConditions: [] as VelocityCondition[],
     scheduleEnabled: false,
     scheduleFrequency: "daily",
     scheduleDay: "1",
@@ -601,6 +606,10 @@ function RulesContent() {
           createForm.aggregateConditions.length > 0
             ? createForm.aggregateConditions
             : undefined,
+        velocityConditions:
+          createForm.velocityConditions.length > 0
+            ? createForm.velocityConditions
+            : undefined,
         actions: ["red_flag"],
         severity: createForm.severity,
         schedule: createForm.scheduleEnabled
@@ -629,6 +638,7 @@ function RulesContent() {
         logic: "AND",
         conditions: [{ field: "", operator: "gt" as Operator, value: "" }],
         aggregateConditions: [],
+        velocityConditions: [],
         scheduleEnabled: false,
         scheduleFrequency: "daily",
         scheduleDay: "1",
@@ -765,6 +775,8 @@ function RulesContent() {
       conditions: rule.conditionGroup?.conditions?.map((c) => ({ ...c })) || [],
       aggregateConditions:
         rule.aggregateConditions?.map((a) => ({ ...a })) || [],
+      velocityConditions:
+        rule.velocityConditions?.map((v) => ({ ...v })) || [],
       scheduleEnabled: rule.schedule?.enabled || false,
       screeningFields: rule.screeningFields || [],
       ...(() => {
@@ -872,6 +884,10 @@ function RulesContent() {
         aggregateConditions:
           editForm.aggregateConditions.length > 0
             ? editForm.aggregateConditions
+            : undefined,
+        velocityConditions:
+          editForm.velocityConditions.length > 0
+            ? editForm.velocityConditions
             : undefined,
         schedule: {
           enabled: editForm.scheduleEnabled,
@@ -1035,6 +1051,18 @@ function RulesContent() {
       );
     }
   }
+
+  // Los editores de filtro reusan el selector de MCC de esta página en vez de
+  // un input de texto: para el campo mcc, elegir "Casinos y juegos" de una
+  // lista es muchísimo más usable que recordar que el código es 7995.
+  const renderMCCValue = (cond: Condition, onValueChange: (v: string) => void) =>
+    isMCCField(cond.field) ? (
+      <MCCPicker
+        value={cond.value}
+        onChange={onValueChange}
+        multi={cond.operator === "in" || cond.operator === "not_in"}
+      />
+    ) : null;
 
   const createMonitorSchema = monitors.find(
     (m) => m.id === createForm.monitorId,
@@ -1707,6 +1735,19 @@ function RulesContent() {
                             />
                           </div>
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">
+                            Filtrar antes de agrupar (opcional)
+                          </Label>
+                          <ConditionRows
+                            conditions={agg.filter ?? []}
+                            schema={createMonitorSchema ?? []}
+                            onChange={(f) =>
+                              updateCreateAggCondition(i, "filter", f)
+                            }
+                            renderValue={renderMCCValue}
+                          />
+                        </div>
                         <p className="text-[10px] text-muted-foreground italic">
                           {agg.function.toUpperCase()}({agg.field || "?"})
                           agrupado por {agg.groupBy || "?"} en ultimos{" "}
@@ -1721,6 +1762,20 @@ function RulesContent() {
                         acumulados por periodo.
                       </p>
                     )}
+                  </div>
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <VelocityConditionEditor
+                      conditions={createForm.velocityConditions}
+                      schema={createMonitorSchema ?? []}
+                      onChange={(v) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          velocityConditions: v,
+                        }))
+                      }
+                      renderFilterValue={renderMCCValue}
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -2658,6 +2713,17 @@ function RulesContent() {
                       />
                     </div>
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      Filtrar antes de agrupar (opcional)
+                    </Label>
+                    <ConditionRows
+                      conditions={agg.filter ?? []}
+                      schema={editMonitorSchema ?? []}
+                      onChange={(f) => updateAggCondition(i, "filter", f)}
+                      renderValue={renderMCCValue}
+                    />
+                  </div>
                   <p className="text-[10px] text-muted-foreground italic">
                     {agg.function.toUpperCase()}({agg.field || "?"}) agrupado
                     por {agg.groupBy || "?"} en ultimos {agg.timeWindow}{" "}
@@ -2672,6 +2738,17 @@ function RulesContent() {
                   por periodo.
                 </p>
               )}
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <VelocityConditionEditor
+                conditions={editForm.velocityConditions}
+                schema={editMonitorSchema ?? []}
+                onChange={(v) =>
+                  setEditForm((prev) => ({ ...prev, velocityConditions: v }))
+                }
+                renderFilterValue={renderMCCValue}
+              />
             </div>
 
             <div className="space-y-2">

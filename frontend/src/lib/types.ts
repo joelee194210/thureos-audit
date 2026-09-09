@@ -180,6 +180,25 @@ export interface AggregateCondition {
   timeWindow: string; // e.g. "24h", "7d", "30d"
   operator: Operator;
   threshold: number;
+  /** Reduce el universo ANTES de agrupar (ej. solo montos sobre cierto valor). */
+  filter?: Condition[];
+}
+
+/**
+ * Detecta eventos consecutivos demasiado próximos dentro de una misma entidad
+ * (tarjeta, cliente, comercio). Distinta de AggregateCondition: allí la
+ * ventana está anclada a "ahora" y se cuenta cuántos eventos caen dentro;
+ * acá se mide la distancia entre un evento y el anterior de la misma entidad.
+ */
+export interface VelocityCondition {
+  /** Campo de tipo date — típicamente el timestamp derivado del monitor. */
+  timeField: string;
+  /** Máximo tiempo entre consecutivas: "35s", "5min", "1h". */
+  maxGap: string;
+  groupBy: string;
+  /** Por ahora el motor solo mide pares: siempre 2. */
+  minEvents: number;
+  filter?: Condition[];
 }
 
 export type SchedulePreset =
@@ -207,6 +226,7 @@ export interface Rule {
   description: string;
   conditionGroup: ConditionGroup;
   aggregateConditions?: AggregateCondition[];
+  velocityConditions?: VelocityCondition[];
   actions: ActionType[];
   severity: Severity;
   active: boolean;

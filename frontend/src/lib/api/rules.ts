@@ -6,6 +6,7 @@ import type {
   RedFlag,
   ConditionGroup,
   AggregateCondition,
+  VelocityCondition,
   ActionType,
   Severity,
 } from "@/lib/types";
@@ -24,6 +25,7 @@ export const rulesApi = {
     description: string;
     conditionGroup: ConditionGroup;
     aggregateConditions?: AggregateCondition[];
+    velocityConditions?: VelocityCondition[];
     actions: ActionType[];
     severity: Severity;
     schedule?: RuleSchedule;
