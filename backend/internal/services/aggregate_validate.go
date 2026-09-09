@@ -1,21 +1,11 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/thureos/compliance/internal/models"
 )
-
-// aggFuncionesValidas son las que buildAggExpr sabe traducir. Cualquier otra
-// cae a su `default: $sum`, así que el umbral termina comparándose contra
-// una cantidad distinta de la que el usuario pidió, sin ningún error.
-var aggFuncionesValidas = map[models.AggFunction]bool{
-	models.AggFuncSum:   true,
-	models.AggFuncCount: true,
-	models.AggFuncAvg:   true,
-	models.AggFuncMin:   true,
-	models.AggFuncMax:   true,
-}
 
 // ValidateAggregateCondition rechaza al guardar las condiciones agregadas
 // que no podrían disparar nunca. Es deliberadamente el mismo criterio que
@@ -32,7 +22,11 @@ func ValidateAggregateCondition(cond models.AggregateCondition, schema []models.
 		byName[f.Name] = f
 	}
 
-	if !aggFuncionesValidas[cond.Function] {
+	// validAggFunctions (ai_rules_service.go) es el mismo enum que discardReason
+	// aplica a las sugerencias de IA — se reutiliza tal cual para que una
+	// función nueva que aprenda buildAggExpr no se pueda dar de alta en un solo
+	// mapa de los dos y dejar el otro desactualizado.
+	if !validAggFunctions[cond.Function] {
 		return fmt.Errorf("función de agregación inválida: %q (válidas: sum, count, avg, min, max)", cond.Function)
 	}
 
@@ -81,10 +75,8 @@ func ValidateAggregateCondition(cond models.AggregateCondition, schema []models.
 		}
 	}
 
-	for _, f := range cond.Filter {
-		if _, ok := byName[f.Field]; !ok {
-			return fmt.Errorf("el filtro del agregado referencia un campo inexistente: %q", f.Field)
-		}
+	if reason := filterFieldsReason(cond.Filter, byName, "el filtro del agregado"); reason != "" {
+		return errors.New(reason)
 	}
 
 	return nil
