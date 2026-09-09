@@ -86,14 +86,14 @@ func setDrawRGB(pdf *fpdf.Fpdf, c reportRGB) { pdf.SetDrawColor(c.r, c.g, c.b) }
 // redFlagSummaryRows arma la ficha de la bandera roja.
 //
 // El bloque de agregación se omite cuando no hay función de agregación: las
-// banderas de las reglas de velocidad se guardan con RedFlagType "aggregate"
-// (no hay un tipo propio todavía) pero sin AggField/AggFunction/AggValue/
-// Threshold, y renderizarlo igual imprimía "Agregación: ( ) por tarjeta",
-// "Valor: 0" y "Umbral: 0" en el PDF que es el artefacto probatorio del caso.
+// banderas de las reglas de velocidad son agrupadas (RedFlagType "velocity")
+// pero sin AggField/AggFunction/AggValue/Threshold, y renderizarlo igual
+// imprimía "Agregación: ( ) por tarjeta", "Valor: 0" y "Umbral: 0" en el PDF
+// que es el artefacto probatorio del caso.
 // El grupo sí se conserva: para una regla de velocidad es la entidad
 // señalada (la tarjeta), y es un dato correcto.
 func redFlagSummaryRows(rf *models.RedFlag) [][2]string {
-	isAggregate := rf.RedFlagType == models.RedFlagTypeAggregate
+	isAggregate := rf.RedFlagType.EsAgrupada()
 	tipo := "Por coincidencia"
 	if isAggregate {
 		tipo = "Agregada"

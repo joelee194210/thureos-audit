@@ -521,7 +521,7 @@ func velocityRedFlagsFromResults(
 			RuleName:     rule.Name,
 			MonitorName:  monitor.Name,
 			Severity:     rule.Severity,
-			RedFlagType:  models.RedFlagTypeAggregate,
+			RedFlagType:  models.RedFlagTypeVelocity,
 			GroupByField: cond.GroupBy,
 			GroupByValue: groupKey,
 			Message:      message,

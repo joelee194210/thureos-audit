@@ -5,7 +5,7 @@
  */
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { RedFlag, RedFlagLog } from "@/lib/types";
+import { esAgrupada, type RedFlag, type RedFlagLog } from "@/lib/types";
 import { redFlagsApi } from "@/lib/api/red-flags";
 import {
   RED_FLAG_STATUS_LABELS,
@@ -141,7 +141,7 @@ export async function generateRedFlagReport(redFlag: RedFlag): Promise<void> {
   }
 
   // ---- Ficha --------------------------------------------------------------
-  const isAggregate = redFlag.redFlagType === "aggregate";
+  const isAggregate = esAgrupada(redFlag.redFlagType);
   const summary: [string, string][] = [
     ["Identificador", redFlag.id],
     ["Monitor", redFlag.monitorName],

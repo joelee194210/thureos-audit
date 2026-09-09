@@ -247,7 +247,16 @@ export interface Rule {
 
 export type RedFlagStatus =
   "new" | "acknowledged" | "escalated" | "resolved" | "dismissed";
-export type RedFlagType = "row" | "aggregate";
+export type RedFlagType = "row" | "aggregate" | "velocity";
+
+/**
+ * Si la alerta describe un grupo de registros —y por lo tanto trae
+ * groupByField, groupByValue y matchCount— en vez de una fila suelta. Las
+ * de velocidad y las de agregado lo son; las de fila no.
+ */
+export function esAgrupada(t: RedFlagType): boolean {
+  return t === "aggregate" || t === "velocity";
+}
 
 export interface RedFlag {
   id: string;

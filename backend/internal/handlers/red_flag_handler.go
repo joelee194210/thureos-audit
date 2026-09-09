@@ -290,7 +290,7 @@ func (h *RedFlagHandler) GetRecords(c *fiber.Ctx) error {
 
 	var filter bson.M
 
-	if redFlag.RedFlagType == models.RedFlagTypeAggregate {
+	if redFlag.RedFlagType.EsAgrupada() {
 		filter = bson.M{}
 		if redFlag.GroupByField != "" && redFlag.GroupByValue != "" {
 			if strings.HasPrefix(redFlag.GroupByField, "$") {
