@@ -444,11 +444,16 @@ func buildAggregatePipeline(cond models.AggregateCondition) mongo.Pipeline {
 	if cond.TimeField != "" && cond.TimeWindow != "" {
 		dur := parseTimeWindow(cond.TimeWindow)
 		if dur > 0 {
+			// El cutoff va como time.Time (fecha BSON), no como string
+			// formateado: Mongo no compara entre tipos BSON distintos, así
+			// que un campo Date contra un string no matchea NADA y la regla
+			// nunca se dispara. Además el formato viejo truncaba al minuto,
+			// haciendo inexpresable una ventana de 35s.
 			cutoff := time.Now().Add(-dur)
 			pipeline = append(pipeline, bson.D{
 				{Key: "$match", Value: bson.D{
 					{Key: cond.TimeField, Value: bson.D{
-						{Key: "$gte", Value: cutoff.Format("01/02/2006 03:04 PM")},
+						{Key: "$gte", Value: cutoff},
 					}},
 				}},
 			})
@@ -751,11 +756,12 @@ func buildAggregatePipelineDateScoped(cond models.AggregateCondition, dayStart, 
 	if cond.TimeField != "" && cond.TimeWindow != "" {
 		dur := parseTimeWindow(cond.TimeWindow)
 		if dur > 0 {
+			// Mismo criterio que buildAggregatePipeline: fecha BSON, no string.
 			cutoff := dayEnd.Add(-dur)
 			pipeline = append(pipeline, bson.D{
 				{Key: "$match", Value: bson.D{
 					{Key: cond.TimeField, Value: bson.D{
-						{Key: "$gte", Value: cutoff.Format("01/02/2006 03:04 PM")},
+						{Key: "$gte", Value: cutoff},
 					}},
 				}},
 			})

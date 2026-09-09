@@ -36,11 +36,13 @@ func buildDataAggregatePipeline(spec ChatAggregateSpec) mongo.Pipeline {
 	if spec.TimeField != "" && spec.TimeWindow != "" {
 		dur := parseTimeWindow(spec.TimeWindow)
 		if dur > 0 {
+			// Fecha BSON, no string formateado — ver buildAggregatePipeline:
+			// Mongo no compara entre tipos distintos y el filtro no matcheaba nada.
 			cutoff := time.Now().Add(-dur)
 			pipeline = append(pipeline, bson.D{
 				{Key: "$match", Value: bson.D{
 					{Key: spec.TimeField, Value: bson.D{
-						{Key: "$gte", Value: cutoff.Format("01/02/2006 03:04 PM")},
+						{Key: "$gte", Value: cutoff},
 					}},
 				}},
 			})

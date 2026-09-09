@@ -5,6 +5,7 @@ import (
 
 	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func baseChatAggregateSpec() ChatAggregateSpec {
@@ -83,5 +84,28 @@ func TestBuildDataAggregatePipeline_RespetaTopeDeGrupos(t *testing.T) {
 	}
 	if last[0].Value != chatAggregateResultLimit {
 		t.Errorf("$limit = %v, want %d", last[0].Value, chatAggregateResultLimit)
+	}
+}
+
+// Mismo bug que en rule_engine: el cutoff viajaba como string formateado y
+// Mongo no compara entre tipos BSON distintos, así que el chatbot no filtraba
+// por ventana de tiempo — devolvía cero filas en vez de las de la ventana.
+func TestBuildDataAggregatePipeline_VentanaDeTiempoUsaFechaNoString(t *testing.T) {
+	spec := baseChatAggregateSpec()
+	spec.TimeField = "fecha"
+	spec.TimeWindow = "35s"
+
+	pipeline := buildDataAggregatePipeline(spec)
+
+	windowMatch := stageOperand(t, pipeline[0], "$match")
+	fieldCond, ok := windowMatch["fecha"].(bson.M)
+	if !ok {
+		t.Fatalf("esperaba un operando bson.M para 'fecha', got %#v", windowMatch["fecha"])
+	}
+	if _, isString := fieldCond["$gte"].(string); isString {
+		t.Fatalf("$gte llegó como string (%#v) — Mongo no compara Date contra string", fieldCond["$gte"])
+	}
+	if _, isDate := fieldCond["$gte"].(primitive.DateTime); !isDate {
+		t.Fatalf("$gte debería serializar como fecha BSON, got %T", fieldCond["$gte"])
 	}
 }

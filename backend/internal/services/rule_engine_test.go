@@ -6,6 +6,7 @@ import (
 
 	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // pipelineStageKeys returns each pipeline stage's operator ("$match",
@@ -187,5 +188,79 @@ func TestParseTimeWindow_InvalidUnitReturnsZero(t *testing.T) {
 	got := parseTimeWindow("5x")
 	if got != 0 {
 		t.Errorf("got %v, want 0 para una unidad inválida", got)
+	}
+}
+
+// La ventana de tiempo debe viajar a Mongo como fecha BSON, no como string.
+// Antes se mandaba cutoff.Format("01/02/2006 03:04 PM"): Mongo no compara
+// entre tipos BSON distintos, así que un campo Date contra un string devolvía
+// CERO documentos y la regla nunca se disparaba. Ninguna de las dos ramas de
+// ventana tenía cobertura — baseAggCondition no setea TimeField/TimeWindow.
+func TestBuildAggregatePipeline_VentanaDeTiempoUsaFechaNoString(t *testing.T) {
+	cond := baseAggCondition()
+	cond.TimeField = "fecha"
+	cond.TimeWindow = "35s"
+
+	pipeline := buildAggregatePipeline(cond)
+	assertStages(t, pipelineStageKeys(pipeline), []string{"$match", "$group", "$match", "$sort", "$limit"})
+
+	windowMatch := stageOperand(t, pipeline[0], "$match")
+	fieldCond, ok := windowMatch["fecha"].(bson.M)
+	if !ok {
+		t.Fatalf("esperaba un operando bson.M para 'fecha', got %#v", windowMatch["fecha"])
+	}
+	if _, isString := fieldCond["$gte"].(string); isString {
+		t.Fatalf("$gte llegó como string (%#v) — Mongo no compara Date contra string y la regla nunca dispara", fieldCond["$gte"])
+	}
+	if _, isDate := fieldCond["$gte"].(primitive.DateTime); !isDate {
+		t.Fatalf("$gte debería serializar como fecha BSON, got %T (%#v)", fieldCond["$gte"], fieldCond["$gte"])
+	}
+}
+
+// Una ventana de 35s exige precisión de segundos: el formato viejo truncaba
+// al minuto, volviendo "35 segundos" indistinguible de "este minuto".
+func TestBuildAggregatePipeline_VentanaConservaPrecisionDeSegundos(t *testing.T) {
+	cond := baseAggCondition()
+	cond.TimeField = "fecha"
+	cond.TimeWindow = "35s"
+
+	antes := time.Now()
+	pipeline := buildAggregatePipeline(cond)
+	despues := time.Now()
+
+	windowMatch := stageOperand(t, pipeline[0], "$match")
+	fieldCond := windowMatch["fecha"].(bson.M)
+	cutoff := fieldCond["$gte"].(primitive.DateTime).Time()
+
+	minEsperado := antes.Add(-35 * time.Second).Add(-time.Second)
+	maxEsperado := despues.Add(-35 * time.Second).Add(time.Second)
+	if cutoff.Before(minEsperado) || cutoff.After(maxEsperado) {
+		t.Errorf("cutoff %v fuera del rango esperado [%v, %v] para una ventana de 35s", cutoff, minEsperado, maxEsperado)
+	}
+}
+
+func TestBuildAggregatePipelineDateScoped_VentanaDeTiempoUsaFechaNoString(t *testing.T) {
+	dayStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	dayEnd := dayStart.Add(24 * time.Hour)
+	cond := baseAggCondition()
+	cond.TimeField = "fecha"
+	cond.TimeWindow = "35s"
+
+	pipeline := buildAggregatePipelineDateScoped(cond, dayStart, dayEnd)
+
+	windowMatch := stageOperand(t, pipeline[1], "$match")
+	fieldCond, ok := windowMatch["fecha"].(bson.M)
+	if !ok {
+		t.Fatalf("esperaba un operando bson.M para 'fecha', got %#v", windowMatch["fecha"])
+	}
+	if _, isString := fieldCond["$gte"].(string); isString {
+		t.Fatalf("$gte llegó como string (%#v) — Mongo no compara Date contra string", fieldCond["$gte"])
+	}
+	cutoff, isDate := fieldCond["$gte"].(primitive.DateTime)
+	if !isDate {
+		t.Fatalf("$gte debería serializar como fecha BSON, got %T", fieldCond["$gte"])
+	}
+	if want := dayEnd.Add(-35 * time.Second); !cutoff.Time().UTC().Equal(want.UTC()) {
+		t.Errorf("cutoff = %v, want %v (dayEnd - 35s)", cutoff.Time().UTC(), want.UTC())
 	}
 }
