@@ -734,3 +734,71 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"schema": monitor.Schema})
 }
+
+// UpdateDerivedTimestamp configura (o limpia, mandando null) el timestamp
+// derivado del monitor. Al guardarlo, el campo derivado se agrega al schema
+// como tipo date para que aparezca en los selectores de campo de reglas,
+// chat y dashboards sin que ninguno tenga que saber que es derivado.
+func (h *MonitorHandler) UpdateDerivedTimestamp(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+
+	var body struct {
+		DerivedTimestamp *models.DerivedTimestampConfig `json:"derivedTimestamp"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	update := bson.M{}
+	if body.DerivedTimestamp == nil {
+		// Limpiar la configuración: se quita también el campo del schema.
+		schema := make([]models.SchemaField, 0, len(monitor.Schema))
+		for _, f := range monitor.Schema {
+			if monitor.DerivedTimestamp != nil && f.Name == monitor.DerivedTimestamp.TargetName {
+				continue
+			}
+			schema = append(schema, f)
+		}
+		update["derived_timestamp"] = nil
+		update["schema"] = schema
+	} else {
+		// El schema contra el que se valida excluye el campo derivado
+		// anterior: de lo contrario reconfigurar con el mismo TargetName
+		// chocaría consigo mismo.
+		base := make([]models.SchemaField, 0, len(monitor.Schema))
+		for _, f := range monitor.Schema {
+			if monitor.DerivedTimestamp != nil && f.Name == monitor.DerivedTimestamp.TargetName {
+				continue
+			}
+			base = append(base, f)
+		}
+		if err := services.ValidateDerivedTimestamp(*body.DerivedTimestamp, base); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		update["derived_timestamp"] = body.DerivedTimestamp
+		update["schema"] = append(base, models.SchemaField{
+			Name:     body.DerivedTimestamp.TargetName,
+			Type:     models.FieldDate,
+			Required: false,
+			Sample:   "",
+		})
+	}
+
+	if err := h.monitorRepo.Update(c.Context(), monitor.ID, update); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	updated, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(updated)
+}
