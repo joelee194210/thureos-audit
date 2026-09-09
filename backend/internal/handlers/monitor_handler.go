@@ -761,11 +761,50 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 		if !services.IsValidDateFormatPreset(f.DateFormat) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("formato de fecha inválido: %s", f.DateFormat)})
 		}
+		// El Select del frontend solo ofrece 0 a 4, pero este endpoint mueve
+		// plata y no debería confiar en su entrada: un valor negativo es una
+		// petición bien formada que RescaleDataField ejecutaría igual
+		// (multiplicando en vez de dividir), y parseValue ignora
+		// ImpliedDecimals <= 0 en la ingesta siguiente, dejando una escala
+		// mixta permanente desde una sola llamada.
+		if f.ImpliedDecimals < 0 || f.ImpliedDecimals > 4 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("decimales implícitos inválidos para %q: debe ser un entero entre 0 y 4", f.Name)})
+		}
 	}
 
 	// El schema enviado ya se validó arriba: tiene exactamente los mismos
 	// campos que el actual, así que comparar por nombre es seguro.
 	cambios := cambiosDeEscala(monitor.Schema, body.Schema)
+
+	// parseValue —la única función que aplica ImpliedDecimals— solo se llama
+	// desde la ingesta de archivo (CSV/TXT/Excel). IngestJSON inserta los
+	// registros verbatim, así que en un monitor JSON o API los decimales
+	// implícitos nunca afectaron lo guardado: son una preferencia inerte.
+	// Reescalar ahí no arregla una escala mixta, la crea — y encima por el
+	// camino feliz confirmado del producto. Por eso se rechaza el *cambio*,
+	// no la mera presencia de un valor ya guardado (un monitor JSON con
+	// ImpliedDecimals de antes tiene que poder seguir editando su esquema
+	// sin tocar ese campo).
+	fuenteAceptaDecimales := monitor.SourceType == models.SourceCSV ||
+		monitor.SourceType == models.SourceTXT ||
+		monitor.SourceType == models.SourceExcel
+	if len(cambios) > 0 && !fuenteAceptaDecimales {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": fmt.Sprintf(
+				"los decimales implícitos no aplican a monitores de tipo %q: la ingesta de esta fuente no divide los valores por la escala configurada, así que cambiarlos no tendría efecto sobre los datos nuevos, y convertir los ya guardados los dejaría en una escala que nada vuelve a producir",
+				monitor.SourceType,
+			),
+		})
+	}
+
+	// Nombres de los campos que cambian, en orden alfabético: el mismo orden
+	// se usa para el mensaje del 409 y para la iteración del reescalado más
+	// abajo, donde el orden SÍ importa (ver comentario en el loop).
+	nombresCambiados := make([]string, 0, len(cambios))
+	for name := range cambios {
+		nombresCambiados = append(nombresCambiados, name)
+	}
+	sort.Strings(nombresCambiados)
 
 	if len(cambios) > 0 && !body.RescaleExisting {
 		registros, err := h.monitorRepo.GetDataCollection(monitor.CollectionID).
@@ -774,17 +813,12 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 		if registros > 0 {
-			campos := make([]string, 0, len(cambios))
-			for name := range cambios {
-				campos = append(campos, name)
-			}
-			sort.Strings(campos)
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 				"error": fmt.Sprintf(
 					"cambiar los decimales implícitos de %s deja los %d registros ya cargados en la escala vieja; mandá rescaleExisting para convertirlos",
-					strings.Join(campos, ", "), registros,
+					strings.Join(nombresCambiados, ", "), registros,
 				),
-				"fields":  campos,
+				"fields":  nombresCambiados,
 				"records": registros,
 			})
 		}
@@ -799,24 +833,39 @@ func (h *MonitorHandler) UpdateSchema(c *fiber.Ctx) error {
 	}
 
 	rescaled := map[string]int64{}
-	for name, delta := range cambios {
+	omitidos := map[string]int64{}
+	for i, name := range nombresCambiados {
 		if !body.RescaleExisting {
 			continue
 		}
-		n, err := h.monitorRepo.RescaleDataField(c.Context(), monitor.CollectionID, name, delta, cutoff)
+		// El orden de iteración de un map en Go es aleatorio; iterar la
+		// lista ordenada en su lugar es lo que permite reportar con
+		// precisión, si algo falla a mitad de camino, qué campos quedaron
+		// convertidos y cuáles ni se intentaron.
+		matched, skipped, err := h.monitorRepo.RescaleDataField(c.Context(), monitor.CollectionID, name, cambios[name], cutoff)
 		if err != nil {
-			// Los campos ya convertidos quedan convertidos: no hay rollback.
-			// Reintentar la misma petición los convertiría de nuevo, así que
-			// el error dice explícitamente qué se completó.
+			// El esquema ya se guardó para TODOS los campos, así que un
+			// reintento de esta misma petición ve `cambiosDeEscala` vacío
+			// contra el esquema nuevo: no hay una jugada correcta dentro
+			// del producto. Los campos ya convertidos (rescaled) quedaron
+			// en la escala nueva y no vuelven atrás solos; noIntentados son
+			// los que ni se tocaron, distintos del que falló acá. Hace
+			// falta mirar los datos en Mongo campo por campo antes de
+			// decidir cómo seguir.
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error":    fmt.Sprintf("el esquema se guardó pero falló el reescalado de %q: %v. Revisá los datos antes de reintentar: los campos ya convertidos no se deshacen.", name, err),
-				"rescaled": rescaled,
+				"error": fmt.Sprintf(
+					"el esquema se guardó pero falló el reescalado de %q: %v. No hay una corrección automática: los campos en \"rescaled\" ya quedaron en la escala nueva, este falló a mitad de camino, y los de \"noIntentados\" ni se tocaron. Revisá los tres grupos en Mongo antes de decidir cómo seguir — reintentar esta petición no vuelve a ofrecer los campos ya convertidos ni distingue el que falló.",
+					name, err,
+				),
+				"rescaled":     rescaled,
+				"noIntentados": nombresCambiados[i+1:],
 			})
 		}
-		rescaled[name] = n
+		rescaled[name] = matched
+		omitidos[name] = skipped
 	}
 
-	return c.JSON(fiber.Map{"schema": monitor.Schema, "rescaled": rescaled})
+	return c.JSON(fiber.Map{"schema": monitor.Schema, "rescaled": rescaled, "omitidos": omitidos})
 }
 
 // cambiosDeEscala devuelve, por campo, cuánto cambian sus decimales

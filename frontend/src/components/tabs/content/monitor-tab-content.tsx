@@ -244,8 +244,15 @@ export function MonitorTabContent({
           ? `Esquema actualizado — ${convertidos} registros convertidos`
           : "Esquema actualizado",
       );
-    } catch {
-      toastError("No se pudo guardar el esquema");
+    } catch (err) {
+      // El cliente HTTP (lib/api/client.ts) arma el Error con el `error` que
+      // manda el backend, así que esto ya muestra el texto real — incluido
+      // el 409 de este mismo endpoint, cuyo mensaje explica qué pasó y qué
+      // mandar para resolverlo. No reabre el diálogo de confirmación con los
+      // `fields`/`records` de esa respuesta porque ApiClient.request() no
+      // expone el cuerpo del error más allá de ese string (ver reporte de
+      // Task 5, fix round 1).
+      toastError(err instanceof Error ? err.message : "No se pudo guardar el esquema");
     } finally {
       setSavingSchema(false);
       setConfirmarReescalado(null);
@@ -856,7 +863,18 @@ export function MonitorTabContent({
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {field.type === "number" && user?.role !== "viewer" && (
+                          {field.type === "number" &&
+                            user?.role !== "viewer" &&
+                            // parseValue —la única que aplica impliedDecimals— solo
+                            // corre en la ingesta de archivo (CSV/TXT/Excel). Un
+                            // monitor JSON/API guarda los valores tal cual llegan,
+                            // así que ofrecer el selector ahí sería una preferencia
+                            // que el reescalado sí toma en serio pero la ingesta
+                            // nunca aplicó: misma condición que el Select de
+                            // dateFormat, más abajo, por el mismo motivo.
+                            (monitor.sourceType === "csv" ||
+                              monitor.sourceType === "txt" ||
+                              monitor.sourceType === "excel") && (
                             <Select
                               value={String(field.impliedDecimals ?? 0)}
                               onValueChange={(v) => updateImpliedDecimals(field.name, Number(v))}

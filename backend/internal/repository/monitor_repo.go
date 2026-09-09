@@ -353,40 +353,61 @@ func rescaleExpression(field string, delta int) bson.D {
 // RescaleDataField convierte un campo numérico entre dos escalas de
 // decimales implícitos, en una sola operación del servidor.
 //
-// Solo toca documentos ingeridos hasta `cutoff`: los posteriores ya se
-// guardaron con la configuración nueva y convertirlos otra vez los dejaría
-// mal. El llamador toma el cutoff ANTES de escribir el esquema, de modo que
-// la carrera que queda —una carga concurrente en la ventana de milisegundos
-// entre ambos— deje una fila en la escala vieja, que se ve al mirar los
-// datos, en vez de una convertida dos veces, que no se distingue de un monto
-// legítimo.
+// Solo toca documentos ingeridos ANTES de `cutoff` — estrictamente antes,
+// `$lt` y no `$lte`: las fechas BSON tienen precisión de milisegundo, así
+// que los nanosegundos de `time.Now()` se truncan al serializar, y un
+// documento ingerido después de escribir el esquema (ya en escala nueva)
+// pero dentro del mismo milisegundo que el cutoff serializaría igual a
+// `_ingested_at == cutoff`. Con `$lte` ese documento se reescalaría dos
+// veces; con `$lt` queda sin tocar, en la escala vieja — el modo de falla
+// que el diseño prefiere (ver el comentario del llamador en UpdateSchema).
+// Los posteriores al cutoff ya se guardaron con la configuración nueva y
+// convertirlos otra vez los dejaría mal. El llamador toma el cutoff ANTES
+// de escribir el esquema, de modo que la carrera que queda —una carga
+// concurrente en la ventana entre ambos— deje una fila en la escala vieja,
+// que se ve al mirar los datos, en vez de una convertida dos veces, que no
+// se distingue de un monto legítimo.
 //
-// Los documentos sin el campo, o donde no es numérico, se dejan como están.
+// Devuelve (matched, skipped, error). matched es la cantidad de documentos
+// en el alcance del cutoff con el campo numérico — el conteo correcto de
+// "convertidos", a diferencia de ModifiedCount de Mongo: un valor guardado
+// en 0 divide a 0, Mongo no lo cuenta como modificado, pero sí se convirtió.
+// skipped es la cantidad de documentos en el mismo alcance de tiempo cuyo
+// campo no es numérico (o no existe) — se dejan como están, y se devuelven
+// aparte para que una conversión parcial se vea en vez de inferirse.
 func (r *MonitorRepository) RescaleDataField(
 	ctx context.Context,
 	collectionID string,
 	field string,
 	delta int,
 	cutoff time.Time,
-) (int64, error) {
+) (int64, int64, error) {
 	expr := rescaleExpression(field, delta)
 	if expr == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 
-	res, err := r.GetDataCollection(collectionID).UpdateMany(ctx,
+	col := r.GetDataCollection(collectionID)
+	scope := bson.M{"_ingested_at": bson.M{"$lt": cutoff}}
+
+	enAlcance, err := col.CountDocuments(ctx, scope)
+	if err != nil {
+		return 0, 0, fmt.Errorf("counting documents in scope for %s: %w", field, err)
+	}
+
+	res, err := col.UpdateMany(ctx,
 		bson.M{
 			field:          bson.M{"$type": "number"},
-			"_ingested_at": bson.M{"$lte": cutoff},
+			"_ingested_at": bson.M{"$lt": cutoff},
 		},
 		mongo.Pipeline{
 			{{Key: "$set", Value: bson.D{{Key: field, Value: expr}}}},
 		},
 	)
 	if err != nil {
-		return 0, fmt.Errorf("rescaling %s: %w", field, err)
+		return 0, 0, fmt.Errorf("rescaling %s: %w", field, err)
 	}
-	return res.ModifiedCount, nil
+	return res.MatchedCount, enAlcance - res.MatchedCount, nil
 }
 
 // EnsureDataIndex crea un índice sobre la colección de datos del monitor si
