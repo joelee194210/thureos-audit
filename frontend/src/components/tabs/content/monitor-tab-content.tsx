@@ -57,6 +57,7 @@ import {
   sourceConfigValuesToInput,
   type SourceConfigValues,
 } from "@/components/monitors/source-config-fields";
+import { DerivedTimestampCard } from "@/components/monitors/derived-timestamp-card";
 import { STATUS_CLASSES, STATUS_FG } from "@/lib/semantic-colors";
 import type {
   Monitor,
@@ -811,6 +812,10 @@ export function MonitorTabContent({
                             </Select>
                           )}
                           {field.type === "date" &&
+                            // El campo derivado ya es una fecha real: nunca se
+                            // parsea desde texto, así que ofrecerle un formato
+                            // de lectura solo confunde.
+                            field.name !== monitor.derivedTimestamp?.targetName &&
                             user?.role !== "viewer" &&
                             (monitor.sourceType === "csv" ||
                               monitor.sourceType === "txt" ||
@@ -841,6 +846,16 @@ export function MonitorTabContent({
                 )}
               </CardContent>
             </Card>
+
+            {monitor.schema && monitor.schema.length > 0 && (
+              <div className="mt-4">
+                <DerivedTimestampCard
+                  monitor={monitor}
+                  canEdit={user?.role !== "viewer"}
+                  onSaved={(actualizado) => setMonitor(actualizado)}
+                />
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="rules">

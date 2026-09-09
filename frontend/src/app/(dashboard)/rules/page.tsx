@@ -1642,6 +1642,13 @@ function RulesContent() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="30s">30 segundos</SelectItem>
+                                <SelectItem value="60s">60 segundos</SelectItem>
+                                <SelectItem value="5min">5 minutos</SelectItem>
+                                <SelectItem value="15min">15 minutos</SelectItem>
+                                <SelectItem value="1h">1 hora</SelectItem>
+                                <SelectItem value="6h">6 horas</SelectItem>
+                                <SelectItem value="12h">12 horas</SelectItem>
                                 <SelectItem value="24h">24 horas</SelectItem>
                                 <SelectItem value="7d">7 dias</SelectItem>
                                 <SelectItem value="15d">15 dias</SelectItem>
@@ -2594,6 +2601,13 @@ function RulesContent() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="30s">30 segundos</SelectItem>
+                          <SelectItem value="60s">60 segundos</SelectItem>
+                          <SelectItem value="5min">5 minutos</SelectItem>
+                          <SelectItem value="15min">15 minutos</SelectItem>
+                          <SelectItem value="1h">1 hora</SelectItem>
+                          <SelectItem value="6h">6 horas</SelectItem>
+                          <SelectItem value="12h">12 horas</SelectItem>
                           <SelectItem value="24h">24 horas</SelectItem>
                           <SelectItem value="7d">7 dias</SelectItem>
                           <SelectItem value="15d">15 dias</SelectItem>

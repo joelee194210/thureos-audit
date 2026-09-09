@@ -4,6 +4,7 @@ import type {
   SchemaField,
   SourceType,
   CreateSourceConfig,
+  DerivedTimestampConfig,
   UploadCheckResult,
 } from "@/lib/types";
 
@@ -35,6 +36,24 @@ export const monitorsApi = {
 
   updateSchema: (id: string, schema: SchemaField[]) =>
     api.put<{ schema: SchemaField[] }>(`/monitors/${id}/schema`, { schema }),
+
+  /**
+   * Configura el timestamp derivado, o lo limpia mandando null. La clave
+   * viaja siempre: el backend distingue "no la mandaste" (error) de "la
+   * mandaste en null" (limpiar), para no borrar la configuración por una
+   * request incompleta.
+   */
+  updateDerivedTimestamp: (id: string, cfg: DerivedTimestampConfig | null) =>
+    api.put<Monitor>(`/monitors/${id}/derived-timestamp`, {
+      derivedTimestamp: cfg,
+    }),
+
+  /** Calcula el timestamp derivado para los datos ya ingeridos. Idempotente. */
+  backfillTimestamp: (id: string) =>
+    api.post<{ updated: number; skipped: number }>(
+      `/monitors/${id}/backfill-timestamp`,
+      {},
+    ),
 
   detectSchema: (
     sourceType: string,

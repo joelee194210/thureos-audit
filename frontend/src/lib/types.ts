@@ -105,6 +105,24 @@ export interface UploadCheckResult {
   rowsThatWouldFail: number;
 }
 
+/** Formatos soportados por el backend para armar el timestamp derivado. */
+export type DerivedDateFormat = "YYYYMMDD";
+export type DerivedTimeFormat = "HHMMSS" | "HHMM";
+
+/**
+ * Construye un campo de fecha real a partir de dos columnas numéricas
+ * separadas — patrón habitual en exports bancarios, donde la fecha y la hora
+ * vienen en campos distintos y no hay ningún timestamp sobre el que medir
+ * diferencias de tiempo.
+ */
+export interface DerivedTimestampConfig {
+  dateField: string;
+  dateFormat: DerivedDateFormat;
+  timeField: string;
+  timeFormat: DerivedTimeFormat;
+  targetName: string;
+}
+
 export interface Monitor {
   id: string;
   name: string;
@@ -112,6 +130,7 @@ export interface Monitor {
   sourceType: SourceType;
   sourceConfig?: SourceConfig;
   schema: SchemaField[];
+  derivedTimestamp?: DerivedTimestampConfig;
   collectionId: string;
   ownerId: string;
   recordCount: number;
