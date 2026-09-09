@@ -310,15 +310,10 @@ var validAITimeWindow = regexp.MustCompile(`^\d+(s|min|h|d)$`)
 // dropped whole, not partially repaired — a half-fixed rule is worse than
 // no suggestion.
 func filterValidSuggestions(suggestions []AIRuleSuggestion, schema []models.SchemaField) []AIRuleSuggestion {
-	fieldNames := make(map[string]bool, len(schema))
-	for _, f := range schema {
-		fieldNames[f.Name] = true
-	}
-
 	valid := make([]AIRuleSuggestion, 0, len(suggestions))
 	for _, s := range suggestions {
-		if suggestionReferencesUnknownField(s, fieldNames) {
-			log.Printf("ai-rules: descartando sugerencia %q — referencia un campo fuera del schema", s.Name)
+		if reason := discardReason(s, schema); reason != "" {
+			log.Printf("ai-rules: descartando sugerencia %q — %s", s.Name, reason)
 			continue
 		}
 		valid = append(valid, s)
@@ -326,21 +321,50 @@ func filterValidSuggestions(suggestions []AIRuleSuggestion, schema []models.Sche
 	return valid
 }
 
-func suggestionReferencesUnknownField(s AIRuleSuggestion, fieldNames map[string]bool) bool {
+// discardReason devuelve por qué una sugerencia no se puede guardar, o ""
+// si es guardable. Solo se valida lo que está PRESENTE: un groupBy vacío es
+// un agregado global (rule_engine.go:657-661, _id:null) y una ventana vacía
+// es un agregado sobre todo el histórico (rule_engine.go:624). Tratar el
+// vacío como campo inexistente descartaba sugerencias perfectamente válidas
+// y dejaba al usuario mirando una lista vacía.
+func discardReason(s AIRuleSuggestion, schema []models.SchemaField) string {
+	fieldNames := make(map[string]bool, len(schema))
+	for _, f := range schema {
+		fieldNames[f.Name] = true
+	}
+
 	for _, cond := range s.ConditionGroup.Conditions {
 		if !fieldNames[cond.Field] {
-			return true
+			return fmt.Sprintf("la condición usa el campo %q, que no está en el esquema", cond.Field)
 		}
 	}
+
 	for _, agg := range s.AggregateConditions {
-		if !fieldNames[agg.Field] || !fieldNames[agg.GroupBy] || !fieldNames[agg.TimeField] {
-			return true
+		// Para "count" el motor ignora Field (buildAggExpr → $sum:1), así
+		// que puede venir vacío; para el resto es lo que se agrega.
+		if agg.Function != models.AggFuncCount && agg.Field == "" {
+			return "el agregado no dice qué campo agregar"
 		}
-		if !validAITimeWindow.MatchString(agg.TimeWindow) {
-			return true
+		if agg.Field != "" && !fieldNames[agg.Field] {
+			return fmt.Sprintf("el agregado usa el campo %q, que no está en el esquema", agg.Field)
+		}
+		if agg.GroupBy != "" && !fieldNames[agg.GroupBy] {
+			return fmt.Sprintf("el agregado agrupa por %q, que no está en el esquema", agg.GroupBy)
+		}
+		if agg.TimeField != "" && !fieldNames[agg.TimeField] {
+			return fmt.Sprintf("el agregado mide el tiempo sobre %q, que no está en el esquema", agg.TimeField)
+		}
+		// Media ventana es intención a medio expresar: sin el par completo
+		// el motor ignora la ventana y "5 en 60s" se vuelve "5 alguna vez".
+		if (agg.TimeField == "") != (agg.TimeWindow == "") {
+			return "la ventana de tiempo está incompleta: hacen falta el campo de fecha y la duración"
+		}
+		if agg.TimeWindow != "" && !validAITimeWindow.MatchString(agg.TimeWindow) {
+			return fmt.Sprintf("la ventana %q no usa una unidad válida (s, min, h, d)", agg.TimeWindow)
 		}
 	}
-	return false
+
+	return ""
 }
 
 func extractJSON(text string) string {

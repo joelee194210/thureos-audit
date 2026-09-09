@@ -158,3 +158,96 @@ func TestFilterValidSuggestions_MixedListKeepsOnlyValid(t *testing.T) {
 		t.Errorf("got %q, want %q", got[0].Name, "Válida")
 	}
 }
+
+// Un agregado global (groupBy vacío) es válido para el motor: agrupa con
+// _id:null. Descartarlo entero era la causa más frecuente de "generé reglas
+// y no salió ninguna".
+func TestDiscardReason_AceptaAgregadoGlobal(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Total diario",
+		AggregateConditions: []models.AggregateCondition{{
+			Field:      "monto",
+			Function:   models.AggFuncSum,
+			GroupBy:    "",
+			TimeField:  "fecha",
+			TimeWindow: "24h",
+			Operator:   models.OpGreaterThan,
+			Threshold:  50000,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// Sin timeField ni timeWindow el motor no aplica ventana: es un agregado
+// sobre todo el histórico, perfectamente expresable.
+func TestDiscardReason_AceptaAgregadoSinVentana(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Conteo por cliente",
+		AggregateConditions: []models.AggregateCondition{{
+			Field:     "monto",
+			Function:  models.AggFuncCount,
+			GroupBy:   "cliente",
+			Operator:  models.OpGreaterEqual,
+			Threshold: 5,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// Media ventana es intención a medio expresar: "5 transacciones en 60s" que
+// pierde el "en 60s" se convierte en "5 transacciones alguna vez", que es una
+// regla mucho más ruidosa que la pedida. Se descarta.
+func TestDiscardReason_DescartaVentanaIncompleta(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Ventana a medias",
+		AggregateConditions: []models.AggregateCondition{{
+			Field:     "monto",
+			Function:  models.AggFuncCount,
+			GroupBy:   "cliente",
+			TimeField: "fecha",
+			Operator:  models.OpGreaterEqual,
+			Threshold: 5,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla por ventana incompleta")
+	}
+}
+
+func TestDiscardReason_DescartaCamposInexistentes(t *testing.T) {
+	casos := []struct {
+		nombre string
+		s      AIRuleSuggestion
+	}{
+		{"campo de condición inventado", AIRuleSuggestion{
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "no_existe", Operator: models.OpGreaterThan, Value: 1}},
+			},
+		}},
+		{"groupBy inventado", AIRuleSuggestion{
+			AggregateConditions: []models.AggregateCondition{{
+				Field: "monto", Function: models.AggFuncSum, GroupBy: "no_existe",
+				Operator: models.OpGreaterThan, Threshold: 1,
+			}},
+		}},
+		{"ventana con unidad ambigua", AIRuleSuggestion{
+			AggregateConditions: []models.AggregateCondition{{
+				Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+				TimeField: "fecha", TimeWindow: "5m",
+				Operator: models.OpGreaterThan, Threshold: 1,
+			}},
+		}},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			if got := discardReason(c.s, testSchema()); got == "" {
+				t.Error("discardReason = \"\", quería descartarla")
+			}
+		})
+	}
+}
