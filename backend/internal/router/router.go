@@ -84,6 +84,7 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	monitors.Put("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Update)
 	monitors.Put("/:id/schema", middleware.RequireComplianceOrAbove(), h.Monitor.UpdateSchema)
 	monitors.Put("/:id/derived-timestamp", middleware.RequireComplianceOrAbove(), h.Monitor.UpdateDerivedTimestamp)
+	monitors.Post("/:id/backfill-timestamp", middleware.RequireComplianceOrAbove(), h.Monitor.BackfillDerivedTimestamp)
 	monitors.Delete("/:id", middleware.RequireComplianceOrAbove(), h.Monitor.Delete)
 	monitors.Post("/:id/upload", middleware.RequireComplianceOrAbove(), h.Monitor.UploadData)
 	monitors.Post("/:id/upload/check", middleware.RequireComplianceOrAbove(), h.Monitor.UploadCheck)

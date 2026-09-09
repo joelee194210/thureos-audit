@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/thureos/compliance/internal/database"
@@ -235,6 +236,39 @@ func (r *MonitorRepository) GetIngestionHistory(ctx context.Context) ([]Ingestio
 		entries = []IngestionEntry{}
 	}
 	return entries, nil
+}
+
+// IterateData recorre todos los documentos de la colección de datos del
+// monitor, aplicando fn a cada uno. Se usa para el backfill del timestamp
+// derivado: cargar toda la colección en memoria no escala.
+func (r *MonitorRepository) IterateData(ctx context.Context, collectionID string, fn func(bson.M) error) error {
+	col := r.GetDataCollection(collectionID)
+	cursor, err := col.Find(ctx, bson.M{})
+	if err != nil {
+		return fmt.Errorf("finding data for backfill: %w", err)
+	}
+	defer func() { _ = cursor.Close(ctx) }()
+
+	for cursor.Next(ctx) {
+		var doc bson.M
+		if err := cursor.Decode(&doc); err != nil {
+			return fmt.Errorf("decoding document: %w", err)
+		}
+		if err := fn(doc); err != nil {
+			return err
+		}
+	}
+	return cursor.Err()
+}
+
+// SetDataField escribe un solo campo en un documento de la colección de datos.
+func (r *MonitorRepository) SetDataField(ctx context.Context, collectionID string, docID interface{}, field string, value interface{}) error {
+	col := r.GetDataCollection(collectionID)
+	_, err := col.UpdateByID(ctx, docID, bson.M{"$set": bson.M{field: value}})
+	if err != nil {
+		return fmt.Errorf("setting %s: %w", field, err)
+	}
+	return nil
 }
 
 func (r *MonitorRepository) AggregateData(ctx context.Context, collectionID string, pipeline mongo.Pipeline) ([]bson.M, error) {

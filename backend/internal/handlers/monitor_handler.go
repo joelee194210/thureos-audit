@@ -818,3 +818,44 @@ func (h *MonitorHandler) UpdateDerivedTimestamp(c *fiber.Ctx) error {
 	}
 	return c.JSON(updated)
 }
+
+// BackfillDerivedTimestamp calcula el timestamp derivado para los documentos
+// ya ingeridos. Es idempotente: los documentos que ya lo tienen se saltean,
+// así que correrlo dos veces no cambia nada la segunda vez.
+func (h *MonitorHandler) BackfillDerivedTimestamp(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	monitor, err := h.monitorRepo.FindByID(c.Context(), id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
+	}
+	if monitor.DerivedTimestamp == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "el monitor no tiene timestamp derivado configurado"})
+	}
+
+	cfg := *monitor.DerivedTimestamp
+	updated, skipped := 0, 0
+	err = h.monitorRepo.IterateData(c.Context(), monitor.CollectionID, func(doc bson.M) error {
+		if _, ya := doc[cfg.TargetName]; ya {
+			return nil
+		}
+		ts, ok := services.BuildDerivedTimestamp(cfg, doc)
+		if !ok {
+			skipped++
+			return nil
+		}
+		if err := h.monitorRepo.SetDataField(c.Context(), monitor.CollectionID, doc["_id"], cfg.TargetName, ts); err != nil {
+			return err
+		}
+		updated++
+		return nil
+	})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"updated": updated, "skipped": skipped})
+}
