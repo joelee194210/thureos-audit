@@ -18,6 +18,7 @@ import (
 	"github.com/thureos/compliance/internal/repository"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // ErrConversationNotFound cubre tanto "no existe" como "no es tuya" — el
@@ -34,7 +35,7 @@ var ErrMonitorNotFound = errors.New("monitor no encontrado")
 // queryToolDescription y queryToolJSONSchema definen el contrato de la
 // única herramienta que el chatbot expone — el mismo texto/schema se usa
 // para Anthropic y DeepSeek (formas de request distintas, mismo contrato).
-const queryToolDescription = `Ejecuta una consulta REAL contra los datos del monitor actual. Usar SIEMPRE que la pregunta necesite datos reales (conteos, sumas, promedios, filtros, listados) — nunca inventar números. Se puede llamar varias veces si hace falta investigar en pasos (ej. primero contar, después agrupar por región si el total es alto).
+const queryToolDescription = `Ejecuta una consulta REAL contra los datos del monitor que se indique en "monitor". Usar SIEMPRE que la pregunta necesite datos reales (conteos, sumas, promedios, filtros, listados) — nunca inventar números. Se puede llamar varias veces si hace falta investigar en pasos (ej. primero contar, después agrupar por región si el total es alto).
 
 Para traer filas usar "conditionGroup" (opcional "limit", tope 1000). Para totales agrupados (suma/conteo/promedio/mín/máx por categoría) usar "aggregate" — SIEMPRE devuelve TODOS los grupos, no hace falta pedir un umbral.
 
@@ -259,14 +260,25 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 	ctx, cancel := context.WithTimeout(ctx, chatAskTimeout(len(conv.MonitorIDs)))
 	defer cancel()
 
-	// Un monitor borrado mientras la conversación seguía apuntando a él se
+	// Un monitor BORRADO mientras la conversación seguía apuntando a él se
 	// excluye en silencio: la conversación sigue sirviendo con el resto.
-	// Solo si no queda ninguno es un error.
+	// Solo si no queda ninguno es ErrMonitorNotFound. Cualquier otro error
+	// de Mongo aborta — ver adentro del bucle.
 	monitors := make([]models.Monitor, 0, len(conv.MonitorIDs))
 	for _, id := range conv.MonitorIDs {
 		monitor, err := s.monitorRepo.FindByID(ctx, id)
-		if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			// Borrado mientras la conversación seguía apuntando a él:
+			// exclusión permanente y correcta.
 			continue
+		}
+		if err != nil {
+			// Cualquier otro error (deadline, blip del replica set, fallo
+			// de decodificación) es transitorio y NO se traga: con menos
+			// monitores el asistente respondería una comparación
+			// incompleta presentándola como completa. En una plataforma
+			// de cumplimiento, fallar es mejor que degradar en silencio.
+			return models.ChatMessage{}, fmt.Errorf("cargando monitor %s: %w", id.Hex(), err)
 		}
 		monitors = append(monitors, *monitor)
 	}
@@ -359,6 +371,26 @@ func historyToAnthropic(history []models.ChatMessage) []anthropic.MessageParam {
 	return messages
 }
 
+// anthropicToolInputSchema arma el input_schema de query_monitor_data para
+// Anthropic. Existe como función aparte para poder testear que el
+// "required" llega al JSON: el ToolInputSchemaParam del SDK pinneado
+// (v0.2.0-beta.3) no tiene campo Required, así que la clave se manda por
+// WithExtraFields, que es el único camino que la deja en la RAÍZ del
+// schema.
+//
+// Ojo: asignar el campo público ExtraFields del struct NO funciona — el
+// marshal del SDK sólo consulta los extras guardados por WithExtraFields,
+// y el campo termina serializado como una clave basura "-". DeepSeek no
+// necesita nada de esto: recibe queryToolJSONSchema entero como Parameters.
+func anthropicToolInputSchema() anthropic.ToolInputSchemaParam {
+	schema := anthropic.ToolInputSchemaParam{
+		Type:       "object",
+		Properties: queryToolJSONSchema["properties"],
+	}
+	schema.WithExtraFields(map[string]any{"required": queryToolJSONSchema["required"]})
+	return schema
+}
+
 func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, aliases map[string]*models.Monitor, history []anthropic.MessageParam) (string, *models.ChatArtifact, error) {
 	client := anthropic.NewClient(option.WithAPIKey(ai.APIKey))
 	model := ai.Model
@@ -369,16 +401,7 @@ func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, alia
 	tool := anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
 		Name:        "query_monitor_data",
 		Description: anthropicparam.NewOpt(queryToolDescription),
-		// El "required" de queryToolJSONSchema no viaja acá: el
-		// ToolInputSchemaParam del SDK pinneado (v0.2.0-beta.3) no expone
-		// ese campo. DeepSeek sí lo recibe, porque se le manda el schema
-		// entero como Parameters. El costo del faltante es una iteración
-		// perdida, no un error: ParseQueryToolInput rechaza un input sin
-		// "monitor" y el LLM se corrige en la vuelta siguiente.
-		InputSchema: anthropic.ToolInputSchemaParam{
-			Type:       "object",
-			Properties: queryToolJSONSchema["properties"],
-		},
+		InputSchema: anthropicToolInputSchema(),
 	}}
 
 	systemPrompt := buildSystemPrompt(aliases)

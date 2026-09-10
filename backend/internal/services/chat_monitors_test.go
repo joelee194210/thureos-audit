@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -210,5 +212,63 @@ func TestChatAskTimeout_EscalaConLosMonitoresYTopea(t *testing.T) {
 		if got := chatAskTimeout(tc.monitors); got != tc.want {
 			t.Errorf("chatAskTimeout(%d) = %v, quiero %v", tc.monitors, got, tc.want)
 		}
+	}
+}
+
+// AUTORIZACIÓN — tripwire de ORDEN, no de resultado.
+//
+// Los tests de resolveQueryMonitor prueban que el resolvedor devuelve
+// error; ninguno prueba lo que de verdad importa: que la resolución pase
+// ANTES de tocar el repositorio. Un refactor que suba la rama
+// `input.Aggregate != nil` por encima del resolve dejaría pasar los demás
+// tests sin que nada chille.
+//
+// Contra el código de hoy este test pasa trivialmente: existe sólo como
+// guardia contra ese reordenamiento futuro. El mecanismo es el receptor
+// nil — AggregateData/QueryData llaman a GetDataCollection, que
+// desreferencia r.db; con monitorRepo nil, alcanzar Mongo es un panic, no
+// un fallo silencioso.
+func TestExecuteQuery_AliasHostilNoTocaLaBase(t *testing.T) {
+	// monitorRepo nil: si executeQuery llegara a Mongo, esto entra en pánico.
+	s := &ChatService{}
+	aliases := buildMonitorAliases([]models.Monitor{{ID: primitive.NewObjectID(), Name: "Transacciones"}})
+	raw := json.RawMessage(`{"monitor":"clientes_secretos","aggregate":{"field":"monto","function":"sum"}}`)
+	if _, err := s.executeQuery(context.Background(), aliases, raw); err == nil {
+		t.Fatal("un alias fuera de la allowlist no debe ejecutar consulta")
+	}
+}
+
+// Mismo tripwire por la rama de conditionGroup, que es el otro camino a
+// Mongo dentro de executeQuery.
+func TestExecuteQuery_AliasHostilConConditionGroupNoTocaLaBase(t *testing.T) {
+	s := &ChatService{}
+	aliases := buildMonitorAliases([]models.Monitor{{ID: primitive.NewObjectID(), Name: "Transacciones"}})
+	raw := json.RawMessage(`{"monitor":"clientes_secretos","conditionGroup":{"logic":"AND","conditions":[]}}`)
+	if _, err := s.executeQuery(context.Background(), aliases, raw); err == nil {
+		t.Fatal("un alias fuera de la allowlist no debe ejecutar consulta")
+	}
+}
+
+// El "required" del schema tiene que quedar en la RAÍZ del input_schema
+// que se le manda a Anthropic. El SDK pinneado no tiene campo Required y
+// asignar el campo público ExtraFields lo serializa bajo una clave basura
+// "-", así que este test fija el único camino que funciona.
+func TestAnthropicToolInputSchema_LlevaRequiredEnLaRaiz(t *testing.T) {
+	raw, err := json.Marshal(anthropicToolInputSchema())
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	var decoded struct {
+		Required   []string               `json:"required"`
+		Properties map[string]interface{} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("el input_schema no es JSON válido: %v", err)
+	}
+	if len(decoded.Required) != 1 || decoded.Required[0] != "monitor" {
+		t.Errorf(`quiero required=["monitor"] en la raíz, tengo %v; json=%s`, decoded.Required, raw)
+	}
+	if _, ok := decoded.Properties["monitor"]; !ok {
+		t.Errorf("falta la propiedad 'monitor' en el schema; json=%s", raw)
 	}
 }
