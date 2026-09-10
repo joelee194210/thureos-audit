@@ -421,7 +421,8 @@ Crear `frontend/src/app/(dashboard)/ayuda/[slug]/page.tsx`:
 ```tsx
 "use client";
 
-import { use, useEffect } from "react";
+import { useEffect } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, CircleHelp } from "lucide-react";
@@ -431,12 +432,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { articuloPorSlug } from "@/lib/help/articles";
 import { useTabStore } from "@/stores/tab-store";
 
-export default function AyudaFichaPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = use(params);
+export default function AyudaFichaPage() {
+  // El patrón del proyecto para una ruta dinámica: useParams en un
+  // componente cliente, igual que monitors/[id] y red-flags/[id].
+  const { slug } = useParams<{ slug: string }>();
   const ficha = articuloPorSlug(slug);
   const registerEntityLabel = useTabStore((s) => s.registerEntityLabel);
 
@@ -555,7 +554,7 @@ export default function AyudaFichaPage({
 }
 ```
 
-> **Nota sobre `params`:** en Next.js 16 los `params` de una página son una promesa y se desenvuelven con `use()`. Verificar cómo lo hace otra ruta dinámica del proyecto (`monitors/[id]`) y seguir ese patrón; si difiere, manda el del proyecto.
+> **Verificado antes de dispatchear:** `monitors/[id]`, `red-flags/[id]` y `dashboards/[id]` usan `useParams<{ id: string }>()` de `next/navigation` en un componente cliente, no la forma de promesa con `use()`. El código de arriba ya sigue ese patrón. Esas tres rutas además delegan en un `*TabContent` porque están en `TAB_CONTENT_REGISTRY` para conservar estado; la ayuda no lo necesita y por eso su página es directa.
 
 - [ ] **Step 9: La etiqueta de la pestaña**
 
