@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HELP_ARTICLES, articuloPorSlug } from "./articles";
 import { HELP_GROUPS } from "./types";
+import { NAV_AREAS } from "@/lib/nav";
 
 describe("contenido de la ayuda", () => {
   it("no repite slugs", () => {
@@ -50,8 +51,17 @@ describe("contenido de la ayuda", () => {
     }
   });
 
-  // La cobertura del menú (una ficha por pantalla) se verifica en un test
-  // aparte que se agrega cuando estén escritas las trece fichas — ver la
-  // tarea 2 del plan. Con dos fichas fallaría por diseño. Ese test es el
-  // que importa NAV_AREAS; hasta entonces no hace falta acá.
+  // La única defensa contra que la ayuda se quede atrás del producto: si
+  // alguien agrega una pantalla al menú y no la documenta, esto lo dice.
+  it("tiene una ficha por cada pantalla del menú", () => {
+    const rutasDocumentadas = new Set(
+      HELP_ARTICLES.map((a) => a.route).filter((r): r is string => r !== null),
+    );
+    const sinFicha = NAV_AREAS.flatMap((area) => area.items)
+      .filter((item) => item.href !== "/ayuda")
+      .filter((item) => !rutasDocumentadas.has(item.href))
+      .map((item) => `${item.name} (${item.href})`);
+
+    expect(sinFicha, `pantallas sin ficha de ayuda: ${sinFicha.join(", ")}`).toEqual([]);
+  });
 });
