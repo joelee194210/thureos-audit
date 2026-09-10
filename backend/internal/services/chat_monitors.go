@@ -2,7 +2,9 @@ package services
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/thureos/compliance/internal/models"
@@ -77,4 +79,61 @@ func buildMonitorAliases(monitors []models.Monitor) map[string]*models.Monitor {
 		aliases[alias] = &monitors[i]
 	}
 	return aliases
+}
+
+// resolveQueryMonitor traduce el alias que mandó el LLM al monitor real.
+//
+// ESTA ES LA FRONTERA DE AUTORIZACIÓN del chatbot multi-monitor: el mapa
+// `aliases` se construye solo a partir de conv.MonitorIDs, así que un
+// alias que no está ahí no tiene forma de convertirse en una consulta.
+// Nunca se acepta un ObjectID crudo: si el LLM manda un hex, cae acá como
+// alias desconocido igual que cualquier otro texto.
+//
+// Importa porque los datos que el LLM lee son archivos subidos por
+// usuarios: una celda con una inyección de prompt puede pedirle que
+// consulte otro monitor, y este chequeo es lo que hace que ese pedido no
+// llegue a ningún lado.
+func resolveQueryMonitor(aliases map[string]*models.Monitor, alias string) (*models.Monitor, error) {
+	if monitor, ok := aliases[alias]; ok {
+		return monitor, nil
+	}
+	valid := make([]string, 0, len(aliases))
+	for a := range aliases {
+		valid = append(valid, a)
+	}
+	sort.Strings(valid)
+	return nil, fmt.Errorf(
+		"el monitor %q no existe en esta conversación; los disponibles son: %s",
+		alias, strings.Join(valid, ", "),
+	)
+}
+
+// chatToolIterations y chatAskTimeout escalan con la cantidad de
+// monitores: una pregunta cruzada necesita al menos una llamada por
+// monitor antes de poder empezar a razonar, así que las cotas fijas
+// pensadas para un solo monitor se agotaban sin haber respondido.
+const (
+	chatBaseToolIterations       = 5
+	chatToolIterationsPerMonitor = 3
+	chatMaxToolIterations        = 20
+
+	chatBaseAskTimeout       = 60 * time.Second
+	chatAskTimeoutPerMonitor = 30 * time.Second
+	chatMaxAskTimeout        = 240 * time.Second
+)
+
+func chatToolIterations(monitorCount int) int {
+	n := chatBaseToolIterations + chatToolIterationsPerMonitor*monitorCount
+	if n > chatMaxToolIterations {
+		return chatMaxToolIterations
+	}
+	return n
+}
+
+func chatAskTimeout(monitorCount int) time.Duration {
+	d := chatBaseAskTimeout + chatAskTimeoutPerMonitor*time.Duration(monitorCount)
+	if d > chatMaxAskTimeout {
+		return chatMaxAskTimeout
+	}
+	return d
 }

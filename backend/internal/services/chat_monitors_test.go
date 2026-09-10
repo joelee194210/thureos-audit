@@ -1,7 +1,9 @@
 package services
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -88,4 +90,125 @@ func keysOf(m map[string]*models.Monitor) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestBuildSystemPrompt_UnBloquePorMonitor(t *testing.T) {
+	monitors := []models.Monitor{
+		{ID: primitive.NewObjectID(), Name: "Transacciones Bancolombia", Schema: []models.SchemaField{
+			{Name: "monto", Type: models.FieldNumber},
+			{Name: "fecha", Type: models.FieldDate},
+		}},
+		{ID: primitive.NewObjectID(), Name: "Alertas SWIFT", Schema: []models.SchemaField{
+			{Name: "referencia", Type: models.FieldString},
+		}},
+	}
+	prompt := buildSystemPrompt(buildMonitorAliases(monitors))
+
+	for _, want := range []string{
+		"transacciones_bancolombia", "Transacciones Bancolombia", "monto", "fecha",
+		"alertas_swift", "Alertas SWIFT", "referencia",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("el prompt debería contener %q\n---\n%s", want, prompt)
+		}
+	}
+}
+
+// El prompt debe ser estable entre llamadas: un mapa de Go se recorre en
+// orden aleatorio, así que hay que ordenar explícitamente o el prompt
+// cambia en cada turno y rompe el caché del proveedor.
+func TestBuildSystemPrompt_OrdenEstable(t *testing.T) {
+	monitors := []models.Monitor{
+		{ID: primitive.NewObjectID(), Name: "Alfa"},
+		{ID: primitive.NewObjectID(), Name: "Beta"},
+		{ID: primitive.NewObjectID(), Name: "Gamma"},
+		{ID: primitive.NewObjectID(), Name: "Delta"},
+	}
+	aliases := buildMonitorAliases(monitors)
+	first := buildSystemPrompt(aliases)
+	for i := 0; i < 20; i++ {
+		if got := buildSystemPrompt(aliases); got != first {
+			t.Fatal("buildSystemPrompt debe devolver el mismo texto para el mismo mapa")
+		}
+	}
+}
+
+func TestResolveQueryMonitor_AliasValido(t *testing.T) {
+	monitors := []models.Monitor{{ID: primitive.NewObjectID(), Name: "Transacciones"}}
+	aliases := buildMonitorAliases(monitors)
+
+	got, err := resolveQueryMonitor(aliases, "transacciones")
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	if got.ID != monitors[0].ID {
+		t.Errorf("resolvió al monitor equivocado")
+	}
+}
+
+// AUTORIZACIÓN: un alias que no está en la allowlist de la conversación
+// nunca resuelve. Ver Global Constraints.
+func TestResolveQueryMonitor_AliasFueraDeLaAllowlist(t *testing.T) {
+	aliases := buildMonitorAliases([]models.Monitor{
+		{ID: primitive.NewObjectID(), Name: "Transacciones"},
+	})
+
+	if _, err := resolveQueryMonitor(aliases, "clientes_secretos"); err == nil {
+		t.Fatal("un alias fuera de la allowlist debe fallar, no resolver")
+	}
+}
+
+// AUTORIZACIÓN: un ObjectID crudo es un alias desconocido como cualquier
+// otro. Nunca se acepta como forma de nombrar un monitor.
+func TestResolveQueryMonitor_ObjectIDCrudoNoEsUnAlias(t *testing.T) {
+	id := primitive.NewObjectID()
+	aliases := buildMonitorAliases([]models.Monitor{{ID: id, Name: "Transacciones"}})
+
+	if _, err := resolveQueryMonitor(aliases, id.Hex()); err == nil {
+		t.Fatal("un ObjectID crudo no debe resolver, ni siquiera el del propio monitor")
+	}
+}
+
+// El error debe listar los alias válidos para que el LLM pueda corregirse
+// en la iteración siguiente, en vez de reintentar a ciegas.
+func TestResolveQueryMonitor_ElErrorListaLosAliasValidos(t *testing.T) {
+	aliases := buildMonitorAliases([]models.Monitor{
+		{ID: primitive.NewObjectID(), Name: "Transacciones"},
+		{ID: primitive.NewObjectID(), Name: "Alertas SWIFT"},
+	})
+
+	_, err := resolveQueryMonitor(aliases, "inexistente")
+	if err == nil {
+		t.Fatal("quiero error")
+	}
+	for _, want := range []string{"transacciones", "alertas_swift"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("el error debería listar %q; dice: %v", want, err)
+		}
+	}
+}
+
+func TestChatToolIterations_EscalaConLosMonitoresYTopea(t *testing.T) {
+	cases := []struct{ monitors, want int }{
+		{1, 8}, {2, 11}, {3, 14}, {5, 20}, {6, 20}, {50, 20},
+	}
+	for _, tc := range cases {
+		if got := chatToolIterations(tc.monitors); got != tc.want {
+			t.Errorf("chatToolIterations(%d) = %d, quiero %d", tc.monitors, got, tc.want)
+		}
+	}
+}
+
+func TestChatAskTimeout_EscalaConLosMonitoresYTopea(t *testing.T) {
+	cases := []struct {
+		monitors int
+		want     time.Duration
+	}{
+		{1, 90 * time.Second}, {2, 120 * time.Second}, {6, 240 * time.Second}, {50, 240 * time.Second},
+	}
+	for _, tc := range cases {
+		if got := chatAskTimeout(tc.monitors); got != tc.want {
+			t.Errorf("chatAskTimeout(%d) = %v, quiero %v", tc.monitors, got, tc.want)
+		}
+	}
 }
