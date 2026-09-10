@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { CircleHelp } from "lucide-react";
 import { Header } from "@/components/layout/header";

@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { NAV_AREAS } from "@/lib/nav";
 import { HELP_ARTICLES, articuloPorSlug } from "./articles";
 import { HELP_GROUPS } from "./types";
 
@@ -53,5 +52,6 @@ describe("contenido de la ayuda", () => {
 
   // La cobertura del menú (una ficha por pantalla) se verifica en un test
   // aparte que se agrega cuando estén escritas las trece fichas — ver la
-  // tarea 2 del plan. Con dos fichas fallaría por diseño.
+  // tarea 2 del plan. Con dos fichas fallaría por diseño. Ese test es el
+  // que importa NAV_AREAS; hasta entonces no hace falta acá.
 });
