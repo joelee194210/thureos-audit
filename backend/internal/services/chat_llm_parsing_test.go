@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseQueryToolInput_ConConditionGroupValido(t *testing.T) {
-	raw := json.RawMessage(`{"conditionGroup":{"logic":"AND","conditions":[{"field":"amount","operator":"gt","value":1000}]}}`)
+	raw := json.RawMessage(`{"monitor":"m1","conditionGroup":{"logic":"AND","conditions":[{"field":"amount","operator":"gt","value":1000}]}}`)
 	input, err := ParseQueryToolInput(raw)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -22,7 +22,7 @@ func TestParseQueryToolInput_ConConditionGroupValido(t *testing.T) {
 }
 
 func TestParseQueryToolInput_ConAggregateValido(t *testing.T) {
-	raw := json.RawMessage(`{"aggregate":{"field":"amount","function":"sum","groupBy":"account"}}`)
+	raw := json.RawMessage(`{"monitor":"m1","aggregate":{"field":"amount","function":"sum","groupBy":"account"}}`)
 	input, err := ParseQueryToolInput(raw)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -33,21 +33,21 @@ func TestParseQueryToolInput_ConAggregateValido(t *testing.T) {
 }
 
 func TestParseQueryToolInput_SinConditionGroupNiAggregateFalla(t *testing.T) {
-	raw := json.RawMessage(`{}`)
+	raw := json.RawMessage(`{"monitor":"m1"}`)
 	if _, err := ParseQueryToolInput(raw); err == nil {
 		t.Fatal("esperaba error cuando no hay conditionGroup ni aggregate")
 	}
 }
 
 func TestParseQueryToolInput_AggregateSinFieldFalla(t *testing.T) {
-	raw := json.RawMessage(`{"aggregate":{"function":"sum"}}`)
+	raw := json.RawMessage(`{"monitor":"m1","aggregate":{"function":"sum"}}`)
 	if _, err := ParseQueryToolInput(raw); err == nil {
 		t.Fatal("esperaba error cuando aggregate.field está vacío")
 	}
 }
 
 func TestParseQueryToolInput_LimitFueraDeRangoSeAjustaAlTope(t *testing.T) {
-	raw := json.RawMessage(`{"conditionGroup":{"logic":"AND","conditions":[]},"limit":999999}`)
+	raw := json.RawMessage(`{"monitor":"m1","conditionGroup":{"logic":"AND","conditions":[]},"limit":999999}`)
 	input, err := ParseQueryToolInput(raw)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -134,5 +134,30 @@ func TestParseArtifact_TipoDesconocidoFalla(t *testing.T) {
 func TestParseArtifact_JSONInvalidoFalla(t *testing.T) {
 	if _, err := ParseArtifact(json.RawMessage(`{not json`)); err == nil {
 		t.Fatal("esperaba error con JSON inválido")
+	}
+}
+
+func TestParseQueryToolInput_ExigeMonitor(t *testing.T) {
+	raw := []byte(`{"aggregate": {"field": "monto", "function": "sum"}}`)
+	if _, err := ParseQueryToolInput(raw); err == nil {
+		t.Fatal("un input sin 'monitor' debe ser rechazado")
+	}
+}
+
+func TestParseQueryToolInput_RechazaMonitorVacio(t *testing.T) {
+	raw := []byte(`{"monitor": "   ", "aggregate": {"field": "monto", "function": "sum"}}`)
+	if _, err := ParseQueryToolInput(raw); err == nil {
+		t.Fatal("un 'monitor' en blanco debe ser rechazado")
+	}
+}
+
+func TestParseQueryToolInput_ConservaYNormalizaElMonitor(t *testing.T) {
+	raw := []byte(`{"monitor": "  transacciones  ", "aggregate": {"field": "monto", "function": "sum"}}`)
+	input, err := ParseQueryToolInput(raw)
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	if input.Monitor != "transacciones" {
+		t.Errorf("Monitor = %q, quiero %q", input.Monitor, "transacciones")
 	}
 }
