@@ -7,7 +7,7 @@ import type {
 } from "@/lib/types";
 
 export const dashboardsApi = {
-  list: () => api.get<Dashboard[]>("/dashboards"),
+  list: () => api.getList<Dashboard>("/dashboards"),
 
   get: (id: string) => api.get<Dashboard>(`/dashboards/${id}`),
 

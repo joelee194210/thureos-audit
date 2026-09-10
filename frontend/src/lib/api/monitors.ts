@@ -9,7 +9,7 @@ import type {
 } from "@/lib/types";
 
 export const monitorsApi = {
-  list: () => api.get<Monitor[]>("/monitors"),
+  list: () => api.getList<Monitor>("/monitors"),
 
   get: (id: string) => api.get<Monitor>(`/monitors/${id}`),
 
@@ -79,7 +79,7 @@ export const monitorsApi = {
   delete: (id: string) => api.delete<{ message: string }>(`/monitors/${id}`),
 
   /** Los monitores borrados, para poder restaurarlos. */
-  listDeleted: () => api.get<Monitor[]>("/monitors/deleted"),
+  listDeleted: () => api.getList<Monitor>("/monitors/deleted"),
 
   restore: (id: string) =>
     api.post<{ message: string }>(`/monitors/${id}/restore`, {}),

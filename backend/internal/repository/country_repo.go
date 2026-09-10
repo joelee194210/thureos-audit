@@ -63,7 +63,7 @@ func (r *CountryRepository) FindAll(ctx context.Context) ([]models.Country, erro
 	if err != nil {
 		return nil, err
 	}
-	var results []models.Country
+	results := []models.Country{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (r *CountryRepository) FindActive(ctx context.Context) ([]models.Country, e
 	if err != nil {
 		return nil, err
 	}
-	var results []models.Country
+	results := []models.Country{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (r *CountryRepository) FindByRiskLevel(ctx context.Context, level string) (
 	if err != nil {
 		return nil, err
 	}
-	var results []models.Country
+	results := []models.Country{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (r *CountryRepository) FindByRegion(ctx context.Context, region string) ([]
 	if err != nil {
 		return nil, err
 	}
-	var results []models.Country
+	results := []models.Country{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ func (r *CountryRepository) Search(ctx context.Context, query string) ([]models.
 	if err != nil {
 		return nil, err
 	}
-	var results []models.Country
+	results := []models.Country{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}

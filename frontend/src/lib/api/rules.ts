@@ -14,7 +14,7 @@ import type {
 export const rulesApi = {
   list: (monitorId?: string) => {
     const params = monitorId ? `?monitorId=${monitorId}` : "";
-    return api.get<Rule[]>(`/rules${params}`);
+    return api.getList<Rule>(`/rules${params}`);
   },
 
   get: (id: string) => api.get<Rule>(`/rules/${id}`),
@@ -54,7 +54,7 @@ export const rulesApi = {
   }) => api.post<AIGenerationResult>("/rules/ai-generate", data),
 
   // Tipologías AML pre-armadas: catálogo + instanciación por monitor.
-  listTemplates: () => api.get<RuleTemplate[]>("/rule-templates"),
+  listTemplates: () => api.getList<RuleTemplate>("/rule-templates"),
 
   instantiateTemplate: (
     monitorId: string,
@@ -72,7 +72,7 @@ export const rulesApi = {
     api.get<EffectivenessStats>(`/rules/${ruleId}/effectiveness`),
 
   effectivenessByTemplate: () =>
-    api.get<TemplateEffectiveness[]>("/rule-templates/effectiveness"),
+    api.getList<TemplateEffectiveness>("/rule-templates/effectiveness"),
 
   // Backtest: qué habría generado la regla contra el histórico ya
   // ingerido del monitor, sin guardar nada — para juzgar señal vs. ruido
@@ -84,11 +84,7 @@ export const rulesApi = {
       aggregateConditions?: AggregateCondition[];
       severity: Severity;
     },
-  ) =>
-    api.post<BacktestResult>(
-      `/monitors/${monitorId}/rules/backtest`,
-      data,
-    ),
+  ) => api.post<BacktestResult>(`/monitors/${monitorId}/rules/backtest`, data),
 };
 
 export interface BacktestResult {

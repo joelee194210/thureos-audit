@@ -28,7 +28,7 @@ export const redFlagsApi = {
     if (params?.monitorId) searchParams.set("monitorId", params.monitorId);
     if (params?.limit) searchParams.set("limit", String(params.limit));
     const qs = searchParams.toString();
-    return api.get<RedFlag[]>(`/red-flags${qs ? `?${qs}` : ""}`);
+    return api.getList<RedFlag>(`/red-flags${qs ? `?${qs}` : ""}`);
   },
 
   get: (id: string) => api.get<RedFlag>(`/red-flags/${id}`),
@@ -45,7 +45,7 @@ export const redFlagsApi = {
       notes,
     }),
 
-  getLogs: (id: string) => api.get<RedFlagLog[]>(`/red-flags/${id}/logs`),
+  getLogs: (id: string) => api.getList<RedFlagLog>(`/red-flags/${id}/logs`),
 
   stats: () =>
     api.get<{ new: number; acknowledged: number }>("/red-flags/stats"),
@@ -56,9 +56,9 @@ export const redFlagsApi = {
     ),
 
   calendar: (year: number, month: number) =>
-    api.get<CalendarDay[]>(`/red-flags/calendar?year=${year}&month=${month}`),
+    api.getList<CalendarDay>(`/red-flags/calendar?year=${year}&month=${month}`),
 
-  byDate: (date: string) => api.get<RedFlag[]>(`/red-flags/date/${date}`),
+  byDate: (date: string) => api.getList<RedFlag>(`/red-flags/date/${date}`),
 
   /** Informe ya generado al crearse la alerta. null si no hay uno guardado
    *  (alertas anteriores a este cambio) — quien llama cae al camino
@@ -70,7 +70,7 @@ export const redFlagsApi = {
     api.post<{ message: string }>(`/red-flags/${id}/assign`, {
       assigneeId,
     }),
-  listNotes: (id: string) => api.get<CaseNote[]>(`/red-flags/${id}/notes`),
+  listNotes: (id: string) => api.getList<CaseNote>(`/red-flags/${id}/notes`),
   addNote: (id: string, text: string) =>
     api.post<CaseNote>(`/red-flags/${id}/notes`, { text }),
   transitionCase: (id: string, status: string, disposition?: string) =>

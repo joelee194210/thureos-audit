@@ -61,6 +61,11 @@ func (r *RedFlagCaseRepository) AddNote(ctx context.Context, note *models.RedFla
 }
 
 // ListNotes devuelve las notas del caso, más reciente primero.
+//
+// El slice arranca inicializado, no nil: un slice nil se serializa como el
+// JSON `null`, y el frontend hace `notes.map(...)` sobre la respuesta. Todo
+// caso arranca sin notas, así que abrir uno recién creado reventaba la
+// página de detalle con "Cannot read properties of null (reading 'map')".
 func (r *RedFlagCaseRepository) ListNotes(ctx context.Context, redFlagID primitive.ObjectID) ([]models.RedFlagNote, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -69,7 +74,7 @@ func (r *RedFlagCaseRepository) ListNotes(ctx context.Context, redFlagID primiti
 	if err != nil {
 		return nil, fmt.Errorf("listando notas: %w", err)
 	}
-	var notes []models.RedFlagNote
+	notes := []models.RedFlagNote{}
 	if err := cur.All(ctx, &notes); err != nil {
 		return nil, fmt.Errorf("decodificando notas: %w", err)
 	}

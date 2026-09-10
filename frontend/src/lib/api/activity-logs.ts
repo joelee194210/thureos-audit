@@ -8,6 +8,6 @@ export const activityLogsApi = {
     if (params?.action) searchParams.set("action", params.action);
     if (params?.limit) searchParams.set("limit", String(params.limit));
     const qs = searchParams.toString();
-    return api.get<ActivityLogEntry[]>(`/activity-logs${qs ? `?${qs}` : ""}`);
+    return api.getList<ActivityLogEntry>(`/activity-logs${qs ? `?${qs}` : ""}`);
   },
 };

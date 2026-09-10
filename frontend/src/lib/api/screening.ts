@@ -9,11 +9,7 @@ export interface NormalizedMatch {
 }
 
 export type ScreeningStatus =
-  | "clear"
-  | "match"
-  | "review"
-  | "dismissed"
-  | "false_positive";
+  "clear" | "match" | "review" | "dismissed" | "false_positive";
 
 export interface ScreeningResult {
   id: string;
@@ -35,7 +31,7 @@ export const screeningApi = {
     api.post<ScreeningResult>("/screening/search", { name, dateOfBirth }),
 
   getByRedFlag: (redFlagId: string) =>
-    api.get<ScreeningResult[]>(`/red-flags/${redFlagId}/screening`),
+    api.getList<ScreeningResult>(`/red-flags/${redFlagId}/screening`),
 
   dismiss: (
     id: string,

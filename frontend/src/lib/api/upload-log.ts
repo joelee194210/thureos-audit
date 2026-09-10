@@ -2,7 +2,7 @@ import { api } from "./client";
 import type { UploadLogEntry } from "@/lib/types";
 
 export const uploadLogApi = {
-  list: () => api.get<UploadLogEntry[]>("/upload-log"),
+  list: () => api.getList<UploadLogEntry>("/upload-log"),
 
   approve: (monitorId: string, logId: string) =>
     api.post<{ recordsIngested: number; rowsRejected: number }>(

@@ -53,7 +53,7 @@ func (r *MonitorRepository) FindAll(ctx context.Context) ([]models.Monitor, erro
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var monitors []models.Monitor
+	monitors := []models.Monitor{}
 	if err := cursor.All(ctx, &monitors); err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (r *MonitorRepository) FindByOwner(ctx context.Context, ownerID primitive.O
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var monitors []models.Monitor
+	monitors := []models.Monitor{}
 	if err := cursor.All(ctx, &monitors); err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func (r *MonitorRepository) FindPullMonitors(ctx context.Context) ([]models.Moni
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var monitors []models.Monitor
+	monitors := []models.Monitor{}
 	if err := cursor.All(ctx, &monitors); err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func (r *MonitorRepository) QueryData(ctx context.Context, collectionID string, 
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var results []bson.M
+	results := []bson.M{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (r *MonitorRepository) QueryDataPaginated(ctx context.Context, collectionID
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var results []bson.M
+	results := []bson.M{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, 0, err
 	}
@@ -466,7 +466,7 @@ func (r *MonitorRepository) AggregateData(ctx context.Context, collectionID stri
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var results []bson.M
+	results := []bson.M{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}

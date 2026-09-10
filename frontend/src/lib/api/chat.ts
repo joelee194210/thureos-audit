@@ -41,12 +41,10 @@ export const chatApi = {
     api.post<ChatConversation>("/chat/conversations", { monitorId }),
 
   listConversations: (monitorId: string) =>
-    api.get<ChatConversation[]>(
-      `/chat/conversations?monitorId=${monitorId}`,
-    ),
+    api.getList<ChatConversation>(`/chat/conversations?monitorId=${monitorId}`),
 
   listMessages: (conversationId: string) =>
-    api.get<ChatMessage[]>(`/chat/conversations/${conversationId}/messages`),
+    api.getList<ChatMessage>(`/chat/conversations/${conversationId}/messages`),
 
   ask: (conversationId: string, content: string) =>
     api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, {

@@ -52,7 +52,7 @@ func (r *ScreeningRepository) FindByRedFlagID(ctx context.Context, redFlagID pri
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var results []models.ScreeningResult
+	results := []models.ScreeningResult{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decodificando screening results: %w", err)
 	}
@@ -99,7 +99,7 @@ func (r *ScreeningRepository) FindExpiredWhitelist(ctx context.Context) ([]model
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var results []models.ScreeningResult
+	results := []models.ScreeningResult{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decodificando whitelist vencido: %w", err)
 	}
