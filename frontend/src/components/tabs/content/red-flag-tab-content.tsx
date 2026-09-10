@@ -26,6 +26,8 @@ import {
 import { formatDate, cn } from "@/lib/utils";
 import { RISK_CLASSES } from "@/lib/semantic-colors";
 import { useTabStore } from "@/stores/tab-store";
+import { esNoEncontrado } from "@/lib/api/client";
+import { EntidadInexistente } from "@/components/tabs/entidad-inexistente";
 
 // Transiciones legales desde cada estado activo (espejo de la máquina del
 // backend — la autoridad sigue siendo ValidTransition en el servidor).
@@ -52,6 +54,7 @@ export function RedFlagTabContent({
   const { toastError, toastSuccess } = useToast();
   const user = useAuthStore((s) => s.user);
   const [rf, setRf] = useState<RedFlag | null>(null);
+  const [noExiste, setNoExiste] = useState(false);
   const [notes, setNotes] = useState<CaseNote[]>([]);
   const [screenings, setScreenings] = useState<ScreeningResult[]>([]);
   const [noteText, setNoteText] = useState("");
@@ -74,8 +77,11 @@ export function RedFlagTabContent({
       setRf(flag);
       setNotes(caseNotes);
       setScreenings(screeningResults);
-    } catch {
-      toastError("Error al cargar el caso");
+    } catch (err) {
+      // Ver EntidadInexistente: una pestaña guardada puede apuntar a un caso
+      // ya borrado, y el toast se repetiría en cada carga sin dar salida.
+      if (esNoEncontrado(err)) setNoExiste(true);
+      else toastError("Error al cargar el caso");
     }
   }, [id]);
 
@@ -95,6 +101,10 @@ export function RedFlagTabContent({
       registerEntityLabel(id, rf.ruleName);
     }
   }, [rf?.ruleName, tabId, id, updateTabLabel, registerEntityLabel]);
+
+  if (noExiste) {
+    return <EntidadInexistente titulo="Caso" que="El caso" tabId={tabId} />;
+  }
 
   if (!rf) {
     return (

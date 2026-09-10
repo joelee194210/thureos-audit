@@ -49,6 +49,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { monitorsApi } from "@/lib/api/monitors";
+import { esNoEncontrado } from "@/lib/api/client";
+import { EntidadInexistente } from "@/components/tabs/entidad-inexistente";
 import { rulesApi } from "@/lib/api/rules";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
@@ -94,6 +96,7 @@ export function MonitorTabContent({
 }) {
   const { id } = params;
   const [monitor, setMonitor] = useState<Monitor | null>(null);
+  const [noExiste, setNoExiste] = useState(false);
   const [schemaEdits, setSchemaEdits] = useState<SchemaField[]>([]);
   const [savingSchema, setSavingSchema] = useState(false);
   const [confirmarReescalado, setConfirmarReescalado] = useState<
@@ -175,8 +178,12 @@ export function MonitorTabContent({
   async function loadMonitor() {
     try {
       setMonitor(await monitorsApi.get(id));
-    } catch {
-      toastError("Error al cargar monitor");
+    } catch (err) {
+      // Una pestaña guardada puede apuntar a un monitor ya borrado: el
+      // aviso va adentro de la pestaña, no en un toast que se repite en
+      // cada carga. Los demás errores sí se avisan.
+      if (esNoEncontrado(err)) setNoExiste(true);
+      else toastError("Error al cargar monitor");
     }
   }
 
@@ -184,16 +191,18 @@ export function MonitorTabContent({
     try {
       const result = await monitorsApi.getData(id);
       setData(result.data || []);
-    } catch {
-      toastError("Error al cargar datos");
+    } catch (err) {
+      if (esNoEncontrado(err)) setNoExiste(true);
+      else toastError("Error al cargar datos");
     }
   }
 
   async function loadRules() {
     try {
       setRules(await rulesApi.list(id));
-    } catch {
-      toastError("Error al cargar reglas");
+    } catch (err) {
+      if (esNoEncontrado(err)) setNoExiste(true);
+      else toastError("Error al cargar reglas");
     }
   }
 
@@ -443,6 +452,12 @@ export function MonitorTabContent({
     } finally {
       setEvaluating(false);
     }
+  }
+
+  if (noExiste) {
+    return (
+      <EntidadInexistente titulo="Monitor" que="El monitor" tabId={tabId} />
+    );
   }
 
   if (!monitor) return null;
