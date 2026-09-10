@@ -21,6 +21,27 @@ func NewChatHandler(chatRepo *repository.ChatRepository, monitorRepo *repository
 	return &ChatHandler{chatRepo: chatRepo, monitorRepo: monitorRepo, chatService: chatService}
 }
 
+// dedupeMonitorIDs parsea cada hex de monitorIds y descarta repetidos,
+// conservando el orden de primera aparición. Separada de CreateConversation
+// para poder fijar con un test el caso borde de ids repetidos (ver el
+// comentario sobre buildMonitorAliases más abajo) sin levantar Mongo.
+func dedupeMonitorIDs(raw []string) ([]primitive.ObjectID, error) {
+	seen := make(map[primitive.ObjectID]bool, len(raw))
+	ids := make([]primitive.ObjectID, 0, len(raw))
+	for _, r := range raw {
+		id, err := primitive.ObjectIDFromHex(r)
+		if err != nil {
+			return nil, err
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // CreateConversation arranca una conversación nueva sobre uno o varios
 // monitores — privada del usuario autenticado (ver Global Constraints).
 // El conjunto de monitores fijado acá es la allowlist que después usa
@@ -30,27 +51,38 @@ func (h *ChatHandler) CreateConversation(c *fiber.Ctx) error {
 		MonitorIDs []string `json:"monitorIds"`
 	}
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "cuerpo de la petición inválido"})
 	}
 	if len(body.MonitorIDs) == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "hay que elegir al menos un monitor"})
 	}
-	if len(body.MonitorIDs) > models.MaxMonitorsPerConversation {
+
+	// Deduplicar preservando el orden de entrada, ANTES de chequear el
+	// tope: Max acota el costo del prompt por monitor DISTINTO (cada uno
+	// agrega un bloque de schema al system prompt), no por entradas
+	// repetidas del mismo id. Sin este dedupe, buildMonitorAliases le
+	// asignaría un alias distinto a cada copia del mismo monitor (p.ej.
+	// "transacciones" y "transacciones_2"), y el LLM lo leería como dos
+	// fuentes independientes que "se corroboran" entre sí — el mismo dato
+	// contando doble. El orden de primera aparición se conserva porque
+	// buildMonitorAliases lo usa para decidir qué monitor se queda con el
+	// alias base cuando dos nombres colisionan; un orden inestable
+	// haría inestables los alias.
+	monitorIDs, err := dedupeMonitorIDs(body.MonitorIDs)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitorId inválido"})
+	}
+
+	if len(monitorIDs) > models.MaxMonitorsPerConversation {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": fmt.Sprintf("una conversación puede abarcar hasta %d monitores", models.MaxMonitorsPerConversation),
 		})
 	}
 
-	monitorIDs := make([]primitive.ObjectID, 0, len(body.MonitorIDs))
-	for _, raw := range body.MonitorIDs {
-		id, err := primitive.ObjectIDFromHex(raw)
-		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitorId inválido"})
-		}
+	for _, id := range monitorIDs {
 		if _, err := h.monitorRepo.FindByID(c.Context(), id); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitor no encontrado"})
 		}
-		monitorIDs = append(monitorIDs, id)
 	}
 
 	userID, err := primitive.ObjectIDFromHex(c.Locals("userId").(string))
@@ -104,7 +136,7 @@ func (h *ChatHandler) AddMonitor(c *fiber.Ctx) error {
 		MonitorID string `json:"monitorId"`
 	}
 	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "cuerpo de la petición inválido"})
 	}
 	monitorID, err := primitive.ObjectIDFromHex(body.MonitorID)
 	if err != nil {
