@@ -4,24 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
-  Monitor,
-  ShieldCheck,
   Bell,
-  BarChart3,
-  Users,
-  Settings,
   LogOut,
-  CreditCard,
-  Globe,
-  Upload,
-  ScrollText,
   ChevronDown,
   Moon,
   Sun,
-  ScanSearch,
-  Bot,
-  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/brand/logo";
@@ -38,56 +25,7 @@ import {
 import { useAuthStore } from "@/stores/auth-store";
 import { useTheme } from "@/components/theme-provider";
 import { redFlagsApi } from "@/lib/api/red-flags";
-import type { Role } from "@/lib/types";
-
-interface NavItem {
-  name: string;
-  href: string;
-  icon: LucideIcon;
-}
-
-interface NavArea {
-  label: string;
-  items: NavItem[];
-  roles?: Role[];
-}
-
-const areas: NavArea[] = [
-  {
-    label: "Operación",
-    items: [
-      { name: "Dashboard", href: "/", icon: LayoutDashboard },
-      { name: "Banderas rojas", href: "/red-flags", icon: Bell },
-      { name: "Cargas", href: "/uploads", icon: Upload },
-    ],
-  },
-  {
-    label: "Monitoreo",
-    items: [
-      { name: "Monitores", href: "/monitors", icon: Monitor },
-      { name: "Reglas", href: "/rules", icon: ShieldCheck },
-      { name: "Screening", href: "/screening", icon: ScanSearch },
-      { name: "Dashboards", href: "/dashboards", icon: BarChart3 },
-      { name: "Analista IA", href: "/chatbot", icon: Bot },
-    ],
-  },
-  {
-    label: "Catálogos",
-    items: [
-      { name: "MCC", href: "/mcc", icon: CreditCard },
-      { name: "Países", href: "/countries", icon: Globe },
-    ],
-  },
-  {
-    label: "Administración",
-    roles: ["admin"],
-    items: [
-      { name: "Usuarios", href: "/users", icon: Users },
-      { name: "Bitácora de acceso", href: "/activity-logs", icon: ScrollText },
-      { name: "Configuración", href: "/settings", icon: Settings },
-    ],
-  },
-];
+import { NAV_AREAS } from "@/lib/nav";
 
 function isItemActive(href: string, pathname: string) {
   return pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -103,7 +41,7 @@ export function TopNav() {
     redFlagsApi.stats().then((s) => setRedFlagCount(s.new)).catch(() => {});
   }, []);
 
-  const visibleAreas = areas.filter(
+  const visibleAreas = NAV_AREAS.filter(
     (area) => !area.roles || (user && area.roles.includes(user.role))
   );
 

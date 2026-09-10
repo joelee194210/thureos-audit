@@ -11,6 +11,7 @@ export const SEGMENT_LABELS: Record<string, string> = {
   mcc: "MCC",
   uploads: "Cargas",
   "activity-logs": "Bitácora de Acceso",
+  ayuda: "Ayuda",
 };
 
 function titleCase(segment: string): string {
