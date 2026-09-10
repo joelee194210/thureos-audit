@@ -39,7 +39,7 @@ func (r *MonitorRepository) Create(ctx context.Context, monitor *models.Monitor)
 
 func (r *MonitorRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*models.Monitor, error) {
 	var monitor models.Monitor
-	err := r.col.FindOne(ctx, bson.M{"_id": id}).Decode(&monitor)
+	err := r.col.FindOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$exists": false}}).Decode(&monitor)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (r *MonitorRepository) FindByID(ctx context.Context, id primitive.ObjectID)
 }
 
 func (r *MonitorRepository) FindAll(ctx context.Context) ([]models.Monitor, error) {
-	cursor, err := r.col.Find(ctx, bson.M{})
+	cursor, err := r.col.Find(ctx, bson.M{"deleted_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (r *MonitorRepository) FindAll(ctx context.Context) ([]models.Monitor, erro
 }
 
 func (r *MonitorRepository) FindByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]models.Monitor, error) {
-	cursor, err := r.col.Find(ctx, bson.M{"owner_id": ownerID})
+	cursor, err := r.col.Find(ctx, bson.M{"owner_id": ownerID, "deleted_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +80,43 @@ func (r *MonitorRepository) Update(ctx context.Context, id primitive.ObjectID, u
 	return err
 }
 
+// Delete marca el monitor como borrado sin quitar nada. Su colección de
+// datos, sus reglas, sus banderas rojas y su historial de cargas quedan
+// intactos: en una plataforma de cumplimiento, borrar de verdad es perder la
+// evidencia de algo que existió. Los cuatro finders excluyen los marcados, y
+// por eso ningún llamador tuvo que cambiar.
 func (r *MonitorRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
-	_, err := r.col.DeleteOne(ctx, bson.M{"_id": id})
+	now := time.Now()
+	_, err := r.col.UpdateByID(ctx, id, bson.M{
+		"$set": bson.M{"deleted_at": now, "updated_at": now},
+	})
 	return err
+}
+
+// Restore deshace un borrado lógico. Sin esto, el borrado lógico sería
+// esconder en vez de conservar: los datos siguen ahí pero solo se llega a
+// ellos por la base.
+func (r *MonitorRepository) Restore(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.col.UpdateByID(ctx, id, bson.M{
+		"$unset": bson.M{"deleted_at": ""},
+		"$set":   bson.M{"updated_at": time.Now()},
+	})
+	return err
+}
+
+// FindDeleted lista los monitores borrados, para poder restaurarlos.
+func (r *MonitorRepository) FindDeleted(ctx context.Context) ([]models.Monitor, error) {
+	cursor, err := r.col.Find(ctx, bson.M{"deleted_at": bson.M{"$exists": true}})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = cursor.Close(ctx) }()
+
+	monitors := []models.Monitor{}
+	if err := cursor.All(ctx, &monitors); err != nil {
+		return nil, err
+	}
+	return monitors, nil
 }
 
 // FindPullMonitors returns all API-source monitors configured for pull mode.
@@ -92,6 +126,7 @@ func (r *MonitorRepository) FindPullMonitors(ctx context.Context) ([]models.Moni
 	cursor, err := r.col.Find(ctx, bson.M{
 		"source_type":        models.SourceAPI,
 		"source_config.mode": models.APIModePull,
+		"deleted_at":         bson.M{"$exists": false},
 	})
 	if err != nil {
 		return nil, err

@@ -188,6 +188,30 @@ func (h *MonitorHandler) List(c *fiber.Ctx) error {
 	return c.JSON(monitors)
 }
 
+// ListDeleted devuelve los monitores borrados, para poder restaurarlos. Un
+// borrado lógico sin forma de ver lo borrado esconde en vez de conservar.
+func (h *MonitorHandler) ListDeleted(c *fiber.Ctx) error {
+	monitors, err := h.monitorRepo.FindDeleted(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(monitors)
+}
+
+// Restore deshace el borrado lógico de un monitor.
+func (h *MonitorHandler) Restore(c *fiber.Ctx) error {
+	id, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid monitor ID"})
+	}
+
+	if err := h.monitorRepo.Restore(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "monitor restaurado"})
+}
+
 func (h *MonitorHandler) Get(c *fiber.Ctx) error {
 	id, err := primitive.ObjectIDFromHex(c.Params("id"))
 	if err != nil {

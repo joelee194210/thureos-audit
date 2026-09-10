@@ -78,6 +78,9 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	// Monitors
 	monitors := protected.Group("/monitors")
 	monitors.Get("/", h.Monitor.List)
+	// Antes de "/:id": si no, "deleted" se toma como un id de monitor.
+	monitors.Get("/deleted", h.Monitor.ListDeleted)
+	monitors.Post("/:id/restore", middleware.RequireComplianceOrAbove(), h.Monitor.Restore)
 	monitors.Get("/:id", h.Monitor.Get)
 	monitors.Post("/", middleware.RequireComplianceOrAbove(), h.Monitor.Create)
 	monitors.Post("/detect-schema", middleware.RequireComplianceOrAbove(), h.Monitor.DetectSchema)

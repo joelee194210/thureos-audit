@@ -74,7 +74,15 @@ export const monitorsApi = {
   rotatePushToken: (id: string) =>
     api.post<{ pushToken: string }>(`/monitors/${id}/rotate-push-token`, {}),
 
+  /** Borrado lógico: el monitor se oculta, pero sus datos, reglas y
+   *  banderas rojas quedan intactos y se puede restaurar. */
   delete: (id: string) => api.delete<{ message: string }>(`/monitors/${id}`),
+
+  /** Los monitores borrados, para poder restaurarlos. */
+  listDeleted: () => api.get<Monitor[]>("/monitors/deleted"),
+
+  restore: (id: string) =>
+    api.post<{ message: string }>(`/monitors/${id}/restore`, {}),
 
   upload: (id: string, file: File) =>
     api.upload<{

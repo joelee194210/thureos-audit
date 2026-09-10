@@ -135,6 +135,9 @@ export interface Monitor {
   ownerId: string;
   recordCount: number;
   lastIngested?: string;
+  /** Borrado lógico: el monitor se oculta de las listas y deja de evaluarse,
+   *  pero conserva sus datos, reglas y banderas rojas, y se puede restaurar. */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
