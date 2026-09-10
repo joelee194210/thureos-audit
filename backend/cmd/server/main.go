@@ -152,7 +152,7 @@ func main() {
 		Auth:          handlers.NewAuthHandler(authService, activityLogRepo),
 		Monitor:       handlers.NewMonitorHandler(monitorRepo, ingestionService, jobQueue, ruleEngine, uploadLogRepo),
 		Rule:          handlers.NewRuleHandler(ruleRepo, monitorRepo, redFlagRepo, aiRulesService, ruleEngine),
-		Chat:          handlers.NewChatHandler(chatRepo, chatService),
+		Chat:          handlers.NewChatHandler(chatRepo, monitorRepo, chatService),
 		RuleTemplate:  handlers.NewRuleTemplateHandler(monitorRepo, ruleRepo, redFlagRepo),
 		Dashboard:     handlers.NewDashboardHandler(dashboardRepo, dashboardService),
 		RedFlag:       redFlagHandler,
