@@ -272,3 +272,50 @@ func TestAnthropicToolInputSchema_LlevaRequiredEnLaRaiz(t *testing.T) {
 		t.Errorf("falta la propiedad 'monitor' en el schema; json=%s", raw)
 	}
 }
+
+func TestHistoryContent_MensajeSinArtefactoNoCambia(t *testing.T) {
+	m := models.ChatMessage{Role: models.ChatRoleAssistant, Content: "El total es 42."}
+	if got := historyContent(m); got != "El total es 42." {
+		t.Errorf("historyContent = %q, quiero el contenido sin tocar", got)
+	}
+}
+
+// Sin esto el asistente no tiene forma de saber que en un turno anterior
+// generó un artefacto, y "volvé a mostrarme la tabla de antes" no puede
+// funcionar.
+func TestHistoryContent_MensajeConArtefactoAgregaLaReferencia(t *testing.T) {
+	m := models.ChatMessage{
+		Role:     models.ChatRoleAssistant,
+		Content:  "Acá va el desglose.",
+		Artifact: &models.ChatArtifact{Type: models.ChatArtifactTable, Title: "Ventas por región"},
+	}
+	got := historyContent(m)
+
+	if !strings.Contains(got, "Acá va el desglose.") {
+		t.Errorf("debe conservar el texto original; tengo %q", got)
+	}
+	for _, want := range []string{"table", "Ventas por región"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("la referencia debería mencionar %q; tengo %q", want, got)
+		}
+	}
+}
+
+// Los datos del artefacto son miles de tokens por turno y el LLM ya los
+// describió en su texto: solo va la referencia.
+func TestHistoryContent_NoIncluyeLosDatosDelArtefacto(t *testing.T) {
+	m := models.ChatMessage{
+		Role:    models.ChatRoleAssistant,
+		Content: "Listo.",
+		Artifact: &models.ChatArtifact{
+			Type:  models.ChatArtifactTable,
+			Title: "T",
+			ChartSpec: &models.ChartSpec{
+				Data: []map[string]interface{}{{"secreto": "no_debe_aparecer"}},
+			},
+		},
+	}
+	if strings.Contains(historyContent(m), "no_debe_aparecer") {
+		t.Error("los datos del artefacto no deben ir al historial")
+	}
+}

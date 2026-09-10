@@ -358,10 +358,24 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 // Anthropic
 // ---------------------------------------------------------------------------
 
+// historyContent arma el texto con el que un mensaje viaja de vuelta al
+// LLM en el historial. Si el mensaje llevaba artefacto, agrega una línea
+// de referencia: sin ella el asistente no tiene forma de saber que ya
+// generó uno, y no puede responder a "volvé a mostrarme la tabla de
+// antes". Van el tipo y el título, nunca los datos — son miles de tokens
+// por turno y el LLM ya los describió en su propio texto.
+func historyContent(m models.ChatMessage) string {
+	if m.Artifact == nil {
+		return m.Content
+	}
+	return fmt.Sprintf("%s\n\n[Generaste un artefacto: tipo=%s, título=%q]",
+		m.Content, m.Artifact.Type, m.Artifact.Title)
+}
+
 func historyToAnthropic(history []models.ChatMessage) []anthropic.MessageParam {
 	messages := make([]anthropic.MessageParam, 0, len(history))
 	for _, m := range history {
-		block := anthropic.NewTextBlock(m.Content)
+		block := anthropic.NewTextBlock(historyContent(m))
 		if m.Role == models.ChatRoleAssistant {
 			messages = append(messages, anthropic.NewAssistantMessage(block))
 		} else {
@@ -540,7 +554,7 @@ type chatDeepSeekResponse struct {
 func historyToDeepSeek(history []models.ChatMessage) []chatDeepSeekMessage {
 	messages := make([]chatDeepSeekMessage, 0, len(history))
 	for _, m := range history {
-		messages = append(messages, chatDeepSeekMessage{Role: string(m.Role), Content: m.Content})
+		messages = append(messages, chatDeepSeekMessage{Role: string(m.Role), Content: historyContent(m)})
 	}
 	return messages
 }
