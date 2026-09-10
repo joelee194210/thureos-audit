@@ -30,8 +30,13 @@ func NewChatRepository(db *database.MongoDB) *ChatRepository {
 func (r *ChatRepository) ensureIndexes() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = r.conversations.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "monitor_id", Value: 1}, {Key: "user_id", Value: 1}, {Key: "updated_at", Value: -1}},
+	// {user_id, updated_at}: la consulta principal del sidebar, que ya no
+	// se scopea por monitor. {user_id, monitor_ids}: el filtro opcional
+	// "solo las que incluyen X" — Mongo indexa arrays elemento a elemento,
+	// así que un multikey sobre monitor_ids alcanza.
+	_, _ = r.conversations.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "updated_at", Value: -1}}},
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "monitor_ids", Value: 1}}},
 	})
 	_, _ = r.messages.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "conversation_id", Value: 1}, {Key: "created_at", Value: 1}},
@@ -54,12 +59,33 @@ func (r *ChatRepository) GetConversation(ctx context.Context, id primitive.Objec
 	if err := r.conversations.FindOne(ctx, bson.M{"_id": id}).Decode(&conv); err != nil {
 		return nil, fmt.Errorf("conversación %s no encontrada: %w", id.Hex(), err)
 	}
+	conv.Normalize()
 	return &conv, nil
 }
 
-func (r *ChatRepository) ListConversationsByMonitorAndUser(ctx context.Context, monitorID, userID primitive.ObjectID) ([]models.ChatConversation, error) {
-	cursor, err := r.conversations.Find(ctx,
-		bson.M{"monitor_id": monitorID, "user_id": userID},
+// ListConversationsByUser devuelve las conversaciones del usuario
+// ordenadas por actividad. monitorFilter es opcional: si viene, acota a
+// las conversaciones que incluyen ese monitor.
+//
+// A diferencia de la versión anterior, el scoping por monitor dejó de ser
+// obligatorio: una conversación que abarca varios monitores no pertenece
+// a la lista de ninguno en particular.
+func (r *ChatRepository) ListConversationsByUser(
+	ctx context.Context,
+	userID primitive.ObjectID,
+	monitorFilter *primitive.ObjectID,
+) ([]models.ChatConversation, error) {
+	filter := bson.M{"user_id": userID}
+	if monitorFilter != nil {
+		// Matchea tanto monitor_ids (array) como el monitor_id escalar de
+		// documentos legacy: en Mongo, igualdad contra un campo array
+		// matchea si algún elemento coincide.
+		filter["$or"] = []bson.M{
+			{"monitor_ids": *monitorFilter},
+			{"monitor_id": *monitorFilter},
+		}
+	}
+	cursor, err := r.conversations.Find(ctx, filter,
 		options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}}),
 	)
 	if err != nil {
@@ -71,12 +97,26 @@ func (r *ChatRepository) ListConversationsByMonitorAndUser(ctx context.Context, 
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decodificando conversaciones: %w", err)
 	}
+	for i := range results {
+		results[i].Normalize()
+	}
 	return results, nil
 }
 
+// AddMonitor agrega un monitor a la conversación sin duplicarlo.
+// $addToSet sobre monitor_ids es idempotente: repetir la llamada con el
+// mismo monitor no cambia nada.
+func (r *ChatRepository) AddMonitor(ctx context.Context, id, monitorID primitive.ObjectID) error {
+	_, err := r.conversations.UpdateByID(ctx, id, bson.M{"$addToSet": bson.M{"monitor_ids": monitorID}})
+	if err != nil {
+		return fmt.Errorf("agregando monitor a la conversación %s: %w", id.Hex(), err)
+	}
+	return nil
+}
+
 // TouchConversation actualiza updated_at — se llama después de cada
-// intercambio para que ListConversationsByMonitorAndUser ordene por
-// actividad reciente, no por fecha de creación.
+// intercambio para que ListConversationsByUser ordene por actividad
+// reciente, no por fecha de creación.
 func (r *ChatRepository) TouchConversation(ctx context.Context, id primitive.ObjectID) error {
 	_, err := r.conversations.UpdateByID(ctx, id, bson.M{"$set": bson.M{"updated_at": time.Now()}})
 	if err != nil {

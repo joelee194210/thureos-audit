@@ -64,12 +64,33 @@ type ChatMessage struct {
 	CreatedAt      time.Time          `bson:"created_at" json:"createdAt"`
 }
 
+// MaxMonitorsPerConversation topea cuántos monitores puede abarcar una
+// conversación. Cada monitor agrega un bloque de schema al system prompt
+// y al menos una iteración de herramienta; más allá de esto el prompt se
+// vuelve caro y la respuesta lenta sin que el caso de uso lo pida.
+const MaxMonitorsPerConversation = 6
+
 // ChatConversation es privada de UserID — ver Global Constraints.
 type ChatConversation struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	MonitorID primitive.ObjectID `bson:"monitor_id" json:"monitorId"`
-	UserID    primitive.ObjectID `bson:"user_id" json:"userId"`
-	Title     string             `bson:"title" json:"title"`
-	CreatedAt time.Time          `bson:"created_at" json:"createdAt"`
-	UpdatedAt time.Time          `bson:"updated_at" json:"updatedAt"`
+	ID         primitive.ObjectID   `bson:"_id,omitempty" json:"id"`
+	MonitorIDs []primitive.ObjectID `bson:"monitor_ids,omitempty" json:"monitorIds"`
+	// LegacyMonitorID: conversaciones creadas antes del multi-monitor
+	// guardaban un único "monitor_id" escalar. Nunca se escribe; solo se
+	// lee para que Normalize lo colapse en MonitorIDs. No se expone en
+	// JSON: fuera del repositorio nadie debería saber que existe.
+	LegacyMonitorID *primitive.ObjectID `bson:"monitor_id,omitempty" json:"-"`
+	UserID          primitive.ObjectID  `bson:"user_id" json:"userId"`
+	Title           string              `bson:"title" json:"title"`
+	CreatedAt       time.Time           `bson:"created_at" json:"createdAt"`
+	UpdatedAt       time.Time           `bson:"updated_at" json:"updatedAt"`
+}
+
+// Normalize colapsa el campo legacy en MonitorIDs. Todo lector de
+// conversaciones debe llamarla justo después de decodificar; el
+// repositorio la centraliza para que ningún llamador pueda olvidarla.
+func (c *ChatConversation) Normalize() {
+	if len(c.MonitorIDs) == 0 && c.LegacyMonitorID != nil {
+		c.MonitorIDs = []primitive.ObjectID{*c.LegacyMonitorID}
+	}
+	c.LegacyMonitorID = nil
 }
