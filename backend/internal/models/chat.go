@@ -94,3 +94,31 @@ func (c *ChatConversation) Normalize() {
 	}
 	c.LegacyMonitorID = nil
 }
+
+// AppendMonitorID devuelve el conjunto de monitores de una conversación
+// con monitorID agregado al final, junto con un booleano que indica si
+// hubo cambio. Es el cálculo que el repositorio persiste tal cual, y vive
+// acá —al lado de Normalize— porque las dos implementan la misma regla:
+// MonitorIDs es la verdad, el campo legacy es residuo.
+//
+// Dos invariantes que el llamador necesita:
+//   - El orden se conserva y lo nuevo va al final. buildMonitorAliases usa
+//     el orden de MonitorIDs para decidir qué monitor se queda con el alias
+//     base cuando dos nombres colisionan; reordenar cambiaría alias ya
+//     usados en el historial.
+//   - Agregar un monitor ya presente no cambia nada (changed == false), así
+//     que repetir la llamada es un no-op.
+//
+// existing debe venir de una conversación ya normalizada: para un
+// documento legacy eso es exactamente el monitor del campo escalar, que
+// por lo tanto queda primero en el resultado.
+func AppendMonitorID(existing []primitive.ObjectID, monitorID primitive.ObjectID) ([]primitive.ObjectID, bool) {
+	for _, id := range existing {
+		if id == monitorID {
+			return existing, false
+		}
+	}
+	next := make([]primitive.ObjectID, len(existing), len(existing)+1)
+	copy(next, existing)
+	return append(next, monitorID), true
+}

@@ -165,10 +165,22 @@ func (h *ChatHandler) AddMonitor(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "monitor no encontrado"})
 	}
 
-	if err := h.chatRepo.AddMonitor(c.Context(), convID, monitorID); err != nil {
+	// El conjunto persistido se toma de la respuesta del repositorio, no
+	// se recompone acá: es la única forma de que el 200 no pueda contradecir
+	// lo que quedó en la base (ver AddMonitor en chat_repo.go).
+	updated, err := h.chatRepo.AddMonitor(c.Context(), convID, conv.MonitorIDs, monitorID)
+	if err != nil {
+		// Alguien más cambió el conjunto entre la lectura de arriba y la
+		// escritura: no se reintenta a ciegas porque el tope se validó
+		// contra el estado viejo. El cliente reintenta con datos frescos.
+		if errors.Is(err, repository.ErrConversationModified) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "la conversación cambió mientras se agregaba el monitor; hay que reintentar",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-	conv.MonitorIDs = append(conv.MonitorIDs, monitorID)
+	conv.MonitorIDs = updated
 	return c.JSON(conv)
 }
 
@@ -237,7 +249,13 @@ func (h *ChatHandler) Ask(c *fiber.Ctx) error {
 		// existe" — nunca distingue cuál de las dos, ni filtra detalle
 		// interno en el body. ErrMonitorNotFound cubre el mismo caso para
 		// un monitor borrado mientras la conversación seguía apuntando a
-		// él — nunca se filtra el error crudo de Mongo en la respuesta.
+		// él: ese caso tampoco filtra nada, el sentinel no lleva detalle.
+		// Ojo: el 500 de abajo SÍ puede llevar texto crudo del driver (el
+		// "cargando monitor %s: %w" de chat_service.go, y el "cargando
+		// historial: %w" de al lado). Es deliberado: un fallo de Mongo que
+		// no sea ErrNoDocuments aborta en vez de responder una comparación
+		// incompleta, y el detalle viaja igual que en el resto de los 500
+		// de este handler.
 		if errors.Is(err, services.ErrConversationNotFound) || errors.Is(err, services.ErrMonitorNotFound) {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 		}

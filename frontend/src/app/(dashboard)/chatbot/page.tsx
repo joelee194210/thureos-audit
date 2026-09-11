@@ -21,6 +21,9 @@ export default function ChatbotPage() {
   const { toastError } = useToast();
 
   const [monitors, setMonitors] = useState<Monitor[]>([]);
+  // Solo se marca en el camino feliz: si la carga falla, la lista vacía no
+  // es evidencia de que los monitores no existan.
+  const [monitorsLoaded, setMonitorsLoaded] = useState(false);
 
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -41,14 +44,29 @@ export default function ChatbotPage() {
 
   const activeConversation = conversations.find((c) => c.id === conversationId);
 
+  /**
+   * Un id que no resuelve puede ser dos cosas distintas y no hay que
+   * confundirlas: mientras la lista de monitores todavía no llegó, ninguno
+   * resuelve; una vez que llegó, un id que falta es un monitor BORRADO que
+   * la conversación sigue referenciando — estado soportado en el backend
+   * (chat_service.go lo excluye y sigue respondiendo con el resto), así
+   * que nunca va a resolver. Mostrar el ObjectID crudo es ilegible, y
+   * decir "Monitor eliminado" antes de tener la lista sería mentira.
+   */
   function monitorNames(ids: string[]): string[] {
-    return ids.map((id) => monitors.find((m) => m.id === id)?.name ?? id);
+    const desconocido = monitorsLoaded ? "Monitor eliminado" : "Cargando…";
+    return ids.map(
+      (id) => monitors.find((m) => m.id === id)?.name ?? desconocido,
+    );
   }
 
   useEffect(() => {
     monitorsApi
       .list()
-      .then(setMonitors)
+      .then((data) => {
+        setMonitors(data);
+        setMonitorsLoaded(true);
+      })
       .catch(() => toastError("Error al cargar monitores"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

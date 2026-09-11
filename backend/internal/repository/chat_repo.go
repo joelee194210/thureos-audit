@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -103,15 +104,77 @@ func (r *ChatRepository) ListConversationsByUser(
 	return results, nil
 }
 
-// AddMonitor agrega un monitor a la conversación sin duplicarlo.
-// $addToSet sobre monitor_ids es idempotente: repetir la llamada con el
-// mismo monitor no cambia nada.
-func (r *ChatRepository) AddMonitor(ctx context.Context, id, monitorID primitive.ObjectID) error {
-	_, err := r.conversations.UpdateByID(ctx, id, bson.M{"$addToSet": bson.M{"monitor_ids": monitorID}})
-	if err != nil {
-		return fmt.Errorf("agregando monitor a la conversación %s: %w", id.Hex(), err)
+// ErrConversationModified: entre que el llamador leyó la conversación y
+// que se intentó escribirla, alguien más cambió su conjunto de monitores.
+// No se reintenta en silencio: el tope de MaxMonitorsPerConversation se
+// valida contra el estado leído, así que reaplicar a ciegas podría
+// pasarlo. El llamador debe releer y decidir de nuevo.
+var ErrConversationModified = errors.New("la conversación cambió mientras se agregaba el monitor")
+
+// monitorSetFilter arma el predicado compare-and-set: matchea el
+// documento id solo si su conjunto de monitores sigue siendo observed.
+//
+// Hay dos formas posibles en la base para el mismo conjunto, porque no
+// hubo migración de datos (ver el spec):
+//
+//   - documento nuevo: monitor_ids es el array, exacto y ordenado;
+//   - documento legacy: no tiene monitor_ids y guarda un único monitor en
+//     el escalar monitor_id — que Normalize colapsa en un conjunto de un
+//     elemento, y por eso la segunda rama solo aplica con len(observed)==1.
+//
+// {"monitor_ids": nil} matchea tanto el campo ausente como el nulo, que es
+// exactamente la forma legacy (verificado contra mongo:7).
+func monitorSetFilter(id primitive.ObjectID, observed []primitive.ObjectID) bson.M {
+	alternativas := []bson.M{{"monitor_ids": observed}}
+	if len(observed) == 1 {
+		alternativas = append(alternativas, bson.M{"monitor_ids": nil, "monitor_id": observed[0]})
 	}
-	return nil
+	return bson.M{"_id": id, "$or": alternativas}
+}
+
+// AddMonitor agrega monitorID al conjunto de la conversación y devuelve el
+// conjunto persistido — que el llamador debe usar tal cual en su respuesta,
+// en vez de recomponerlo por su cuenta.
+//
+// observed es el conjunto que el llamador leyó (ya normalizado). La
+// escritura persiste ese conjunto COMPLETO y borra el campo legacy, en vez
+// de hacer $addToSet sobre monitor_ids. La diferencia importa en un
+// documento legacy: $addToSet creaba monitor_ids=[nuevo] dejando intacto
+// monitor_id=<original>, y como Normalize solo mira el legacy cuando
+// monitor_ids está vacío, el monitor original desaparecía en silencio de
+// la allowlist contra la que se resuelven los alias del LLM. Acá el
+// original queda primero y el nuevo al final (ver AppendMonitorID).
+//
+// El filtro es compare-and-set contra observed: si alguien más tocó el
+// conjunto en el medio no se escribe nada y se devuelve
+// ErrConversationModified. Eso cierra de paso la ventana entre la
+// validación del tope en el handler y esta escritura.
+//
+// Sigue siendo idempotente: agregar un monitor ya presente no escribe.
+func (r *ChatRepository) AddMonitor(
+	ctx context.Context,
+	id primitive.ObjectID,
+	observed []primitive.ObjectID,
+	monitorID primitive.ObjectID,
+) ([]primitive.ObjectID, error) {
+	next, changed := models.AppendMonitorID(observed, monitorID)
+	if !changed {
+		return next, nil
+	}
+	res, err := r.conversations.UpdateOne(ctx,
+		monitorSetFilter(id, observed),
+		bson.M{
+			"$set":   bson.M{"monitor_ids": next},
+			"$unset": bson.M{"monitor_id": ""},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("agregando monitor a la conversación %s: %w", id.Hex(), err)
+	}
+	if res.MatchedCount == 0 {
+		return nil, fmt.Errorf("agregando monitor a la conversación %s: %w", id.Hex(), ErrConversationModified)
+	}
+	return next, nil
 }
 
 // TouchConversation actualiza updated_at — se llama después de cada
