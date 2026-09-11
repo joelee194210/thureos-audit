@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -18,12 +18,8 @@ import (
 	"github.com/thureos/compliance/internal/repository"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
-
-// chatMaxToolIterations acota cuántas veces el LLM puede llamar a
-// query_monitor_data para UNA pregunta — evita un loop infinito si el
-// proveedor insiste en pedir herramientas sin nunca responder.
-const chatMaxToolIterations = 5
 
 // ErrConversationNotFound cubre tanto "no existe" como "no es tuya" — el
 // handler nunca debe poder distinguir las dos por el mensaje de error, ni
@@ -39,13 +35,19 @@ var ErrMonitorNotFound = errors.New("monitor no encontrado")
 // queryToolDescription y queryToolJSONSchema definen el contrato de la
 // única herramienta que el chatbot expone — el mismo texto/schema se usa
 // para Anthropic y DeepSeek (formas de request distintas, mismo contrato).
-const queryToolDescription = `Ejecuta una consulta REAL contra los datos del monitor actual. Usar SIEMPRE que la pregunta necesite datos reales (conteos, sumas, promedios, filtros, listados) — nunca inventar números. Se puede llamar varias veces si hace falta investigar en pasos (ej. primero contar, después agrupar por región si el total es alto).
+const queryToolDescription = `Ejecuta una consulta REAL contra los datos del monitor que se indique en "monitor". Usar SIEMPRE que la pregunta necesite datos reales (conteos, sumas, promedios, filtros, listados) — nunca inventar números. Se puede llamar varias veces si hace falta investigar en pasos (ej. primero contar, después agrupar por región si el total es alto).
 
-Para traer filas usar "conditionGroup" (opcional "limit", tope 1000). Para totales agrupados (suma/conteo/promedio/mín/máx por categoría) usar "aggregate" — SIEMPRE devuelve TODOS los grupos, no hace falta pedir un umbral.`
+Para traer filas usar "conditionGroup" (opcional "limit", tope 1000). Para totales agrupados (suma/conteo/promedio/mín/máx por categoría) usar "aggregate" — SIEMPRE devuelve TODOS los grupos, no hace falta pedir un umbral.
+
+Cada llamada consulta UN monitor: indicá cuál en "monitor" con su alias exacto. Para comparar entre monitores, llamá una vez por cada uno.`
 
 var queryToolJSONSchema = map[string]interface{}{
 	"type": "object",
 	"properties": map[string]interface{}{
+		"monitor": map[string]interface{}{
+			"type":        "string",
+			"description": "Alias del monitor a consultar. Debe ser uno de los alias listados en el prompt.",
+		},
 		"conditionGroup": map[string]interface{}{
 			"type":        "object",
 			"description": "Filtro simple para traer filas. Omitir si se usa 'aggregate'.",
@@ -82,6 +84,7 @@ var queryToolJSONSchema = map[string]interface{}{
 			"description": "Tope de filas para conditionGroup (máx 1000).",
 		},
 	},
+	"required": []string{"monitor"},
 }
 
 var artifactBlockRe = regexp.MustCompile(`(?s)<artifact>\s*(.*?)\s*</artifact>`)
@@ -101,13 +104,14 @@ func hasLeakedDeepSeekToolSyntax(content string) bool {
 	return strings.ContainsRune(content, deepSeekSpecialTokenRune)
 }
 
-const chatSystemPromptTemplate = `Sos un analista de datos que responde preguntas sobre el monitor %q.
+const chatSystemPromptTemplate = `Sos un analista de datos que responde preguntas sobre los monitores listados abajo.
 
-Schema de los datos disponibles (nombre de campo: tipo):
 %s
-
 Tenés una herramienta, query_monitor_data, para traer datos REALES — nunca
 inventes números. Usala todas las veces que necesites para responder bien.
+Cada llamada consulta UN monitor: indicá cuál en el campo "monitor" usando
+su alias exacto de la lista. Para comparar entre monitores, llamá una vez
+por cada uno y correlacioná los resultados al responder.
 
 Si la respuesta se presta a visualizarse (series de tiempo, comparaciones,
 rankings, distribuciones), agregá al FINAL de tu respuesta un bloque
@@ -127,12 +131,30 @@ embebidos en el propio "code" (no puede hacer fetch a nada).
 Si no hace falta artefacto, no incluyas el bloque <artifact>. Respondé
 siempre en español.`
 
-func buildSystemPrompt(monitor *models.Monitor) string {
-	var schemaLines strings.Builder
-	for _, f := range monitor.Schema {
-		fmt.Fprintf(&schemaLines, "- %s: %s\n", f.Name, f.Type)
+// buildSystemPrompt emite un bloque de schema por monitor, encabezado por
+// el alias con el que el LLM debe nombrarlo.
+//
+// Recorre los alias ORDENADOS: el orden de recorrido de un mapa en Go es
+// aleatorio, y un prompt que cambia de texto en cada turno invalida el
+// caché de prompt del proveedor y hace irreproducible cualquier bug.
+func buildSystemPrompt(aliases map[string]*models.Monitor) string {
+	names := make([]string, 0, len(aliases))
+	for alias := range aliases {
+		names = append(names, alias)
 	}
-	return fmt.Sprintf(chatSystemPromptTemplate, monitor.Name, schemaLines.String())
+	sort.Strings(names)
+
+	var blocks strings.Builder
+	blocks.WriteString("Monitores disponibles (usá el alias en el campo \"monitor\"):\n\n")
+	for _, alias := range names {
+		monitor := aliases[alias]
+		fmt.Fprintf(&blocks, "### %s — %q\n", alias, monitor.Name)
+		for _, f := range monitor.Schema {
+			fmt.Fprintf(&blocks, "- %s: %s\n", f.Name, f.Type)
+		}
+		blocks.WriteString("\n")
+	}
+	return fmt.Sprintf(chatSystemPromptTemplate, blocks.String())
 }
 
 // chatConversationTitleMaxLen topea el título autogenerado — el primer
@@ -181,10 +203,18 @@ func NewChatService(chatRepo *repository.ChatRepository, monitorRepo *repository
 }
 
 // executeQuery ejecuta lo que el LLM pidió vía query_monitor_data contra
-// los datos reales del monitor y devuelve el resultado serializado — lo
-// que se le manda de vuelta al LLM como resultado de la herramienta.
-func (s *ChatService) executeQuery(ctx context.Context, monitor *models.Monitor, raw json.RawMessage) (string, error) {
+// los datos reales del monitor que nombró, y devuelve el resultado
+// serializado.
+//
+// El alias se resuelve contra `aliases` — la allowlist de la conversación
+// — ANTES de tocar Mongo. Ver resolveQueryMonitor y Global Constraints.
+func (s *ChatService) executeQuery(ctx context.Context, aliases map[string]*models.Monitor, raw json.RawMessage) (string, error) {
 	input, err := ParseQueryToolInput(raw)
+	if err != nil {
+		return "", err
+	}
+
+	monitor, err := resolveQueryMonitor(aliases, input.Monitor)
 	if err != nil {
 		return "", err
 	}
@@ -217,9 +247,8 @@ func (s *ChatService) executeQuery(ctx context.Context, monitor *models.Monitor,
 // intente leer la conversación de otro usuario — se trata como "no
 // encontrada", no se filtra la existencia (ver Global Constraints).
 func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.ObjectID, userMessage string) (models.ChatMessage, error) {
-	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-
+	// La conversación se lee ANTES de fijar el timeout: cuántos monitores
+	// abarca es lo que define cuánto puede tardar.
 	conv, err := s.chatRepo.GetConversation(ctx, conversationID)
 	if err != nil {
 		return models.ChatMessage{}, ErrConversationNotFound
@@ -228,10 +257,35 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 		return models.ChatMessage{}, ErrConversationNotFound
 	}
 
-	monitor, err := s.monitorRepo.FindByID(ctx, conv.MonitorID)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(ctx, chatAskTimeout(len(conv.MonitorIDs)))
+	defer cancel()
+
+	// Un monitor BORRADO mientras la conversación seguía apuntando a él se
+	// excluye en silencio: la conversación sigue sirviendo con el resto.
+	// Solo si no queda ninguno es ErrMonitorNotFound. Cualquier otro error
+	// de Mongo aborta — ver adentro del bucle.
+	monitors := make([]models.Monitor, 0, len(conv.MonitorIDs))
+	for _, id := range conv.MonitorIDs {
+		monitor, err := s.monitorRepo.FindByID(ctx, id)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			// Borrado mientras la conversación seguía apuntando a él:
+			// exclusión permanente y correcta.
+			continue
+		}
+		if err != nil {
+			// Cualquier otro error (deadline, blip del replica set, fallo
+			// de decodificación) es transitorio y NO se traga: con menos
+			// monitores el asistente respondería una comparación
+			// incompleta presentándola como completa. En una plataforma
+			// de cumplimiento, fallar es mejor que degradar en silencio.
+			return models.ChatMessage{}, fmt.Errorf("cargando monitor %s: %w", id.Hex(), err)
+		}
+		monitors = append(monitors, *monitor)
+	}
+	if len(monitors) == 0 {
 		return models.ChatMessage{}, ErrMonitorNotFound
 	}
+	aliases := buildMonitorAliases(monitors)
 
 	history, err := s.chatRepo.ListMessagesByConversation(ctx, conversationID)
 	if err != nil {
@@ -271,9 +325,9 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 	var text string
 	var artifact *models.ChatArtifact
 	if cfg.AI.Provider == models.AIProviderDeepSeek {
-		text, artifact, err = s.askDeepSeek(ctx, cfg.AI, monitor, historyToDeepSeek(history))
+		text, artifact, err = s.askDeepSeek(ctx, cfg.AI, aliases, historyToDeepSeek(history))
 	} else {
-		text, artifact, err = s.askAnthropic(ctx, cfg.AI, monitor, historyToAnthropic(history))
+		text, artifact, err = s.askAnthropic(ctx, cfg.AI, aliases, historyToAnthropic(history))
 	}
 	if err != nil {
 		assistantMsg := models.ChatMessage{
@@ -304,10 +358,24 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 // Anthropic
 // ---------------------------------------------------------------------------
 
+// historyContent arma el texto con el que un mensaje viaja de vuelta al
+// LLM en el historial. Si el mensaje llevaba artefacto, agrega una línea
+// de referencia: sin ella el asistente no tiene forma de saber que ya
+// generó uno, y no puede responder a "volvé a mostrarme la tabla de
+// antes". Van el tipo y el título, nunca los datos — son miles de tokens
+// por turno y el LLM ya los describió en su propio texto.
+func historyContent(m models.ChatMessage) string {
+	if m.Artifact == nil {
+		return m.Content
+	}
+	return fmt.Sprintf("%s\n\n[Generaste un artefacto: tipo=%s, título=%q]",
+		m.Content, m.Artifact.Type, m.Artifact.Title)
+}
+
 func historyToAnthropic(history []models.ChatMessage) []anthropic.MessageParam {
 	messages := make([]anthropic.MessageParam, 0, len(history))
 	for _, m := range history {
-		block := anthropic.NewTextBlock(m.Content)
+		block := anthropic.NewTextBlock(historyContent(m))
 		if m.Role == models.ChatRoleAssistant {
 			messages = append(messages, anthropic.NewAssistantMessage(block))
 		} else {
@@ -317,7 +385,27 @@ func historyToAnthropic(history []models.ChatMessage) []anthropic.MessageParam {
 	return messages
 }
 
-func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, monitor *models.Monitor, history []anthropic.MessageParam) (string, *models.ChatArtifact, error) {
+// anthropicToolInputSchema arma el input_schema de query_monitor_data para
+// Anthropic. Existe como función aparte para poder testear que el
+// "required" llega al JSON: el ToolInputSchemaParam del SDK pinneado
+// (v0.2.0-beta.3) no tiene campo Required, así que la clave se manda por
+// WithExtraFields, que es el único camino que la deja en la RAÍZ del
+// schema.
+//
+// Ojo: asignar el campo público ExtraFields del struct NO funciona — el
+// marshal del SDK sólo consulta los extras guardados por WithExtraFields,
+// y el campo termina serializado como una clave basura "-". DeepSeek no
+// necesita nada de esto: recibe queryToolJSONSchema entero como Parameters.
+func anthropicToolInputSchema() anthropic.ToolInputSchemaParam {
+	schema := anthropic.ToolInputSchemaParam{
+		Type:       "object",
+		Properties: queryToolJSONSchema["properties"],
+	}
+	schema.WithExtraFields(map[string]any{"required": queryToolJSONSchema["required"]})
+	return schema
+}
+
+func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, aliases map[string]*models.Monitor, history []anthropic.MessageParam) (string, *models.ChatArtifact, error) {
 	client := anthropic.NewClient(option.WithAPIKey(ai.APIKey))
 	model := ai.Model
 	if model == "" {
@@ -327,16 +415,13 @@ func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, moni
 	tool := anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
 		Name:        "query_monitor_data",
 		Description: anthropicparam.NewOpt(queryToolDescription),
-		InputSchema: anthropic.ToolInputSchemaParam{
-			Type:       "object",
-			Properties: queryToolJSONSchema["properties"],
-		},
+		InputSchema: anthropicToolInputSchema(),
 	}}
 
-	systemPrompt := buildSystemPrompt(monitor)
+	systemPrompt := buildSystemPrompt(aliases)
 	messages := append([]anthropic.MessageParam{}, history...)
 
-	for i := 0; i < chatMaxToolIterations; i++ {
+	for i := 0; i < chatToolIterations(len(aliases)); i++ {
 		message, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     model,
 			MaxTokens: 4096,
@@ -357,7 +442,7 @@ func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, moni
 		for _, block := range message.Content {
 			assistantBlocks = append(assistantBlocks, block.ToParam())
 			if block.Type == "tool_use" {
-				result, err := s.executeQuery(ctx, monitor, block.Input)
+				result, err := s.executeQuery(ctx, aliases, block.Input)
 				content := result
 				isError := false
 				if err != nil {
@@ -381,7 +466,7 @@ func (s *ChatService) askAnthropic(ctx context.Context, ai models.AIConfig, moni
 		Messages:  messages,
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo obtener una respuesta final: %w", chatMaxToolIterations, err)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo obtener una respuesta final: %w", chatToolIterations(len(aliases)), err)
 	}
 	return extractAnthropicFinalAnswer(message)
 }
@@ -469,12 +554,12 @@ type chatDeepSeekResponse struct {
 func historyToDeepSeek(history []models.ChatMessage) []chatDeepSeekMessage {
 	messages := make([]chatDeepSeekMessage, 0, len(history))
 	for _, m := range history {
-		messages = append(messages, chatDeepSeekMessage{Role: string(m.Role), Content: m.Content})
+		messages = append(messages, chatDeepSeekMessage{Role: string(m.Role), Content: historyContent(m)})
 	}
 	return messages
 }
 
-func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monitor *models.Monitor, history []chatDeepSeekMessage) (string, *models.ChatArtifact, error) {
+func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, aliases map[string]*models.Monitor, history []chatDeepSeekMessage) (string, *models.ChatArtifact, error) {
 	baseURL := ai.BaseURL
 	if baseURL == "" {
 		baseURL = models.DefaultAIBaseURLs[models.AIProviderDeepSeek]
@@ -494,10 +579,10 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 	}
 
 	messages := append([]chatDeepSeekMessage{
-		{Role: "system", Content: buildSystemPrompt(monitor)},
+		{Role: "system", Content: buildSystemPrompt(aliases)},
 	}, history...)
 
-	for i := 0; i < chatMaxToolIterations; i++ {
+	for i := 0; i < chatToolIterations(len(aliases)); i++ {
 		reqBody := chatDeepSeekRequest{Model: model, Messages: messages, Tools: []chatDeepSeekTool{tool}, MaxTokens: 4096}
 		body, err := json.Marshal(reqBody)
 		if err != nil {
@@ -543,7 +628,7 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 
 		messages = append(messages, choice.Message)
 		for _, call := range choice.Message.ToolCalls {
-			result, err := s.executeQuery(ctx, monitor, json.RawMessage(call.Function.Arguments))
+			result, err := s.executeQuery(ctx, aliases, json.RawMessage(call.Function.Arguments))
 			content := result
 			if err != nil {
 				content = err.Error()
@@ -562,38 +647,38 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, monit
 	reqBody := chatDeepSeekRequest{Model: model, Messages: messages, MaxTokens: 4096}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo armar la respuesta final: %w", chatMaxToolIterations, err)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo armar la respuesta final: %w", chatToolIterations(len(aliases)), err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo armar la respuesta final: %w", chatMaxToolIterations, err)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo armar la respuesta final: %w", chatToolIterations(len(aliases)), err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+ai.APIKey)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo obtener una respuesta final: %w", chatMaxToolIterations, err)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y no se pudo obtener una respuesta final: %w", chatToolIterations(len(aliases)), err)
 	}
 	var parsed chatDeepSeekResponse
 	decodeErr := json.NewDecoder(resp.Body).Decode(&parsed)
 	_ = resp.Body.Close()
 	if decodeErr != nil {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final no es JSON válido: %w", chatMaxToolIterations, decodeErr)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final no es JSON válido: %w", chatToolIterations(len(aliases)), decodeErr)
 	}
 	if parsed.Error != nil {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas — deepseek: %s", chatMaxToolIterations, parsed.Error.Message)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas — deepseek: %s", chatToolIterations(len(aliases)), parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatToolIterations(len(aliases)))
 	}
 	if hasLeakedDeepSeekToolSyntax(parsed.Choices[0].Message.Content) {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino con formato interno inválido", chatMaxToolIterations)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino con formato interno inválido", chatToolIterations(len(aliases)))
 	}
 	text, artifact := extractArtifactAndText(parsed.Choices[0].Message.Content)
 	text = finalizeArtifactText(text, artifact)
 	if text == "" {
-		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatMaxToolIterations)
+		return "", nil, fmt.Errorf("se alcanzó el máximo de %d consultas y la respuesta final vino vacía", chatToolIterations(len(aliases)))
 	}
 	return text, artifact, nil
 }

@@ -29,7 +29,7 @@ export interface ChatMessage {
 
 export interface ChatConversation {
   id: string;
-  monitorId: string;
+  monitorIds: string[];
   userId: string;
   title: string;
   createdAt: string;
@@ -37,12 +37,21 @@ export interface ChatConversation {
 }
 
 export const chatApi = {
-  createConversation: (monitorId: string) =>
-    api.post<ChatConversation>("/chat/conversations", { monitorId }),
+  createConversation: (monitorIds: string[]) =>
+    api.post<ChatConversation>("/chat/conversations", { monitorIds }),
 
-  listConversations: (monitorId: string) =>
+  /** monitorId es un filtro opcional: sin él trae todas las del usuario. */
+  listConversations: (monitorId?: string) =>
     api.get<ChatConversation[]>(
-      `/chat/conversations?monitorId=${monitorId}`,
+      monitorId
+        ? `/chat/conversations?monitorId=${monitorId}`
+        : "/chat/conversations",
+    ),
+
+  addMonitor: (conversationId: string, monitorId: string) =>
+    api.post<ChatConversation>(
+      `/chat/conversations/${conversationId}/monitors`,
+      { monitorId },
     ),
 
   listMessages: (conversationId: string) =>

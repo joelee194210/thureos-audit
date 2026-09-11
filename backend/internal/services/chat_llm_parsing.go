@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/thureos/compliance/internal/models"
 )
@@ -14,6 +15,10 @@ const chatQueryMaxLimit = 1000
 // ChatQueryInput es la forma exacta del "input" que el LLM manda al llamar
 // a la herramienta query_monitor_data (ver el contrato en chat_service.go).
 type ChatQueryInput struct {
+	// Monitor es el ALIAS del monitor a consultar, no su ObjectID. Lo
+	// resuelve executeQuery contra la allowlist de la conversación — ver
+	// Global Constraints (autorización).
+	Monitor        string                 `json:"monitor"`
 	ConditionGroup *models.ConditionGroup `json:"conditionGroup,omitempty"`
 	Aggregate      *ChatAggregateSpec     `json:"aggregate,omitempty"`
 	Limit          int                    `json:"limit,omitempty"`
@@ -26,6 +31,10 @@ func ParseQueryToolInput(raw json.RawMessage) (ChatQueryInput, error) {
 	var input ChatQueryInput
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return ChatQueryInput{}, fmt.Errorf("input de query_monitor_data inválido: %w", err)
+	}
+	input.Monitor = strings.TrimSpace(input.Monitor)
+	if input.Monitor == "" {
+		return ChatQueryInput{}, fmt.Errorf("query_monitor_data requiere 'monitor' (el alias del monitor a consultar)")
 	}
 	if input.ConditionGroup == nil && input.Aggregate == nil {
 		return ChatQueryInput{}, fmt.Errorf("query_monitor_data requiere conditionGroup o aggregate")
