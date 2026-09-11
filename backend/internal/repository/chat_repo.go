@@ -105,11 +105,12 @@ func (r *ChatRepository) ListConversationsByUser(
 }
 
 // ErrConversationModified: entre que el llamador leyó la conversación y
-// que se intentó escribirla, alguien más cambió su conjunto de monitores.
-// No se reintenta en silencio: el tope de MaxMonitorsPerConversation se
-// valida contra el estado leído, así que reaplicar a ciegas podría
-// pasarlo. El llamador debe releer y decidir de nuevo.
-var ErrConversationModified = errors.New("la conversación cambió mientras se agregaba el monitor")
+// que se intentó escribirla, alguien más cambió su conjunto de monitores
+// —o la borró, que el filtro no distingue de un cambio—. No se reintenta
+// en silencio: el tope de MaxMonitorsPerConversation se valida contra el
+// estado leído, así que reaplicar a ciegas podría pasarlo. El llamador
+// debe releer y decidir de nuevo.
+var ErrConversationModified = errors.New("la conversación cambió o fue borrada mientras se agregaba el monitor")
 
 // monitorSetFilter arma el predicado compare-and-set: matchea el
 // documento id solo si su conjunto de monitores sigue siendo observed.

@@ -171,11 +171,13 @@ func (h *ChatHandler) AddMonitor(c *fiber.Ctx) error {
 	updated, err := h.chatRepo.AddMonitor(c.Context(), convID, conv.MonitorIDs, monitorID)
 	if err != nil {
 		// Alguien más cambió el conjunto entre la lectura de arriba y la
-		// escritura: no se reintenta a ciegas porque el tope se validó
+		// escritura —o borró la conversación, que el compare-and-set no
+		// distingue—: no se reintenta a ciegas porque el tope se validó
 		// contra el estado viejo. El cliente reintenta con datos frescos.
+		// No filtra existencia: para llegar acá ya se verificó ownership.
 		if errors.Is(err, repository.ErrConversationModified) {
 			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-				"error": "la conversación cambió mientras se agregaba el monitor; hay que reintentar",
+				"error": "la conversación cambió o fue borrada mientras se agregaba el monitor; hay que reintentar",
 			})
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
