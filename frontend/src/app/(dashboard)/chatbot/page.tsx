@@ -17,6 +17,7 @@ import {
 import { ArtifactCanvas } from "@/components/chat/artifact-canvas";
 import { MonitorMultiSelect } from "@/components/chat/monitor-multi-select";
 import { AddMonitorButton } from "@/components/chat/add-monitor-button";
+import { Markdown } from "@/components/chat/markdown";
 
 export default function ChatbotPage() {
   const { toastError } = useToast();
@@ -352,13 +353,17 @@ export default function ChatbotPage() {
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`rounded-md px-3 py-2 text-sm max-w-[80%] whitespace-pre-wrap ${
+                  className={`rounded-md px-3 py-2 text-sm max-w-[80%] ${
                     m.role === "user"
-                      ? "ml-auto bg-primary text-primary-foreground"
+                      ? "ml-auto whitespace-pre-wrap bg-primary text-primary-foreground"
                       : "bg-muted"
                   }`}
                 >
-                  {m.content}
+                  {m.role === "user" ? (
+                    m.content
+                  ) : (
+                    <Markdown>{m.content}</Markdown>
+                  )}
                 </div>
               ))}
               {sending && (
