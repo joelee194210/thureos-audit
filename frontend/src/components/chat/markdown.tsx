@@ -7,9 +7,9 @@ import { lexMarkdown, safeHref, type Token } from "@/lib/markdown-tokens";
  * Renderiza markdown como elementos de React.
  *
  * INVARIANTE: no hay `dangerouslySetInnerHTML` en este archivo ni debe
- * agregarse. Todo lo que no se sabe representar cae en `renderText`, que
- * lo muestra como texto plano. Un token que no se reconoce se ve feo,
- * nunca se ejecuta.
+ * agregarse. Todo lo que no se sabe representar cae en el branch
+ * `default` de `renderToken`, que lo muestra como texto plano. Un token
+ * que no se reconoce se ve feo, nunca se ejecuta.
  */
 export function Markdown({ children }: { children: string }) {
   return <div className="space-y-2">{renderTokens(lexMarkdown(children))}</div>;
@@ -49,6 +49,12 @@ function renderToken(token: Token): ReactNode {
     case "del":
       return <del className="line-through">{renderInline(t)}</del>;
 
+    case "escape":
+      // "\*", "\_", etc: marked ya resolvió el caracter escapado en
+      // `text` (sin la barra invertida). Mostrar `t.raw` en su lugar
+      // dejaría la barra invertida visible.
+      return t.text ?? "";
+
     case "codespan":
       return (
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
@@ -74,15 +80,36 @@ function renderToken(token: Token): ReactNode {
     }
 
     case "list": {
-      const items = (t.items ?? []).map((item: Token, i: number) => (
+      const rawItems = (t.items ?? []) as Array<{
+        tokens?: Token[];
+        text?: string;
+        task?: boolean;
+        checked?: boolean;
+      }>;
+      // Una checklist ("- [ ] x" / "- [x] x") es una lista cuyos items
+      // traen `task: true`. Si se ignora `checked`, pendiente y hecho se
+      // ven idénticos, que es justo lo que una checklist no puede hacer.
+      const hasTasks = rawItems.some((item) => item.task);
+      const items = rawItems.map((item, i) => (
         <li key={i} className="ml-4 list-outside">
-          {renderInline(item as { tokens?: Token[]; text?: string })}
+          {item.task ? (
+            <input
+              type="checkbox"
+              checked={!!item.checked}
+              disabled
+              readOnly
+              className="mr-2 align-middle"
+            />
+          ) : null}
+          {renderInline(item)}
         </li>
       ));
       return t.ordered ? (
         <ol className="list-decimal space-y-1">{items}</ol>
       ) : (
-        <ul className="list-disc space-y-1">{items}</ul>
+        <ul className={hasTasks ? "list-none space-y-1" : "list-disc space-y-1"}>
+          {items}
+        </ul>
       );
     }
 
@@ -145,6 +172,24 @@ function renderToken(token: Token): ReactNode {
       return <br />;
 
     case "space":
+      return null;
+
+    case "image":
+      // Decisión deliberada, no un olvido: NO se renderiza <img>. Un
+      // <img src="..."> dispara una petición GET a esa URL apenas se
+      // pinta el DOM, sin que el usuario haga click en nada. El texto del
+      // asistente está influido por archivos que suben los usuarios, así
+      // que esa URL puede venir de una inyección de prompt -y convertirse
+      // en un vector de rastreo o de filtración de datos (por query
+      // string) hacia un servidor de terceros-. Se muestra el markdown
+      // crudo como texto, igual que cualquier tipo no reconocido.
+      return <span className="whitespace-pre-wrap">{t.raw ?? t.text ?? ""}</span>;
+
+    case "def":
+      // Definición de enlace/imagen por referencia ("[foo]: url \"title\"").
+      // marked ya la usa para resolver el link o la imagen que la
+      // referencia; la línea de la declaración en sí no produce salida
+      // visible en markdown estándar, así que tampoco acá.
       return null;
 
     // "html" y cualquier tipo que no conozcamos: SIEMPRE como texto.

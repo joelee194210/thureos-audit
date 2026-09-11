@@ -36,7 +36,17 @@ export function safeHref(href: string): string | null {
     .join("")
     .toLowerCase();
 
-  // Una ruta relativa o un ancla no llevan esquema y son seguros.
+  // Vacío (o compuesto solo por espacios/caracteres de control) no es una
+  // URL utilizable: se devuelve null, nunca "". Un href="" resuelve a la
+  // página actual, que no es lo que nadie pidió al escribir el enlace.
+  if (!collapsed) return null;
+
+  // Una ruta relativa o un ancla no llevan esquema y son seguros. Una URL
+  // protocolo-relativa ("//evil.com") también entra por acá: empieza con
+  // "/" y no tiene un esquema propio que evaluar. Eso la deja pasar como
+  // enlace externo vivo -no es un agujero nuevo, porque "https://evil.com"
+  // ya está permitido explícitamente-, pero no es una "ruta relativa" en
+  // el sentido de quedarse en este origen, así que vale aclararlo acá.
   if (collapsed.startsWith("/") || collapsed.startsWith("#")) {
     return href.trim();
   }
