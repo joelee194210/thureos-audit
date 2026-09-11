@@ -40,7 +40,31 @@ export function formatValue(val: unknown): string {
     case "date":
       return formatDate(val as string);
     default:
+      // Parece redundante porque classifyValue() ya descartó number/boolean/
+      // date y mandó todo lo demás a "text", pero objetos, arreglos y Date
+      // caen en este branch: sin este chequeo saldrían como "[object
+      // Object]" en vez de su JSON.
       if (typeof val === "object") return JSON.stringify(val);
       return String(val);
   }
+}
+
+/**
+ * unionColumns junta las claves de todas las filas, no solo la primera:
+ * las filas de una colección dinámica no tienen por qué compartir campos,
+ * y basarse solo en la fila 0 pierde columnas en silencio. El orden es el
+ * de primera aparición, porque así es como se renderiza la tabla.
+ *
+ * Punto único de esta derivación: la tabla del chat, el CSV que se
+ * descarga desde ahí y el informe PDF de banderas rojas la consumen para
+ * no volver a divergir entre sí (ver hallazgo de la revisión de rama).
+ */
+export function unionColumns(rows: Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const key of Object.keys(row ?? {})) {
+      seen.add(key);
+    }
+  }
+  return Array.from(seen);
 }

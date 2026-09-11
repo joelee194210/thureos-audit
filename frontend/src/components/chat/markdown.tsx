@@ -150,8 +150,9 @@ function renderToken(token: Token): ReactNode {
 
     case "link": {
       const href = safeHref(t.href ?? "");
-      // Sin href seguro se muestra el texto, nunca el enlace. El
-      // contenido no se pierde: lo que se pierde es la navegación.
+      // Sin href seguro se muestra el texto, nunca el enlace. El texto del
+      // enlace se conserva; lo que se descarta es el destino (href) junto
+      // con la navegación — no queda rastro de a dónde apuntaba.
       if (!href) return <>{renderInline(t)}</>;
       return (
         <a

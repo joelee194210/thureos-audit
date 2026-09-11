@@ -14,7 +14,7 @@ import {
 } from "@/lib/red-flag-labels";
 import { readReportColors, type RGB } from "@/lib/pdf-tokens";
 import { formatDate } from "@/lib/utils";
-import { formatValue } from "@/lib/format-value";
+import { formatValue, unionColumns } from "@/lib/format-value";
 
 /** Tope del backend en `GET /red-flags/:id/records`; pedir más lo baja a 50. */
 const MAX_RECORDS = 500;
@@ -211,7 +211,11 @@ export async function generateRedFlagReport(redFlag: RedFlag): Promise<void> {
       contentW,
     );
   } else {
-    const allColumns = Object.keys(records[0]).filter(
+    // La unión de columnas de todas las filas (no solo la primera): filas
+    // de una colección dinámica no tienen por qué compartir campos, y
+    // basarse solo en la fila 0 pierde columnas en silencio — igual que en
+    // la tabla del chat y su CSV, que usan la misma unionColumns().
+    const allColumns = unionColumns(records).filter(
       (k) => !k.startsWith("_"),
     );
     const columns = allColumns.slice(0, MAX_COLUMNS);

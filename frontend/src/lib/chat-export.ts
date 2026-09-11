@@ -2,6 +2,7 @@
  * Export de artefactos del chatbot: PNG para gráficos (serializa el SVG
  * que ya renderiza Recharts, sin librería nueva) y CSV para tablas.
  */
+import { unionColumns } from "@/lib/format-value";
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -77,7 +78,7 @@ export function exportTableAsCSV(
   filename: string,
 ) {
   if (data.length === 0) return;
-  const columns = Object.keys(data[0]);
+  const columns = unionColumns(data);
 
   function escapeCell(value: unknown): string {
     const s = value === null || value === undefined ? "" : String(value);

@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatArtifact } from "@/lib/api/chat";
 import { exportChartAsPNG, exportTableAsCSV } from "@/lib/chat-export";
 import { cn } from "@/lib/utils";
-import { classifyValue, formatValue } from "@/lib/format-value";
+import { classifyValue, formatValue, unionColumns } from "@/lib/format-value";
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -149,11 +149,7 @@ function TableArtifact({ data }: { data: Record<string, unknown>[] }) {
       </p>
     );
   }
-  // Las filas de una colección dinámica no tienen por qué compartir
-  // campos: se unen las claves de todas para no perder columnas.
-  const columns = Array.from(
-    new Set(data.flatMap((row) => Object.keys(row))),
-  );
+  const columns = unionColumns(data);
 
   return (
     <div className="overflow-x-auto">
@@ -177,9 +173,15 @@ function TableArtifact({ data }: { data: Record<string, unknown>[] }) {
                     key={col}
                     className={cn(
                       "p-2",
-                      // Montos e identificadores en mono y a la derecha:
-                      // así las cifras se comparan de un vistazo por
-                      // alineación de dígitos (manual de marca).
+                      // Montos y timestamps en mono (manual de marca); los
+                      // montos además a la derecha para comparar cifras de
+                      // un vistazo por alineación de dígitos. Identificadores
+                      // y hashes quedarían igual de bien en mono, pero
+                      // distinguirlos de texto común requiere el tipo de
+                      // campo del esquema del monitor, que esta tabla no
+                      // recibe (llegan filas crudas): por ahora se quedan en
+                      // la tipografía de lectura hasta que el trabajo de
+                      // artefactos declare sus propias columnas.
                       kind === "number" && "text-right font-mono tabular-nums",
                       kind === "date" && "font-mono",
                       kind === "empty" && "text-muted-foreground",
