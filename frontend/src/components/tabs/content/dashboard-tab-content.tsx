@@ -68,6 +68,8 @@ import { monitorsApi } from "@/lib/api/monitors";
 import { rulesApi } from "@/lib/api/rules";
 import { useToast } from "@/lib/use-toast";
 import { useTabStore } from "@/stores/tab-store";
+import { esNoEncontrado } from "@/lib/api/client";
+import { EntidadInexistente } from "@/components/tabs/entidad-inexistente";
 import type {
   Dashboard,
   Monitor,
@@ -183,6 +185,7 @@ export function DashboardTabContent({
 }) {
   const { id } = params;
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [noExiste, setNoExiste] = useState(false);
   const [widgetData, setWidgetData] = useState<
     Record<string, Record<string, unknown>[]>
   >({});
@@ -250,6 +253,12 @@ export function DashboardTabContent({
     try {
       setDashboard(await dashboardsApi.get(id));
     } catch (err) {
+      // Ver EntidadInexistente: una pestaña guardada puede apuntar a un
+      // dashboard ya borrado, y el toast se repetiría en cada carga.
+      if (esNoEncontrado(err)) {
+        setNoExiste(true);
+        return;
+      }
       console.error("Failed to load dashboard:", err);
       toastError("Error al cargar dashboard");
     }
@@ -498,6 +507,12 @@ export function DashboardTabContent({
   const drillTotalPages = Math.ceil(drillTotal / drillPageSize);
   const drillFrom = (drillPage - 1) * drillPageSize + 1;
   const drillTo = Math.min(drillPage * drillPageSize, drillTotal);
+
+  if (noExiste) {
+    return (
+      <EntidadInexistente titulo="Dashboard" que="El dashboard" tabId={tabId} />
+    );
+  }
 
   if (!dashboard) return null;
 

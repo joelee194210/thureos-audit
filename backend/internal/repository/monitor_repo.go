@@ -39,7 +39,7 @@ func (r *MonitorRepository) Create(ctx context.Context, monitor *models.Monitor)
 
 func (r *MonitorRepository) FindByID(ctx context.Context, id primitive.ObjectID) (*models.Monitor, error) {
 	var monitor models.Monitor
-	err := r.col.FindOne(ctx, bson.M{"_id": id}).Decode(&monitor)
+	err := r.col.FindOne(ctx, bson.M{"_id": id, "deleted_at": bson.M{"$exists": false}}).Decode(&monitor)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (r *MonitorRepository) FindByID(ctx context.Context, id primitive.ObjectID)
 }
 
 func (r *MonitorRepository) FindAll(ctx context.Context) ([]models.Monitor, error) {
-	cursor, err := r.col.Find(ctx, bson.M{})
+	cursor, err := r.col.Find(ctx, bson.M{"deleted_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (r *MonitorRepository) FindAll(ctx context.Context) ([]models.Monitor, erro
 }
 
 func (r *MonitorRepository) FindByOwner(ctx context.Context, ownerID primitive.ObjectID) ([]models.Monitor, error) {
-	cursor, err := r.col.Find(ctx, bson.M{"owner_id": ownerID})
+	cursor, err := r.col.Find(ctx, bson.M{"owner_id": ownerID, "deleted_at": bson.M{"$exists": false}})
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +80,43 @@ func (r *MonitorRepository) Update(ctx context.Context, id primitive.ObjectID, u
 	return err
 }
 
+// Delete marca el monitor como borrado sin quitar nada. Su colección de
+// datos, sus reglas, sus banderas rojas y su historial de cargas quedan
+// intactos: en una plataforma de cumplimiento, borrar de verdad es perder la
+// evidencia de algo que existió. Los cuatro finders excluyen los marcados, y
+// por eso ningún llamador tuvo que cambiar.
 func (r *MonitorRepository) Delete(ctx context.Context, id primitive.ObjectID) error {
-	_, err := r.col.DeleteOne(ctx, bson.M{"_id": id})
+	now := time.Now()
+	_, err := r.col.UpdateByID(ctx, id, bson.M{
+		"$set": bson.M{"deleted_at": now, "updated_at": now},
+	})
 	return err
+}
+
+// Restore deshace un borrado lógico. Sin esto, el borrado lógico sería
+// esconder en vez de conservar: los datos siguen ahí pero solo se llega a
+// ellos por la base.
+func (r *MonitorRepository) Restore(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.col.UpdateByID(ctx, id, bson.M{
+		"$unset": bson.M{"deleted_at": ""},
+		"$set":   bson.M{"updated_at": time.Now()},
+	})
+	return err
+}
+
+// FindDeleted lista los monitores borrados, para poder restaurarlos.
+func (r *MonitorRepository) FindDeleted(ctx context.Context) ([]models.Monitor, error) {
+	cursor, err := r.col.Find(ctx, bson.M{"deleted_at": bson.M{"$exists": true}})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = cursor.Close(ctx) }()
+
+	monitors := []models.Monitor{}
+	if err := cursor.All(ctx, &monitors); err != nil {
+		return nil, err
+	}
+	return monitors, nil
 }
 
 // FindPullMonitors returns all API-source monitors configured for pull mode.
@@ -92,6 +126,7 @@ func (r *MonitorRepository) FindPullMonitors(ctx context.Context) ([]models.Moni
 	cursor, err := r.col.Find(ctx, bson.M{
 		"source_type":        models.SourceAPI,
 		"source_config.mode": models.APIModePull,
+		"deleted_at":         bson.M{"$exists": false},
 	})
 	if err != nil {
 		return nil, err
@@ -319,6 +354,95 @@ func (r *MonitorRepository) BackfillDataField(
 		return updated, skipped, err
 	}
 	return updated, skipped, nil
+}
+
+// rescaleExpression arma la conversión de un campo entre dos escalas de
+// decimales implícitos. delta = decimalesNuevos - decimalesViejos:
+//
+//	delta > 0  el valor guardado se achica  → dividir por 10^delta
+//	delta < 0  el valor guardado se agranda → multiplicar por 10^-delta
+//
+// Siempre por una potencia de diez ENTERA, nunca multiplicando por su
+// recíproco: son montos, y `5000 * 0.1` en float64 da 500.00000000000006,
+// mientras que `5000 / 10` da 500 exacto.
+func rescaleExpression(field string, delta int) bson.D {
+	if delta == 0 {
+		return nil
+	}
+
+	op := "$divide"
+	exp := delta
+	if delta < 0 {
+		op = "$multiply"
+		exp = -delta
+	}
+
+	factor := int64(1)
+	for i := 0; i < exp; i++ {
+		factor *= 10
+	}
+
+	return bson.D{{Key: op, Value: bson.A{"$" + field, factor}}}
+}
+
+// RescaleDataField convierte un campo numérico entre dos escalas de
+// decimales implícitos, en una sola operación del servidor.
+//
+// Solo toca documentos ingeridos ANTES de `cutoff` — estrictamente antes,
+// `$lt` y no `$lte`: las fechas BSON tienen precisión de milisegundo, así
+// que los nanosegundos de `time.Now()` se truncan al serializar, y un
+// documento ingerido después de escribir el esquema (ya en escala nueva)
+// pero dentro del mismo milisegundo que el cutoff serializaría igual a
+// `_ingested_at == cutoff`. Con `$lte` ese documento se reescalaría dos
+// veces; con `$lt` queda sin tocar, en la escala vieja — el modo de falla
+// que el diseño prefiere (ver el comentario del llamador en UpdateSchema).
+// Los posteriores al cutoff ya se guardaron con la configuración nueva y
+// convertirlos otra vez los dejaría mal. El llamador toma el cutoff ANTES
+// de escribir el esquema, de modo que la carrera que queda —una carga
+// concurrente en la ventana entre ambos— deje una fila en la escala vieja,
+// que se ve al mirar los datos, en vez de una convertida dos veces, que no
+// se distingue de un monto legítimo.
+//
+// Devuelve (matched, skipped, error). matched es la cantidad de documentos
+// en el alcance del cutoff con el campo numérico — el conteo correcto de
+// "convertidos", a diferencia de ModifiedCount de Mongo: un valor guardado
+// en 0 divide a 0, Mongo no lo cuenta como modificado, pero sí se convirtió.
+// skipped es la cantidad de documentos en el mismo alcance de tiempo cuyo
+// campo no es numérico (o no existe) — se dejan como están, y se devuelven
+// aparte para que una conversión parcial se vea en vez de inferirse.
+func (r *MonitorRepository) RescaleDataField(
+	ctx context.Context,
+	collectionID string,
+	field string,
+	delta int,
+	cutoff time.Time,
+) (int64, int64, error) {
+	expr := rescaleExpression(field, delta)
+	if expr == nil {
+		return 0, 0, nil
+	}
+
+	col := r.GetDataCollection(collectionID)
+	scope := bson.M{"_ingested_at": bson.M{"$lt": cutoff}}
+
+	enAlcance, err := col.CountDocuments(ctx, scope)
+	if err != nil {
+		return 0, 0, fmt.Errorf("counting documents in scope for %s: %w", field, err)
+	}
+
+	res, err := col.UpdateMany(ctx,
+		bson.M{
+			field:          bson.M{"$type": "number"},
+			"_ingested_at": bson.M{"$lt": cutoff},
+		},
+		mongo.Pipeline{
+			{{Key: "$set", Value: bson.D{{Key: field, Value: expr}}}},
+		},
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("rescaling %s: %w", field, err)
+	}
+	return res.MatchedCount, enAlcance - res.MatchedCount, nil
 }
 
 // EnsureDataIndex crea un índice sobre la colección de datos del monitor si

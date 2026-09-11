@@ -41,7 +41,11 @@ import {
   CircleAlert,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { rulesApi, type BacktestResult } from "@/lib/api/rules";
+import {
+  rulesApi,
+  type BacktestResult,
+  type DiscardedSuggestion,
+} from "@/lib/api/rules";
 import { monitorsApi } from "@/lib/api/monitors";
 import { dashboardsApi } from "@/lib/api/dashboards";
 import type { Dashboard, WidgetType } from "@/lib/types";
@@ -60,10 +64,14 @@ import type {
   Operator,
   AggregateCondition,
   AggFunction,
+  VelocityCondition,
   MCC,
   SchedulePreset,
   RuleSchedule,
+  SchemaField,
 } from "@/lib/types";
+import { ConditionRows } from "@/components/rules/condition-rows";
+import { VelocityConditionEditor } from "@/components/rules/velocity-condition-editor";
 
 function wasTriggeredToday(lastTriggered?: string): boolean {
   if (!lastTriggered) return false;
@@ -103,6 +111,33 @@ function severityVariant(
 
 function isMCCField(field: string): boolean {
   return /mcc/i.test(field);
+}
+
+/**
+ * Radix SelectItem no acepta value="". Este sentinel representa "sin
+ * ventana" (timeField y timeWindow vacíos) en los Select de campo de fecha
+ * de las condiciones agregadas; se traduce a "" al guardar en el form y de
+ * vuelta al sentinel al leer el valor actual para el Select.
+ */
+const SIN_VENTANA = "__sin_ventana__";
+
+/**
+ * Semilla de una condición agregada nueva: si el monitor tiene algún campo
+ * date, arranca con una ventana válida de 30 días sobre el primero; si no
+ * tiene ninguno, arranca sin ventana (par timeField/timeWindow vacío), la
+ * otra forma que ValidateAggregateCondition acepta.
+ */
+function nuevaCondicionAgregada(schema: SchemaField[]): AggregateCondition {
+  const primerFecha = schema.find((f) => f.type === "date");
+  return {
+    field: "",
+    function: "sum" as AggFunction,
+    groupBy: "",
+    timeField: primerFecha?.name ?? "",
+    timeWindow: primerFecha ? "30d" : "",
+    operator: "gt" as Operator,
+    threshold: 0,
+  };
 }
 
 // --- Schedule helpers ---
@@ -434,8 +469,10 @@ function RulesContent() {
   const [aiLoading, setAILoading] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<AIRuleSuggestion[]>([]);
   const [aiNoResults, setAiNoResults] = useState(false);
+  const [aiDiscarded, setAiDiscarded] = useState<DiscardedSuggestion[]>([]);
   const [selectedMonitor, setSelectedMonitor] = useState(monitorIdParam || "");
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiFields, setAiFields] = useState<string[]>([]);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
@@ -444,6 +481,7 @@ function RulesContent() {
     logic: "AND" as "AND" | "OR",
     conditions: [] as Condition[],
     aggregateConditions: [] as AggregateCondition[],
+    velocityConditions: [] as VelocityCondition[],
     scheduleEnabled: false,
     scheduleFrequency: "daily",
     scheduleDay: "1",
@@ -485,6 +523,7 @@ function RulesContent() {
       { field: "", operator: "gt" as Operator, value: "" as unknown },
     ] as Condition[],
     aggregateConditions: [] as AggregateCondition[],
+    velocityConditions: [] as VelocityCondition[],
     scheduleEnabled: false,
     scheduleFrequency: "daily",
     scheduleDay: "1",
@@ -601,6 +640,10 @@ function RulesContent() {
           createForm.aggregateConditions.length > 0
             ? createForm.aggregateConditions
             : undefined,
+        velocityConditions:
+          createForm.velocityConditions.length > 0
+            ? createForm.velocityConditions
+            : undefined,
         actions: ["red_flag"],
         severity: createForm.severity,
         schedule: createForm.scheduleEnabled
@@ -629,6 +672,7 @@ function RulesContent() {
         logic: "AND",
         conditions: [{ field: "", operator: "gt" as Operator, value: "" }],
         aggregateConditions: [],
+        velocityConditions: [],
         scheduleEnabled: false,
         scheduleFrequency: "daily",
         scheduleDay: "1",
@@ -673,19 +717,13 @@ function RulesContent() {
     }));
   }
   function addCreateAggCondition() {
+    const schema =
+      monitors.find((m) => m.id === createForm.monitorId)?.schema ?? [];
     setCreateForm((prev) => ({
       ...prev,
       aggregateConditions: [
         ...prev.aggregateConditions,
-        {
-          field: "",
-          function: "sum" as AggFunction,
-          groupBy: "",
-          timeField: "",
-          timeWindow: "30d",
-          operator: "gt" as Operator,
-          threshold: 0,
-        },
+        nuevaCondicionAgregada(schema),
       ],
     }));
   }
@@ -713,15 +751,15 @@ function RulesContent() {
     if (!selectedMonitor) return;
     setAILoading(true);
     setAiNoResults(false);
+    setAiDiscarded([]);
     try {
       const result = await rulesApi.generateAI({
         monitorId: selectedMonitor,
         prompt: aiPrompt || "Generate monitoring rules for anomaly detection",
+        fields: aiFields,
       });
       setAiSuggestions(result.suggestions);
-      // El backend descarta en silencio las sugerencias que referencian
-      // campos fuera del esquema o ventanas de tiempo inválidas: sin este
-      // aviso, el usuario ve terminar "Generando..." y nada más.
+      setAiDiscarded(result.discarded ?? []);
       setAiNoResults(result.suggestions.length === 0);
     } catch (err) {
       console.error("Failed to generate AI rules:", err);
@@ -741,6 +779,7 @@ function RulesContent() {
         description: suggestion.description,
         conditionGroup: suggestion.conditionGroup,
         aggregateConditions: suggestion.aggregateConditions,
+        velocityConditions: suggestion.velocityConditions,
         actions: suggestion.actions,
         severity: suggestion.severity,
         aiGenerated: true,
@@ -765,6 +804,8 @@ function RulesContent() {
       conditions: rule.conditionGroup?.conditions?.map((c) => ({ ...c })) || [],
       aggregateConditions:
         rule.aggregateConditions?.map((a) => ({ ...a })) || [],
+      velocityConditions:
+        rule.velocityConditions?.map((v) => ({ ...v })) || [],
       scheduleEnabled: rule.schedule?.enabled || false,
       screeningFields: rule.screeningFields || [],
       ...(() => {
@@ -819,19 +860,12 @@ function RulesContent() {
   }
 
   function addAggregateCondition() {
+    const schema = editMonitorSchema ?? [];
     setEditForm((prev) => ({
       ...prev,
       aggregateConditions: [
         ...prev.aggregateConditions,
-        {
-          field: "",
-          function: "sum" as AggFunction,
-          groupBy: "",
-          timeField: "",
-          timeWindow: "30d",
-          operator: "gt" as Operator,
-          threshold: 0,
-        },
+        nuevaCondicionAgregada(schema),
       ],
     }));
   }
@@ -873,6 +907,10 @@ function RulesContent() {
           editForm.aggregateConditions.length > 0
             ? editForm.aggregateConditions
             : undefined,
+        velocityConditions:
+          editForm.velocityConditions.length > 0
+            ? editForm.velocityConditions
+            : undefined,
         schedule: {
           enabled: editForm.scheduleEnabled,
           preset: "" as SchedulePreset,
@@ -905,6 +943,7 @@ function RulesContent() {
     numericFields && numericFields.length > 0
       ? numericFields
       : editMonitorSchema;
+  const editDateFields = editMonitorSchema?.filter((f) => f.type === "date");
 
   async function toggleRule(id: string, active: boolean) {
     try {
@@ -1036,6 +1075,18 @@ function RulesContent() {
     }
   }
 
+  // Los editores de filtro reusan el selector de MCC de esta página en vez de
+  // un input de texto: para el campo mcc, elegir "Casinos y juegos" de una
+  // lista es muchísimo más usable que recordar que el código es 7995.
+  const renderMCCValue = (cond: Condition, onValueChange: (v: string) => void) =>
+    isMCCField(cond.field) ? (
+      <MCCPicker
+        value={cond.value}
+        onChange={onValueChange}
+        multi={cond.operator === "in" || cond.operator === "not_in"}
+      />
+    ) : null;
+
   const createMonitorSchema = monitors.find(
     (m) => m.id === createForm.monitorId,
   )?.schema;
@@ -1046,6 +1097,9 @@ function RulesContent() {
     createNumericFields && createNumericFields.length > 0
       ? createNumericFields
       : createMonitorSchema;
+  const createDateFields = createMonitorSchema?.filter(
+    (f) => f.type === "date",
+  );
 
   const filteredRules = useMemo(() => {
     let filtered = rules.filter(
@@ -1131,7 +1185,10 @@ function RulesContent() {
                     <Label>Monitor</Label>
                     <Select
                       value={selectedMonitor}
-                      onValueChange={setSelectedMonitor}
+                      onValueChange={(v) => {
+                        setSelectedMonitor(v);
+                        setAiFields([]);
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona un monitor" />
@@ -1144,6 +1201,39 @@ function RulesContent() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Campos sobre los que querés la regla (opcional)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Elegirlos primero evita que la IA invente nombres de
+                      campo, que es el motivo más común de que no salga
+                      ninguna sugerencia.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(monitors.find((m) => m.id === selectedMonitor)?.schema ?? []).map(
+                        (f) => {
+                          const active = aiFields.includes(f.name);
+                          return (
+                            <button
+                              key={f.name}
+                              type="button"
+                              onClick={() =>
+                                setAiFields((prev) =>
+                                  active
+                                    ? prev.filter((n) => n !== f.name)
+                                    : [...prev, f.name],
+                                )
+                              }
+                              className={`rounded-md border px-2 py-1 text-xs ${
+                                active ? "border-primary bg-primary/10" : ""
+                              }`}
+                            >
+                              {f.name}
+                            </button>
+                          );
+                        },
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label>Contexto (opcional)</Label>
@@ -1169,16 +1259,41 @@ function RulesContent() {
                     </p>
                   )}
 
-                  {aiNoResults && !aiLoading && (
+                  {/* Los descartes se muestran siempre que los haya, no solo
+                      cuando no quedó ninguna sugerencia válida: con 5
+                      generadas y 3 descartadas, ver 2 sin más contexto es
+                      justo el caso donde se asume que eso fue todo. */}
+                  {!aiLoading && aiDiscarded.length > 0 && (
+                    <div className="rounded-md border border-dashed p-4">
+                      <p className="text-sm font-medium">
+                        {aiSuggestions.length > 0
+                          ? `Se descartaron ${aiDiscarded.length} de ${
+                              aiDiscarded.length + aiSuggestions.length
+                            } sugerencias`
+                          : "La IA no devolvió ninguna sugerencia válida"}
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {aiDiscarded.map((d, i) => (
+                          <li key={i} className="text-xs text-muted-foreground">
+                            <span className="font-medium">
+                              {d.name || "Sin nombre"}
+                            </span>
+                            {": "}
+                            {d.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {aiNoResults && !aiLoading && aiDiscarded.length === 0 && (
                     <div className="rounded-md border border-dashed p-4">
                       <p className="text-sm font-medium">
                         La IA no devolvió ninguna sugerencia válida
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Se descartan las sugerencias que referencian campos
-                        fuera del esquema de este monitor. Probá describir el
-                        criterio usando los nombres exactos de los campos, o
-                        elegí otro monitor.
+                        El modelo no devolvió ninguna regla. Probá describir el
+                        criterio con los nombres exactos de los campos.
                       </p>
                     </div>
                   )}
@@ -1521,6 +1636,15 @@ function RulesContent() {
                         <Plus className="mr-1 h-3 w-3" /> Agregar
                       </Button>
                     </div>
+                    {createMonitorSchema && !createDateFields?.length && (
+                      <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                        Este monitor no tiene ningún campo de tipo fecha, así
+                        que el agregado no puede acotarse a una ventana: cubre
+                        todo el historial. Si la fecha y la hora vienen en
+                        columnas numéricas separadas, configurá el timestamp
+                        derivado en la pestaña Esquema del monitor.
+                      </p>
+                    )}
                     {createForm.aggregateConditions.map((agg, i) => (
                       <div
                         key={i}
@@ -1612,15 +1736,22 @@ function RulesContent() {
                             </span>
                             <Select
                               value={agg.timeField}
-                              onValueChange={(v) =>
-                                updateCreateAggCondition(i, "timeField", v)
-                              }
+                              onValueChange={(v) => {
+                                updateCreateAggCondition(i, "timeField", v);
+                                if (!agg.timeWindow) {
+                                  updateCreateAggCondition(
+                                    i,
+                                    "timeWindow",
+                                    "30d",
+                                  );
+                                }
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue placeholder="Fecha" />
                               </SelectTrigger>
                               <SelectContent>
-                                {createMonitorSchema?.map((f) => (
+                                {createDateFields?.map((f) => (
                                   <SelectItem key={f.name} value={f.name}>
                                     {f.name}
                                   </SelectItem>
@@ -1633,28 +1764,54 @@ function RulesContent() {
                               Ventana
                             </span>
                             <Select
-                              value={agg.timeWindow}
-                              onValueChange={(v) =>
-                                updateCreateAggCondition(i, "timeWindow", v)
-                              }
+                              value={agg.timeWindow === "" ? SIN_VENTANA : agg.timeWindow}
+                              onValueChange={(v) => {
+                                if (v === SIN_VENTANA) {
+                                  updateCreateAggCondition(i, "timeWindow", "");
+                                  updateCreateAggCondition(i, "timeField", "");
+                                } else {
+                                  updateCreateAggCondition(i, "timeWindow", v);
+                                  // Contraparte del autocompletado del Select
+                                  // de arriba: si el par estaba "sin ventana"
+                                  // (timeField también vacío), elegir una
+                                  // ventana sin completar el campo de fecha
+                                  // recrea el medio par que el validador
+                                  // rechaza (aggregate_validate.go:52).
+                                  if (!agg.timeField) {
+                                    updateCreateAggCondition(
+                                      i,
+                                      "timeField",
+                                      createDateFields?.[0]?.name ?? "",
+                                    );
+                                  }
+                                }
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="30s">30 segundos</SelectItem>
-                                <SelectItem value="60s">60 segundos</SelectItem>
-                                <SelectItem value="5min">5 minutos</SelectItem>
-                                <SelectItem value="15min">15 minutos</SelectItem>
-                                <SelectItem value="1h">1 hora</SelectItem>
-                                <SelectItem value="6h">6 horas</SelectItem>
-                                <SelectItem value="12h">12 horas</SelectItem>
-                                <SelectItem value="24h">24 horas</SelectItem>
-                                <SelectItem value="7d">7 dias</SelectItem>
-                                <SelectItem value="15d">15 dias</SelectItem>
-                                <SelectItem value="30d">30 dias</SelectItem>
-                                <SelectItem value="90d">90 dias</SelectItem>
-                                <SelectItem value="365d">1 año</SelectItem>
+                                <SelectItem value={SIN_VENTANA}>
+                                  Sin ventana
+                                </SelectItem>
+                                {/* Sin ningún campo date no hay par válido
+                                    posible salvo "sin ventana": deshabilitar
+                                    el resto evita el callejón sin salida de
+                                    elegir una ventana que ningún Select de
+                                    Campo fecha puede completar. */}
+                                <SelectItem value="30s" disabled={!createDateFields?.length}>30 segundos</SelectItem>
+                                <SelectItem value="60s" disabled={!createDateFields?.length}>60 segundos</SelectItem>
+                                <SelectItem value="5min" disabled={!createDateFields?.length}>5 minutos</SelectItem>
+                                <SelectItem value="15min" disabled={!createDateFields?.length}>15 minutos</SelectItem>
+                                <SelectItem value="1h" disabled={!createDateFields?.length}>1 hora</SelectItem>
+                                <SelectItem value="6h" disabled={!createDateFields?.length}>6 horas</SelectItem>
+                                <SelectItem value="12h" disabled={!createDateFields?.length}>12 horas</SelectItem>
+                                <SelectItem value="24h" disabled={!createDateFields?.length}>24 horas</SelectItem>
+                                <SelectItem value="7d" disabled={!createDateFields?.length}>7 dias</SelectItem>
+                                <SelectItem value="15d" disabled={!createDateFields?.length}>15 dias</SelectItem>
+                                <SelectItem value="30d" disabled={!createDateFields?.length}>30 dias</SelectItem>
+                                <SelectItem value="90d" disabled={!createDateFields?.length}>90 dias</SelectItem>
+                                <SelectItem value="365d" disabled={!createDateFields?.length}>1 año</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1707,10 +1864,26 @@ function RulesContent() {
                             />
                           </div>
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">
+                            Filtrar antes de agrupar (opcional)
+                          </Label>
+                          <ConditionRows
+                            conditions={agg.filter ?? []}
+                            schema={createMonitorSchema ?? []}
+                            onChange={(f) =>
+                              updateCreateAggCondition(i, "filter", f)
+                            }
+                            renderValue={renderMCCValue}
+                          />
+                        </div>
                         <p className="text-[10px] text-muted-foreground italic">
                           {agg.function.toUpperCase()}({agg.field || "?"})
-                          agrupado por {agg.groupBy || "?"} en ultimos{" "}
-                          {agg.timeWindow} {operatorSymbol(agg.operator)}{" "}
+                          agrupado por {agg.groupBy || "?"}{" "}
+                          {agg.timeWindow
+                            ? `en ultimos ${agg.timeWindow}`
+                            : "sin ventana"}{" "}
+                          {operatorSymbol(agg.operator)}{" "}
                           {agg.threshold.toLocaleString()}
                         </p>
                       </div>
@@ -1721,6 +1894,20 @@ function RulesContent() {
                         acumulados por periodo.
                       </p>
                     )}
+                  </div>
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <VelocityConditionEditor
+                      conditions={createForm.velocityConditions}
+                      schema={createMonitorSchema ?? []}
+                      onChange={(v) =>
+                        setCreateForm((prev) => ({
+                          ...prev,
+                          velocityConditions: v,
+                        }))
+                      }
+                      renderFilterValue={renderMCCValue}
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -2467,6 +2654,15 @@ function RulesContent() {
                   <Plus className="mr-1 h-3 w-3" /> Agregar
                 </Button>
               </div>
+              {editMonitorSchema && !editDateFields?.length && (
+                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                  Este monitor no tiene ningún campo de tipo fecha, así que el
+                  agregado no puede acotarse a una ventana: cubre todo el
+                  historial. Si la fecha y la hora vienen en columnas
+                  numéricas separadas, configurá el timestamp derivado en la
+                  pestaña Esquema del monitor.
+                </p>
+              )}
               {editForm.aggregateConditions.map((agg, i) => (
                 <div
                   key={i}
@@ -2566,15 +2762,18 @@ function RulesContent() {
                       </span>
                       <Select
                         value={agg.timeField}
-                        onValueChange={(v) =>
-                          updateAggCondition(i, "timeField", v)
-                        }
+                        onValueChange={(v) => {
+                          updateAggCondition(i, "timeField", v);
+                          if (!agg.timeWindow) {
+                            updateAggCondition(i, "timeWindow", "30d");
+                          }
+                        }}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="Fecha" />
                         </SelectTrigger>
                         <SelectContent>
-                          {editMonitorSchema?.map((f) => (
+                          {editDateFields?.map((f) => (
                             <SelectItem key={f.name} value={f.name}>
                               {f.name}
                             </SelectItem>
@@ -2592,28 +2791,53 @@ function RulesContent() {
                         Ventana
                       </span>
                       <Select
-                        value={agg.timeWindow}
-                        onValueChange={(v) =>
-                          updateAggCondition(i, "timeWindow", v)
-                        }
+                        value={agg.timeWindow === "" ? SIN_VENTANA : agg.timeWindow}
+                        onValueChange={(v) => {
+                          if (v === SIN_VENTANA) {
+                            updateAggCondition(i, "timeWindow", "");
+                            updateAggCondition(i, "timeField", "");
+                          } else {
+                            updateAggCondition(i, "timeWindow", v);
+                            // Contraparte del autocompletado del Select de
+                            // Campo fecha: si el par estaba "sin ventana"
+                            // (timeField también vacío), elegir una ventana
+                            // sin completar el campo de fecha recrea el
+                            // medio par que el validador rechaza
+                            // (aggregate_validate.go:52).
+                            if (!agg.timeField) {
+                              updateAggCondition(
+                                i,
+                                "timeField",
+                                editDateFields?.[0]?.name ?? "",
+                              );
+                            }
+                          }
+                        }}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="30s">30 segundos</SelectItem>
-                          <SelectItem value="60s">60 segundos</SelectItem>
-                          <SelectItem value="5min">5 minutos</SelectItem>
-                          <SelectItem value="15min">15 minutos</SelectItem>
-                          <SelectItem value="1h">1 hora</SelectItem>
-                          <SelectItem value="6h">6 horas</SelectItem>
-                          <SelectItem value="12h">12 horas</SelectItem>
-                          <SelectItem value="24h">24 horas</SelectItem>
-                          <SelectItem value="7d">7 dias</SelectItem>
-                          <SelectItem value="15d">15 dias</SelectItem>
-                          <SelectItem value="30d">30 dias</SelectItem>
-                          <SelectItem value="90d">90 dias</SelectItem>
-                          <SelectItem value="365d">1 año</SelectItem>
+                          <SelectItem value={SIN_VENTANA}>
+                            Sin ventana
+                          </SelectItem>
+                          {/* Sin ningún campo date no hay par válido posible
+                              salvo "sin ventana": deshabilitar el resto evita
+                              el callejón sin salida de elegir una ventana que
+                              ningún Select de Campo fecha puede completar. */}
+                          <SelectItem value="30s" disabled={!editDateFields?.length}>30 segundos</SelectItem>
+                          <SelectItem value="60s" disabled={!editDateFields?.length}>60 segundos</SelectItem>
+                          <SelectItem value="5min" disabled={!editDateFields?.length}>5 minutos</SelectItem>
+                          <SelectItem value="15min" disabled={!editDateFields?.length}>15 minutos</SelectItem>
+                          <SelectItem value="1h" disabled={!editDateFields?.length}>1 hora</SelectItem>
+                          <SelectItem value="6h" disabled={!editDateFields?.length}>6 horas</SelectItem>
+                          <SelectItem value="12h" disabled={!editDateFields?.length}>12 horas</SelectItem>
+                          <SelectItem value="24h" disabled={!editDateFields?.length}>24 horas</SelectItem>
+                          <SelectItem value="7d" disabled={!editDateFields?.length}>7 dias</SelectItem>
+                          <SelectItem value="15d" disabled={!editDateFields?.length}>15 dias</SelectItem>
+                          <SelectItem value="30d" disabled={!editDateFields?.length}>30 dias</SelectItem>
+                          <SelectItem value="90d" disabled={!editDateFields?.length}>90 dias</SelectItem>
+                          <SelectItem value="365d" disabled={!editDateFields?.length}>1 año</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2658,9 +2882,23 @@ function RulesContent() {
                       />
                     </div>
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      Filtrar antes de agrupar (opcional)
+                    </Label>
+                    <ConditionRows
+                      conditions={agg.filter ?? []}
+                      schema={editMonitorSchema ?? []}
+                      onChange={(f) => updateAggCondition(i, "filter", f)}
+                      renderValue={renderMCCValue}
+                    />
+                  </div>
                   <p className="text-[10px] text-muted-foreground italic">
                     {agg.function.toUpperCase()}({agg.field || "?"}) agrupado
-                    por {agg.groupBy || "?"} en ultimos {agg.timeWindow}{" "}
+                    por {agg.groupBy || "?"}{" "}
+                    {agg.timeWindow
+                      ? `en ultimos ${agg.timeWindow}`
+                      : "sin ventana"}{" "}
                     {operatorSymbol(agg.operator)}{" "}
                     {agg.threshold.toLocaleString()}
                   </p>
@@ -2672,6 +2910,17 @@ function RulesContent() {
                   por periodo.
                 </p>
               )}
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <VelocityConditionEditor
+                conditions={editForm.velocityConditions}
+                schema={editMonitorSchema ?? []}
+                onChange={(v) =>
+                  setEditForm((prev) => ({ ...prev, velocityConditions: v }))
+                }
+                renderFilterValue={renderMCCValue}
+              />
             </div>
 
             <div className="space-y-2">

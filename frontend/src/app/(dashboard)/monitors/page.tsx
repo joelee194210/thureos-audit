@@ -40,7 +40,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Database, Upload, Trash2, Copy, Check } from "lucide-react";
+import {
+  Plus,
+  Database,
+  Upload,
+  Trash2,
+  Copy,
+  Check,
+  ArchiveRestore,
+} from "lucide-react";
 import { monitorsApi } from "@/lib/api/monitors";
 import { useToast } from "@/lib/use-toast";
 import { formatDate } from "@/lib/utils";
@@ -59,6 +67,8 @@ import type {
 
 export default function MonitorsPage() {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
+  const [borrados, setBorrados] = useState<Monitor[]>([]);
+  const [verPapelera, setVerPapelera] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newMonitor, setNewMonitor] = useState({
     name: "",
@@ -84,7 +94,7 @@ export default function MonitorsPage() {
     token: string;
   } | null>(null);
   const [tokenCopied, setTokenCopied] = useState(false);
-  const { toastError } = useToast();
+  const { toastError, toastSuccess } = useToast();
 
   useEffect(() => {
     loadMonitors();
@@ -156,10 +166,30 @@ export default function MonitorsPage() {
     setTokenCopied(true);
   }
 
+  async function cargarPapelera() {
+    try {
+      setBorrados(await monitorsApi.listDeleted());
+    } catch {
+      toastError("Error al cargar los monitores eliminados");
+    }
+  }
+
+  async function restaurarMonitor(id: string) {
+    try {
+      await monitorsApi.restore(id);
+      toastSuccess("Monitor restaurado");
+      loadMonitors();
+      cargarPapelera();
+    } catch {
+      toastError("Error al restaurar el monitor");
+    }
+  }
+
   async function deleteMonitor(id: string) {
     try {
       await monitorsApi.delete(id);
       loadMonitors();
+      if (verPapelera) cargarPapelera();
     } catch {
       toastError("Error al eliminar monitor");
     }
@@ -299,6 +329,71 @@ export default function MonitorsPage() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Papelera. Un borrado lógico sin forma de ver lo borrado esconde en
+            vez de conservar: el botón existe para que lo conservado sea
+            alcanzable sin entrar a la base de datos. */}
+        <div className="mb-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => {
+              const abrir = !verPapelera;
+              setVerPapelera(abrir);
+              if (abrir) cargarPapelera();
+            }}
+          >
+            <ArchiveRestore className="mr-2 h-4 w-4" />
+            {verPapelera ? "Ocultar eliminados" : "Ver monitores eliminados"}
+          </Button>
+        </div>
+
+        {verPapelera && (
+          <Card className="mb-6">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Monitores eliminados</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Se ocultan de las listas y dejan de evaluarse, pero conservan
+                sus datos, reglas y banderas rojas. Restaurarlos los devuelve
+                tal como estaban.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {borrados.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay monitores eliminados.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {borrados.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between rounded-md border p-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{m.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {m.recordCount} registros conservados
+                          {m.deletedAt
+                            ? ` · eliminado el ${formatDate(m.deletedAt)}`
+                            : ""}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => restaurarMonitor(m.id)}
+                      >
+                        Restaurar
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {monitors.length === 0 ? (
           <Card>

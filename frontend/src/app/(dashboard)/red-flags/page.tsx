@@ -53,6 +53,7 @@ import {
   ACTION_CATEGORY_LABELS as categoryLabels,
   SEVERITY_LABELS,
 } from "@/lib/red-flag-labels";
+import { esAgrupada } from "@/lib/types";
 import type {
   RedFlag,
   RedFlagStatus,
@@ -120,7 +121,7 @@ const AGG_RE =
   /Aggregate rule '.*?': (\w+)\((\w+)\) for (\w+)='(.+?)' = ([\d.]+) \(threshold: (\w+) ([\d.]+)\)/;
 
 function parseAggregateFromMessage(redFlag: RedFlag): RedFlag {
-  if (redFlag.redFlagType === "aggregate") return redFlag;
+  if (esAgrupada(redFlag.redFlagType)) return redFlag;
   const m = redFlag.message.match(AGG_RE);
   if (!m) return redFlag;
   return {
@@ -652,7 +653,7 @@ export default function RedFlagsPage() {
         if (a.severity === "critical") criticalCount++;
         if (a.severity === "high") highCount++;
       }
-      if (a.redFlagType === "aggregate") aggCount++;
+      if (esAgrupada(a.redFlagType)) aggCount++;
     }
     return { newCount, criticalCount, highCount, aggCount };
   }, [redFlags]);
@@ -709,7 +710,7 @@ export default function RedFlagsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats.aggCount}</p>
-                  <p className="text-xs text-muted-foreground">Agregadas</p>
+                  <p className="text-xs text-muted-foreground">Agrupadas</p>
                 </div>
               </CardContent>
             </Card>
@@ -794,7 +795,7 @@ export default function RedFlagsPage() {
               const config = severityConfig[redFlag.severity];
               const SeverityIcon = config.icon;
               const isExpanded = expandedId === redFlag.id;
-              const isAggregate = redFlag.redFlagType === "aggregate";
+              const isAggregate = esAgrupada(redFlag.redFlagType);
 
               return (
                 <Card
@@ -818,7 +819,9 @@ export default function RedFlagsPage() {
                               className="bg-accent-soft text-accent-fg gap-1"
                             >
                               <Calculator className="h-3 w-3" />
-                              Agregada
+                              {redFlag.redFlagType === "velocity"
+                                ? "Velocidad"
+                                : "Agregada"}
                             </Badge>
                           )}
                         </div>

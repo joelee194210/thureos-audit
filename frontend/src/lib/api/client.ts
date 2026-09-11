@@ -1,6 +1,31 @@
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
 
+/**
+ * Un error del backend que conserva el código de estado. Antes se lanzaba un
+ * Error pelado con el mensaje, así que quien lo atrapaba no podía distinguir
+ * "esto no existe" de "el servidor falló", y solo sabía hacer una cosa:
+ * mostrar un toast. Una pestaña guardada apuntando a una entidad borrada
+ * repetía ese toast en cada carga, para siempre.
+ *
+ * Extiende Error a propósito: los `err instanceof Error ? err.message` que ya
+ * existen en el proyecto siguen funcionando sin cambios.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Si el error viene del backend y es un 404. */
+export function esNoEncontrado(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -60,7 +85,7 @@ class ApiClient {
       const error = await response
         .json()
         .catch(() => ({ error: "Request failed" }));
-      throw new Error(error.error || "Request failed");
+      throw new ApiError(error.error || "Request failed", response.status);
     }
 
     return response.json();

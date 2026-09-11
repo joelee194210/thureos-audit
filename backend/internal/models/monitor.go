@@ -144,8 +144,14 @@ type Monitor struct {
 	OwnerID          primitive.ObjectID      `bson:"owner_id" json:"ownerId"`
 	RecordCount      int64                   `bson:"record_count" json:"recordCount"`
 	LastIngested     *time.Time              `bson:"last_ingested,omitempty" json:"lastIngested,omitempty"`
-	CreatedAt        time.Time               `bson:"created_at" json:"createdAt"`
-	UpdatedAt        time.Time               `bson:"updated_at" json:"updatedAt"`
+	// DeletedAt marca el borrado lógico. Un monitor borrado desaparece de
+	// todas las listas y deja de evaluarse, pero conserva su colección de
+	// datos, sus reglas, sus banderas rojas y su historial de cargas: en una
+	// plataforma de cumplimiento, borrar de verdad es perder la evidencia de
+	// algo que existió. Mismo criterio que Rule.DeletedAt.
+	DeletedAt *time.Time `bson:"deleted_at,omitempty" json:"deletedAt,omitempty"`
+	CreatedAt time.Time  `bson:"created_at" json:"createdAt"`
+	UpdatedAt time.Time  `bson:"updated_at" json:"updatedAt"`
 }
 
 type CreateMonitorRequest struct {

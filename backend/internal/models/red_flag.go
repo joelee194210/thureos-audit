@@ -34,7 +34,17 @@ type RedFlagType string
 const (
 	RedFlagTypeRow       RedFlagType = "row"
 	RedFlagTypeAggregate RedFlagType = "aggregate"
+	RedFlagTypeVelocity  RedFlagType = "velocity"
 )
+
+// EsAgrupada dice si la alerta describe un grupo de registros —y por lo
+// tanto trae GroupByField, GroupByValue y MatchCount— en vez de una fila
+// suelta. Existe como predicado con nombre porque seis sitios preguntaban
+// `== RedFlagTypeAggregate` queriendo saber esto, y al aparecer un segundo
+// tipo agrupado los seis habrían quedado mal en silencio.
+func (t RedFlagType) EsAgrupada() bool {
+	return t == RedFlagTypeAggregate || t == RedFlagTypeVelocity
+}
 
 type RedFlag struct {
 	ID             primitive.ObjectID       `bson:"_id,omitempty" json:"id"`

@@ -34,8 +34,12 @@ export const monitorsApi = {
     },
   ) => api.put<{ message: string }>(`/monitors/${id}`, data),
 
-  updateSchema: (id: string, schema: SchemaField[]) =>
-    api.put<{ schema: SchemaField[] }>(`/monitors/${id}/schema`, { schema }),
+  updateSchema: (id: string, schema: SchemaField[], rescaleExisting = false) =>
+    api.put<{
+      schema: SchemaField[];
+      rescaled?: Record<string, number>;
+      omitidos?: Record<string, number>;
+    }>(`/monitors/${id}/schema`, { schema, rescaleExisting }),
 
   /**
    * Configura el timestamp derivado, o lo limpia mandando null. La clave
@@ -70,7 +74,15 @@ export const monitorsApi = {
   rotatePushToken: (id: string) =>
     api.post<{ pushToken: string }>(`/monitors/${id}/rotate-push-token`, {}),
 
+  /** Borrado lógico: el monitor se oculta, pero sus datos, reglas y
+   *  banderas rojas quedan intactos y se puede restaurar. */
   delete: (id: string) => api.delete<{ message: string }>(`/monitors/${id}`),
+
+  /** Los monitores borrados, para poder restaurarlos. */
+  listDeleted: () => api.get<Monitor[]>("/monitors/deleted"),
+
+  restore: (id: string) =>
+    api.post<{ message: string }>(`/monitors/${id}/restore`, {}),
 
   upload: (id: string, file: File) =>
     api.upload<{

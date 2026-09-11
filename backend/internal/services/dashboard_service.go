@@ -165,6 +165,23 @@ func buildAggregationPipeline(widget models.Widget) mongo.Pipeline {
 	return pipeline
 }
 
+// groupValueFilter arma el filtro para el valor por el que se agrupó la
+// gráfica. El valor llega como texto desde el navegador, pero el $group que
+// alimenta la gráfica devuelve el valor CRUDO: si el campo es numérico, el
+// segmento se rotula 178 y vuelve como "178", y MongoDB no compara entre
+// tipos BSON. El detalle salía vacío sin ningún error — se hacía clic en una
+// barra de 40 registros y no aparecía ninguno.
+//
+// Mismos candidatos cruzados que usa conditionToMongo para la igualdad: es
+// el mismo problema, y tener una sola forma de resolverlo es lo que evita
+// que la próxima consulta lo repita.
+func groupValueFilter(groupValue string) interface{} {
+	if cands := equalityCandidates(groupValue); len(cands) > 1 {
+		return bson.M{"$in": cands}
+	}
+	return groupValue
+}
+
 // DrillDown returns paginated records matching a widget's groupBy value
 type DrillDownResult struct {
 	Records []bson.M `json:"records"`
@@ -215,7 +232,7 @@ func (s *DashboardService) DrillDown(ctx context.Context, dashboardID, widgetID,
 
 	// Apply groupBy = groupValue filter (empty string matches records with no value)
 	if widget.GroupBy != "" {
-		filter[widget.GroupBy] = groupValue
+		filter[widget.GroupBy] = groupValueFilter(groupValue)
 	}
 
 	// Apply search across string fields. QuoteMeta treats the query as a

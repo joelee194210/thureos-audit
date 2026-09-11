@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/thureos/compliance/internal/models"
@@ -24,7 +25,7 @@ func TestFilterValidSuggestions_KeepsSuggestionWithValidConditionGroupOnly(t *te
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 1 {
 		t.Fatalf("got %d suggestions, want 1 (debería aceptarse — todos los campos existen)", len(got))
 	}
@@ -40,7 +41,7 @@ func TestFilterValidSuggestions_DropsUnknownConditionGroupField(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (el campo no existe en el schema)", len(got))
 	}
@@ -56,7 +57,7 @@ func TestFilterValidSuggestions_KeepsValidAggregateCondition(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 1 {
 		t.Fatalf("got %d suggestions, want 1 (aggregateCondition válida, todos los campos existen)", len(got))
 	}
@@ -71,7 +72,7 @@ func TestFilterValidSuggestions_DropsUnknownAggregateField(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (field agregado no existe en el schema)", len(got))
 	}
@@ -86,7 +87,7 @@ func TestFilterValidSuggestions_DropsUnknownGroupBy(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (groupBy no existe en el schema)", len(got))
 	}
@@ -101,7 +102,7 @@ func TestFilterValidSuggestions_DropsUnknownTimeField(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (timeField no existe en el schema)", len(got))
 	}
@@ -116,7 +117,7 @@ func TestFilterValidSuggestions_DropsInvalidTimeWindowFormat(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 (timeWindow con formato inválido)", len(got))
 	}
@@ -133,7 +134,7 @@ func TestFilterValidSuggestions_DropsAmbiguousMonthsUnit(t *testing.T) {
 			},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 0 {
 		t.Fatalf("got %d suggestions, want 0 ('m' es ambiguo, no está en el vocabulario permitido para la IA)", len(got))
 	}
@@ -150,11 +151,319 @@ func TestFilterValidSuggestions_MixedListKeepsOnlyValid(t *testing.T) {
 			ConditionGroup: models.ConditionGroup{Logic: "AND", Conditions: []models.Condition{{Field: "campo_fantasma", Operator: models.OpGreaterThan, Value: 1000}}},
 		},
 	}
-	got := filterValidSuggestions(suggestions, testSchema())
+	got := partitionSuggestions(suggestions, testSchema()).Suggestions
 	if len(got) != 1 {
 		t.Fatalf("got %d suggestions, want 1 (solo la válida sobrevive)", len(got))
 	}
 	if got[0].Name != "Válida" {
 		t.Errorf("got %q, want %q", got[0].Name, "Válida")
+	}
+}
+
+// Un agregado global (groupBy vacío) es válido para el motor: agrupa con
+// _id:null. Descartarlo entero era la causa más frecuente de "generé reglas
+// y no salió ninguna".
+func TestDiscardReason_AceptaAgregadoGlobal(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Total diario",
+		AggregateConditions: []models.AggregateCondition{{
+			Field:      "monto",
+			Function:   models.AggFuncSum,
+			GroupBy:    "",
+			TimeField:  "fecha",
+			TimeWindow: "24h",
+			Operator:   models.OpGreaterThan,
+			Threshold:  50000,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// Sin timeField ni timeWindow el motor no aplica ventana: es un agregado
+// sobre todo el histórico, perfectamente expresable.
+func TestDiscardReason_AceptaAgregadoSinVentana(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Conteo por cliente",
+		AggregateConditions: []models.AggregateCondition{{
+			Field:     "monto",
+			Function:  models.AggFuncCount,
+			GroupBy:   "cliente",
+			Operator:  models.OpGreaterEqual,
+			Threshold: 5,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// Media ventana es intención a medio expresar: "5 transacciones en 60s" que
+// pierde el "en 60s" se convierte en "5 transacciones alguna vez", que es una
+// regla mucho más ruidosa que la pedida. Se descarta.
+func TestDiscardReason_DescartaVentanaIncompleta(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Ventana a medias",
+		AggregateConditions: []models.AggregateCondition{{
+			Field:     "monto",
+			Function:  models.AggFuncCount,
+			GroupBy:   "cliente",
+			TimeField: "fecha",
+			Operator:  models.OpGreaterEqual,
+			Threshold: 5,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla por ventana incompleta")
+	}
+}
+
+// Cuando todo se descarta, la respuesta tiene que poder explicar por qué:
+// el usuario ve terminar "Generando..." y necesita saber qué corregir.
+func TestPartitionSuggestions_ReportaGeneradasYDescartadas(t *testing.T) {
+	suggestions := []AIRuleSuggestion{
+		{
+			Name: "Válida",
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "monto", Operator: models.OpGreaterThan, Value: 10000}},
+			},
+		},
+		{
+			Name: "Campo inventado",
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "no_existe", Operator: models.OpGreaterThan, Value: 1}},
+			},
+		},
+	}
+
+	got := partitionSuggestions(suggestions, testSchema())
+
+	if got.Generated != 2 {
+		t.Errorf("Generated = %d, quería 2", got.Generated)
+	}
+	if len(got.Suggestions) != 1 || got.Suggestions[0].Name != "Válida" {
+		t.Errorf("Suggestions = %+v, quería solo la válida", got.Suggestions)
+	}
+	if len(got.Discarded) != 1 {
+		t.Fatalf("Discarded = %+v, quería una", got.Discarded)
+	}
+	if got.Discarded[0].Name != "Campo inventado" || got.Discarded[0].Reason == "" {
+		t.Errorf("Discarded[0] = %+v, quería el nombre y un motivo no vacío", got.Discarded[0])
+	}
+}
+
+// partitionSuggestions arma Suggestions con make(...), no como nil slice:
+// el JSON tiene que emitir "[]" y no "null" aun cuando se descarta todo, ya
+// que el frontend hace result.suggestions.length sin guardas contra null.
+func TestPartitionSuggestions_SuggestionsNoNilCuandoTodoSeDescarta(t *testing.T) {
+	suggestions := []AIRuleSuggestion{
+		{
+			Name: "Campo inventado",
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "no_existe", Operator: models.OpGreaterThan, Value: 1}},
+			},
+		},
+	}
+
+	got := partitionSuggestions(suggestions, testSchema())
+
+	if got.Suggestions == nil {
+		t.Error("Suggestions es nil, quería un slice vacío no nil")
+	}
+	if len(got.Suggestions) != 0 {
+		t.Errorf("Suggestions = %+v, quería vacío", got.Suggestions)
+	}
+}
+
+// El caso que motivó el rediseño: dos transacciones de la misma tarjeta a
+// menos de 35s, filtradas por rubro. Si la IA lo devuelve bien armado, tiene
+// que sobrevivir a la validación.
+func TestDiscardReason_AceptaVelocidadValida(t *testing.T) {
+	s := AIRuleSuggestion{
+		Name: "Casino en ráfaga",
+		VelocityConditions: []models.VelocityCondition{{
+			TimeField: "fecha",
+			MaxGap:    "35s",
+			GroupBy:   "cliente",
+			MinEvents: 2,
+			Filter:    []models.Condition{{Field: "monto", Operator: models.OpGreaterThan, Value: 5000}},
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// minEvents omitido vale 2 (NormalizeVelocityConditions): pedirle a la IA que
+// lo repita sería exigirle un detalle que el propio formulario completa solo.
+func TestDiscardReason_AceptaVelocidadSinMinEvents(t *testing.T) {
+	s := AIRuleSuggestion{
+		VelocityConditions: []models.VelocityCondition{{
+			TimeField: "fecha", MaxGap: "60s", GroupBy: "cliente",
+		}},
+	}
+	if got := discardReason(s, testSchema()); got != "" {
+		t.Errorf("discardReason = %q, quería aceptarla", got)
+	}
+}
+
+// El motor mide diferencias de tiempo: un campo que no es date no matchea
+// nada y la regla no dispararía nunca. Es el bug de Date-contra-string.
+func TestDiscardReason_DescartaVelocidadInvalida(t *testing.T) {
+	casos := []struct {
+		nombre string
+		cond   models.VelocityCondition
+	}{
+		{"campo de tiempo que no es date", models.VelocityCondition{
+			TimeField: "cliente", MaxGap: "35s", GroupBy: "cliente", MinEvents: 2,
+		}},
+		{"gap no parseable", models.VelocityCondition{
+			TimeField: "fecha", MaxGap: "un rato", GroupBy: "cliente", MinEvents: 2,
+		}},
+		{"filtro sobre campo inexistente", models.VelocityCondition{
+			TimeField: "fecha", MaxGap: "35s", GroupBy: "cliente", MinEvents: 2,
+			Filter: []models.Condition{{Field: "no_existe", Operator: models.OpEqual, Value: 1}},
+		}},
+		{"racha en vez de par", models.VelocityCondition{
+			TimeField: "fecha", MaxGap: "35s", GroupBy: "cliente", MinEvents: 5,
+		}},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			s := AIRuleSuggestion{VelocityConditions: []models.VelocityCondition{c.cond}}
+			if got := discardReason(s, testSchema()); got == "" {
+				t.Error("discardReason = \"\", quería descartarla")
+			}
+		})
+	}
+}
+
+// El motor mete TimeField directo contra un time.Time en el $match del
+// agregado (rule_engine.go buildAggregatePipeline): si el campo no es date,
+// Mongo compara entre tipos BSON distintos y no matchea nada — el mismo bug
+// de Date-contra-string que velocidad ya rechazaba, pero que agregados
+// dejaba pasar.
+func TestDiscardReason_DescartaAgregadoTimeFieldNoDate(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+			TimeField: "cliente", TimeWindow: "24h",
+			Operator: models.OpGreaterThan, Threshold: 1,
+		}},
+	}
+	got := discardReason(s, testSchema())
+	if got == "" {
+		t.Error("discardReason = \"\", quería descartarla por timeField que no es date")
+	}
+	if !strings.Contains(got, "date") {
+		t.Errorf("discardReason = %q, quería que mencionara que se necesita un campo date", got)
+	}
+}
+
+// "0s"/"0d" pasan la regex de unidad válida pero parsean a cero:
+// buildAggregatePipeline se salta el $match de ventana entero y "5 en 0s" se
+// vuelve silenciosamente "5 alguna vez" — mucho más ruidoso que lo pedido,
+// sin ningún aviso al usuario.
+func TestDiscardReason_DescartaVentanaDeCero(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+			TimeField: "fecha", TimeWindow: "0s",
+			Operator: models.OpGreaterThan, Threshold: 1,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla por ventana de duración cero")
+	}
+}
+
+// Una función fuera del enum que sabe evaluar buildAggExpr (sum, count, avg,
+// min, max) cae en su default ($sum) sin avisar: el umbral terminaría
+// comparado contra la cantidad equivocada.
+func TestDiscardReason_DescartaFuncionAgregadaInvalida(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: "distinct", GroupBy: "cliente",
+			Operator: models.OpGreaterThan, Threshold: 1,
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla por función agregada inválida")
+	}
+}
+
+// El filtro previo de un agregado se valida igual que el de velocidad.
+func TestDiscardReason_DescartaFiltroDeAgregadoInexistente(t *testing.T) {
+	s := AIRuleSuggestion{
+		AggregateConditions: []models.AggregateCondition{{
+			Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+			TimeField: "fecha", TimeWindow: "24h",
+			Operator: models.OpGreaterThan, Threshold: 1,
+			Filter: []models.Condition{{Field: "no_existe", Operator: models.OpEqual, Value: 1}},
+		}},
+	}
+	if got := discardReason(s, testSchema()); got == "" {
+		t.Error("discardReason = \"\", quería descartarla")
+	}
+}
+
+func TestDiscardReason_DescartaCamposInexistentes(t *testing.T) {
+	casos := []struct {
+		nombre string
+		s      AIRuleSuggestion
+	}{
+		{"campo de condición inventado", AIRuleSuggestion{
+			ConditionGroup: models.ConditionGroup{
+				Logic:      "AND",
+				Conditions: []models.Condition{{Field: "no_existe", Operator: models.OpGreaterThan, Value: 1}},
+			},
+		}},
+		{"groupBy inventado", AIRuleSuggestion{
+			AggregateConditions: []models.AggregateCondition{{
+				Field: "monto", Function: models.AggFuncSum, GroupBy: "no_existe",
+				Operator: models.OpGreaterThan, Threshold: 1,
+			}},
+		}},
+		{"ventana con unidad ambigua", AIRuleSuggestion{
+			AggregateConditions: []models.AggregateCondition{{
+				Field: "monto", Function: models.AggFuncSum, GroupBy: "cliente",
+				TimeField: "fecha", TimeWindow: "5m",
+				Operator: models.OpGreaterThan, Threshold: 1,
+			}},
+		}},
+	}
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			if got := discardReason(c.s, testSchema()); got == "" {
+				t.Error("discardReason = \"\", quería descartarla")
+			}
+		})
+	}
+}
+
+func TestBuildUserMessage_IncluyeLosCamposElegidos(t *testing.T) {
+	msg := buildUserMessage(testSchema(), "", "montos raros", []string{"monto", "cliente"})
+	if !strings.Contains(msg, "monto, cliente") {
+		t.Errorf("el mensaje no nombra los campos elegidos:\n%s", msg)
+	}
+	if !strings.Contains(msg, "montos raros") {
+		t.Errorf("el mensaje perdió el contexto libre:\n%s", msg)
+	}
+}
+
+// El modo guiado es aditivo: sin campos elegidos el mensaje tiene que ser
+// exactamente el de antes, byte por byte.
+func TestBuildUserMessage_SinCamposNoCambia(t *testing.T) {
+	conNil := buildUserMessage(testSchema(), "", "hola", nil)
+	conVacio := buildUserMessage(testSchema(), "", "hola", []string{})
+	if conNil != conVacio {
+		t.Errorf("nil y slice vacío dieron mensajes distintos:\n%q\n%q", conNil, conVacio)
+	}
+	if strings.Contains(conNil, "Fields the user") {
+		t.Errorf("agregó la sección de campos sin campos:\n%s", conNil)
 	}
 }

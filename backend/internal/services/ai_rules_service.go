@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -31,9 +34,26 @@ type AIRuleSuggestion struct {
 	Description         string                      `json:"description"`
 	ConditionGroup      models.ConditionGroup       `json:"conditionGroup"`
 	AggregateConditions []models.AggregateCondition `json:"aggregateConditions,omitempty"`
+	VelocityConditions  []models.VelocityCondition  `json:"velocityConditions,omitempty"`
 	Severity            models.Severity             `json:"severity"`
 	Actions             []models.ActionType         `json:"actions"`
 	Reasoning           string                      `json:"reasoning"`
+}
+
+// DiscardedSuggestion es una sugerencia que la IA devolvió y el backend no
+// puede guardar, con el motivo listo para mostrarle al usuario.
+type DiscardedSuggestion struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// AIGenerationResult acompaña a las sugerencias válidas con lo que hizo
+// falta descartar. Sin esto el frontend solo sabe que la lista vino vacía y
+// tiene que inventar una explicación genérica.
+type AIGenerationResult struct {
+	Suggestions []AIRuleSuggestion    `json:"suggestions"`
+	Generated   int                   `json:"generated"`
+	Discarded   []DiscardedSuggestion `json:"discarded,omitempty"`
 }
 
 // systemPrompt is shared across all providers — the contract stays the same.
@@ -65,6 +85,17 @@ Return ONLY a JSON array of rule suggestions. Each rule must follow this exact s
       "threshold": value
     }
   ],
+  "velocityConditions": [
+    {
+      "timeField": "field_name",
+      "maxGap": "35s|60s|5min",
+      "groupBy": "field_name",
+      "minEvents": 2,
+      "filter": [
+        {"field": "field_name", "operator": "op", "value": value}
+      ]
+    }
+  ],
   "severity": "low|medium|high|critical",
   "actions": ["red_flag", "flag", "log"],
   "reasoning": "Por qué esta regla es importante, en español"
@@ -89,6 +120,31 @@ but the JSON key is still required — reuse the same field you put in
 (minutes), "h" (hours), "d" (days) — e.g. "60s", "5min", "24h", "7d". Never
 use "m" for minutes or months; it is not a valid unit for this field.
 
+Use "velocityConditions" when the user cares about how close two CONSECUTIVE
+events of the same entity are — "two transactions on the same card less than
+35 seconds apart", "two withdrawals from the same account within a minute".
+This is different from "aggregateConditions": there, the window is anchored
+to now and you count how many events fall inside it; here, the distance
+between one event and the previous one of the same entity is measured.
+"timeField" MUST be a field whose type is "date" in the schema you were
+given — the engine measures time differences and a non-date field silently
+matches nothing. "maxGap" takes the same units as "timeWindow". "minEvents"
+is always 2: the engine measures pairs, not streaks. If the schema has no
+date field, do not emit "velocityConditions" at all.
+
+Both "aggregateConditions" and "velocityConditions" accept an optional
+"filter": a list of conditions that reduces the universe BEFORE grouping or
+before pairing. Use it to say "only casino transactions", "only amounts over
+5000" — e.g. mcc = 7995 combined with a 35s "maxGap" expresses "two casino
+transactions on the same card less than 35 seconds apart".
+
+A numeric field may carry "impliedDecimals". Those values are ALREADY
+converted when stored, so write every threshold in the converted,
+human-readable scale — 5000 for five thousand, never 500000. The field's
+"sample" is the raw value from the file, before conversion; never copy its
+magnitude into a threshold. When the schema has such fields, the user
+message lists them with their converted sample.
+
 Available operators: eq, neq, gt, lt, gte, lte, contains, regex, in, not_in, between, is_null, is_not_null, starts_with, ends_with
 
 Generate 3-5 meaningful rules based on the data structure and context.`
@@ -105,18 +161,18 @@ func NewAIRulesService(configRepo *repository.SystemConfigRepository) *AIRulesSe
 	return &AIRulesService{configRepo: configRepo}
 }
 
-func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.SchemaField, dataSample string, userPrompt string) ([]AIRuleSuggestion, error) {
+func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.SchemaField, dataSample string, userPrompt string, fields []string) (AIGenerationResult, error) {
 	// Read current AI config from DB (reflects admin changes in real time)
 	cfg, err := s.configRepo.Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("loading AI config: %w", err)
+		return AIGenerationResult{}, fmt.Errorf("loading AI config: %w", err)
 	}
 
 	if cfg.AI.APIKey == "" {
-		return nil, fmt.Errorf("AI API key not configured — go to Settings to add one")
+		return AIGenerationResult{}, fmt.Errorf("AI API key not configured — go to Settings to add one")
 	}
 
-	userMessage := buildUserMessage(schema, dataSample, userPrompt)
+	userMessage := buildUserMessage(schema, dataSample, userPrompt, fields)
 
 	// El deadline cubre a ambos proveedores: los dos reciben este ctx.
 	ctx, cancel := context.WithTimeout(ctx, aiRequestTimeout)
@@ -131,17 +187,17 @@ func (s *AIRulesService) GenerateRules(ctx context.Context, schema []models.Sche
 	}
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("the AI provider did not respond within %s — try again, or check the provider settings", aiRequestTimeout)
+			return AIGenerationResult{}, fmt.Errorf("the AI provider did not respond within %s — try again, or check the provider settings", aiRequestTimeout)
 		}
-		return nil, err
+		return AIGenerationResult{}, err
 	}
 
 	suggestions, err := parseRuleSuggestions(responseText)
 	if err != nil {
-		return nil, err
+		return AIGenerationResult{}, err
 	}
 
-	return filterValidSuggestions(suggestions, schema), nil
+	return partitionSuggestions(suggestions, schema), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -272,16 +328,66 @@ func callDeepSeek(ctx context.Context, ai models.AIConfig, userMessage string) (
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-func buildUserMessage(schema []models.SchemaField, dataSample, userPrompt string) string {
+func buildUserMessage(schema []models.SchemaField, dataSample, userPrompt string, fields []string) string {
 	schemaJSON, _ := json.Marshal(schema)
 	msg := fmt.Sprintf("Schema:\n%s\n", string(schemaJSON))
+	msg += impliedDecimalsNote(schema)
 	if dataSample != "" {
 		msg += fmt.Sprintf("\nSample data:\n%s\n", dataSample)
+	}
+	// Modo guiado: el usuario señaló los campos antes de escribir el
+	// criterio. Nombrarlos explícitamente ataca la causa principal de
+	// sugerencias descartadas — la IA inventando nombres de campo.
+	if len(fields) > 0 {
+		msg += fmt.Sprintf(
+			"\nFields the user wants this rule to be about: %s. Build the rules around these fields; you may reference other schema fields only if the criteria require it.\n",
+			strings.Join(fields, ", "),
+		)
 	}
 	if userPrompt != "" {
 		msg += fmt.Sprintf("\nUser context: %s", userPrompt)
 	}
 	return msg
+}
+
+// impliedDecimalsNote desambigua la escala de los campos con decimales
+// implícitos. Sin esto el modelo razona bien y falla igual: ve
+// `{"sample": "500000", "impliedDecimals": 2}` y deduce que cinco mil se
+// escribe 500000 en las unidades crudas del campo — pero la ingesta YA
+// divide al guardar (ingestion_service.go, f/10^n), así que el umbral
+// correcto es 5000 y comparar contra 500000 no matchea ningún documento.
+// Cero resultados, cero errores: la regla parece configurada y no dispara
+// nunca. Verificado contra un archivo real de movimientos.
+//
+// El sample se deja como está a propósito: es el valor tal cual viene del
+// archivo, que es lo que sirve para diagnosticar la ingesta. Lo que faltaba
+// era decir en qué escala queda guardado.
+func impliedDecimalsNote(schema []models.SchemaField) string {
+	var lines []string
+	for _, f := range schema {
+		if f.ImpliedDecimals <= 0 {
+			continue
+		}
+		line := fmt.Sprintf("- %q has impliedDecimals %d", f.Name, f.ImpliedDecimals)
+		if raw, err := strconv.ParseFloat(strings.TrimSpace(f.Sample), 64); err == nil {
+			converted := raw / math.Pow(10, float64(f.ImpliedDecimals))
+			line += fmt.Sprintf(
+				": its file sample %q is stored as %s",
+				f.Sample, strconv.FormatFloat(converted, 'f', -1, 64),
+			)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return "\nImplied decimals — read this before writing any threshold on these fields:\n" +
+		strings.Join(lines, "\n") +
+		"\nThe file writes these numbers without a decimal point, but they are ALREADY" +
+		" converted when stored, so every threshold, value and aggregate you write must" +
+		" use the CONVERTED scale — write 5000 for five thousand, never 500000. The" +
+		" \"sample\" in the schema above is the raw value from the file, before conversion.\n"
 }
 
 func parseRuleSuggestions(responseText string) ([]AIRuleSuggestion, error) {
@@ -302,45 +408,138 @@ func parseRuleSuggestions(responseText string) ([]AIRuleSuggestion, error) {
 // rather than risk it meaning "minutes" to whoever generated it.
 var validAITimeWindow = regexp.MustCompile(`^\d+(s|min|h|d)$`)
 
-// filterValidSuggestions drops any suggestion that references a field name
-// not present in the monitor's schema — the AI has no other vocabulary to
-// express concepts the schema doesn't have a column for, and in the past
-// invented fake field names (e.g. "group_count_gte_5_seconds_lte_60") to
-// work around that instead. A suggestion with any invalid reference is
-// dropped whole, not partially repaired — a half-fixed rule is worse than
-// no suggestion.
-func filterValidSuggestions(suggestions []AIRuleSuggestion, schema []models.SchemaField) []AIRuleSuggestion {
-	fieldNames := make(map[string]bool, len(schema))
-	for _, f := range schema {
-		fieldNames[f.Name] = true
-	}
-
-	valid := make([]AIRuleSuggestion, 0, len(suggestions))
-	for _, s := range suggestions {
-		if suggestionReferencesUnknownField(s, fieldNames) {
-			log.Printf("ai-rules: descartando sugerencia %q — referencia un campo fuera del schema", s.Name)
-			continue
-		}
-		valid = append(valid, s)
-	}
-	return valid
+// validAggFunctions es el enum real que buildAggExpr sabe evaluar
+// (rule_engine.go). Una función fuera de esta lista cae en el default de
+// buildAggExpr (`$sum`) sin avisar: un "distinct" alucinado o un function
+// vacío se convierten en una suma silenciosa, comparada contra el umbral
+// equivocado.
+var validAggFunctions = map[models.AggFunction]bool{
+	models.AggFuncSum:   true,
+	models.AggFuncCount: true,
+	models.AggFuncAvg:   true,
+	models.AggFuncMin:   true,
+	models.AggFuncMax:   true,
 }
 
-func suggestionReferencesUnknownField(s AIRuleSuggestion, fieldNames map[string]bool) bool {
+// partitionSuggestions separa las sugerencias que se pueden guardar de las
+// que hay que descartar por referenciar un campo que no está en el esquema
+// del monitor — la IA no tiene otro vocabulario para expresar conceptos que
+// el esquema no tiene, y en el pasado inventó nombres de campo falsos (p.
+// ej. "group_count_gte_5_seconds_lte_60") para eludir eso. Una sugerencia
+// con cualquier referencia inválida se descarta entera, no se repara a
+// medias — una regla medio arreglada es peor que ninguna sugerencia.
+func partitionSuggestions(suggestions []AIRuleSuggestion, schema []models.SchemaField) AIGenerationResult {
+	result := AIGenerationResult{
+		Suggestions: make([]AIRuleSuggestion, 0, len(suggestions)),
+		Generated:   len(suggestions),
+	}
+	for _, s := range suggestions {
+		if reason := discardReason(s, schema); reason != "" {
+			log.Printf("ai-rules: descartando sugerencia %q — %s", s.Name, reason)
+			result.Discarded = append(result.Discarded, DiscardedSuggestion{Name: s.Name, Reason: reason})
+			continue
+		}
+		result.Suggestions = append(result.Suggestions, s)
+	}
+	return result
+}
+
+// discardReason devuelve por qué una sugerencia no se puede guardar, o ""
+// si es guardable. Solo se valida lo que está PRESENTE: un groupBy vacío es
+// un agregado global (rule_engine.go:657-661, _id:null) y una ventana vacía
+// es un agregado sobre todo el histórico (rule_engine.go:624). Tratar el
+// vacío como campo inexistente descartaba sugerencias perfectamente válidas
+// y dejaba al usuario mirando una lista vacía.
+func discardReason(s AIRuleSuggestion, schema []models.SchemaField) string {
+	byName := make(map[string]models.SchemaField, len(schema))
+	for _, f := range schema {
+		byName[f.Name] = f
+	}
+
 	for _, cond := range s.ConditionGroup.Conditions {
-		if !fieldNames[cond.Field] {
-			return true
+		if _, ok := byName[cond.Field]; !ok {
+			return fmt.Sprintf("la condición usa el campo %q, que no está en el esquema", cond.Field)
 		}
 	}
+
 	for _, agg := range s.AggregateConditions {
-		if !fieldNames[agg.Field] || !fieldNames[agg.GroupBy] || !fieldNames[agg.TimeField] {
-			return true
+		// Para "count" el motor ignora Field (buildAggExpr → $sum:1), así
+		// que puede venir vacío; para el resto es lo que se agrega.
+		if agg.Function != models.AggFuncCount && agg.Field == "" {
+			return "el agregado no dice qué campo agregar"
 		}
-		if !validAITimeWindow.MatchString(agg.TimeWindow) {
-			return true
+		if !validAggFunctions[agg.Function] {
+			return fmt.Sprintf("el agregado usa la función %q, que no es válida (sum, count, avg, min, max)", agg.Function)
+		}
+		if agg.Field != "" {
+			if _, ok := byName[agg.Field]; !ok {
+				return fmt.Sprintf("el agregado usa el campo %q, que no está en el esquema", agg.Field)
+			}
+		}
+		if agg.GroupBy != "" {
+			if _, ok := byName[agg.GroupBy]; !ok {
+				return fmt.Sprintf("el agregado agrupa por %q, que no está en el esquema", agg.GroupBy)
+			}
+		}
+		if agg.TimeField != "" {
+			f, ok := byName[agg.TimeField]
+			if !ok {
+				return fmt.Sprintf("el agregado mide el tiempo sobre %q, que no está en el esquema", agg.TimeField)
+			}
+			// Igual que en velocidad: el motor mete este campo directo en un
+			// $match contra un time.Time (rule_engine.go buildAggregatePipeline).
+			// Si el campo es string, Mongo compara entre tipos BSON distintos,
+			// no matchea nada y la regla no dispara nunca — en silencio.
+			if f.Type != models.FieldDate {
+				return fmt.Sprintf("el agregado mide el tiempo sobre %q, que es de tipo %s: se necesita un campo date", agg.TimeField, f.Type)
+			}
+		}
+		// Media ventana es intención a medio expresar: sin el par completo
+		// el motor ignora la ventana y "5 en 60s" se vuelve "5 alguna vez".
+		if (agg.TimeField == "") != (agg.TimeWindow == "") {
+			return "la ventana de tiempo está incompleta: hacen falta el campo de fecha y la duración"
+		}
+		if agg.TimeWindow != "" {
+			if !validAITimeWindow.MatchString(agg.TimeWindow) {
+				return fmt.Sprintf("la ventana %q no usa una unidad válida (s, min, h, d)", agg.TimeWindow)
+			}
+			// "0s"/"0d" pasan la regex pero parsean a cero: buildAggregatePipeline
+			// se salta el $match de ventana entero (rule_engine.go:627) y "5 en
+			// 0s" se vuelve silenciosamente "5 alguna vez" — igual de ruidoso
+			// que la ventana incompleta de arriba, pero sin ningún aviso.
+			if parseTimeWindow(agg.TimeWindow) <= 0 {
+				return fmt.Sprintf("la ventana %q no es una duración positiva", agg.TimeWindow)
+			}
+		}
+		if reason := filterFieldsReason(agg.Filter, byName, "el filtro del agregado"); reason != "" {
+			return reason
 		}
 	}
-	return false
+
+	// La validación de velocidad no se duplica: ValidateVelocityCondition ya
+	// rechaza todo lo que el motor no puede evaluar — campo de tiempo que no
+	// es date, gap no parseable, agrupación fuera del esquema, minEvents != 2
+	// y filtro sobre campos inexistentes. Es la MISMA función que corre al
+	// guardar la regla, así que una sugerencia que pasa acá se puede aplicar.
+	for _, vc := range NormalizeVelocityConditions(s.VelocityConditions) {
+		if err := ValidateVelocityCondition(vc, schema); err != nil {
+			return fmt.Sprintf("la condición de velocidad no es válida: %v", err)
+		}
+	}
+
+	return ""
+}
+
+// filterFieldsReason valida los campos del filtro previo de un agregado: el
+// filtro reduce el universo antes de agrupar, y un campo inexistente lo
+// vacía entero en vez de acotarlo.
+func filterFieldsReason(filter []models.Condition, byName map[string]models.SchemaField, que string) string {
+	for _, cond := range filter {
+		if _, ok := byName[cond.Field]; !ok {
+			return fmt.Sprintf("%s usa el campo %q, que no está en el esquema", que, cond.Field)
+		}
+	}
+	return ""
 }
 
 func extractJSON(text string) string {

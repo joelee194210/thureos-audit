@@ -6,6 +6,7 @@ import type {
   RedFlag,
   ConditionGroup,
   AggregateCondition,
+  VelocityCondition,
   ActionType,
   Severity,
 } from "@/lib/types";
@@ -24,6 +25,7 @@ export const rulesApi = {
     description: string;
     conditionGroup: ConditionGroup;
     aggregateConditions?: AggregateCondition[];
+    velocityConditions?: VelocityCondition[];
     actions: ActionType[];
     severity: Severity;
     schedule?: RuleSchedule;
@@ -48,8 +50,8 @@ export const rulesApi = {
     monitorId: string;
     prompt: string;
     dataSample?: string;
-  }) =>
-    api.post<{ suggestions: AIRuleSuggestion[] }>("/rules/ai-generate", data),
+    fields?: string[];
+  }) => api.post<AIGenerationResult>("/rules/ai-generate", data),
 
   // Tipologías AML pre-armadas: catálogo + instanciación por monitor.
   listTemplates: () => api.get<RuleTemplate[]>("/rule-templates"),
@@ -92,6 +94,17 @@ export const rulesApi = {
 export interface BacktestResult {
   matchCount: number;
   sample: RedFlag[];
+}
+
+export interface DiscardedSuggestion {
+  name: string;
+  reason: string;
+}
+
+export interface AIGenerationResult {
+  suggestions: AIRuleSuggestion[];
+  generated: number;
+  discarded?: DiscardedSuggestion[];
 }
 
 export interface EffectivenessStats {

@@ -151,22 +151,30 @@ func (h *RuleHandler) Create(c *fiber.Ctx) error {
 
 	userID, _ := primitive.ObjectIDFromHex(c.Locals("userId").(string))
 
-	// Las condiciones de velocidad se validan contra el schema del monitor
-	// al guardar: una condición que apunta a un campo que no es date jamás
-	// dispararía, y aceptarla en silencio repite el modo de falla que dejó
-	// la ventana temporal rota en producción.
-	if len(req.VelocityConditions) > 0 {
+	// Las condiciones de velocidad y agregadas se validan contra el schema del
+	// monitor al guardar: una condición que apunta a un campo que no es date,
+	// o una función que buildAggExpr no reconoce, jamás dispararía, y
+	// aceptarla en silencio repite el modo de falla que dejó la ventana
+	// temporal rota en producción.
+	if len(req.VelocityConditions) > 0 || len(req.AggregateConditions) > 0 {
 		monitor, err := h.monitorRepo.FindByID(c.Context(), monitorID)
 		if err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 		}
-		req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
-		for _, vc := range req.VelocityConditions {
-			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+		for _, ac := range req.AggregateConditions {
+			if err := services.ValidateAggregateCondition(ac, monitor.Schema); err != nil {
 				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 			}
 		}
-		h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+		if len(req.VelocityConditions) > 0 {
+			req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
+			for _, vc := range req.VelocityConditions {
+				if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+				}
+			}
+			h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+		}
 	}
 
 	rule := &models.Rule{
@@ -286,10 +294,7 @@ func (h *RuleHandler) Update(c *fiber.Ctx) error {
 	if req.ConditionGroup != nil {
 		update["condition_group"] = req.ConditionGroup
 	}
-	if req.AggregateConditions != nil {
-		update["aggregate_conditions"] = req.AggregateConditions
-	}
-	if req.VelocityConditions != nil {
+	if req.AggregateConditions != nil || req.VelocityConditions != nil {
 		// Misma validación que al crear: sin esto, editar sería una puerta
 		// trasera para guardar una condición que jamás dispararía — el modo
 		// de falla silenciosa que toda esta funcionalidad evita.
@@ -301,14 +306,24 @@ func (h *RuleHandler) Update(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 		}
-		req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
-		for _, vc := range req.VelocityConditions {
-			if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
-				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		if req.AggregateConditions != nil {
+			for _, ac := range req.AggregateConditions {
+				if err := services.ValidateAggregateCondition(ac, monitor.Schema); err != nil {
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+				}
 			}
+			update["aggregate_conditions"] = req.AggregateConditions
 		}
-		h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
-		update["velocity_conditions"] = req.VelocityConditions
+		if req.VelocityConditions != nil {
+			req.VelocityConditions = services.NormalizeVelocityConditions(req.VelocityConditions)
+			for _, vc := range req.VelocityConditions {
+				if err := services.ValidateVelocityCondition(vc, monitor.Schema); err != nil {
+					return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+				}
+			}
+			h.ensureVelocityIndexes(c.Context(), monitor, req.VelocityConditions)
+			update["velocity_conditions"] = req.VelocityConditions
+		}
 	}
 	if req.Schedule != nil {
 		sched := *req.Schedule
@@ -393,10 +408,27 @@ func (h *RuleHandler) GenerateAIRules(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "monitor not found"})
 	}
 
-	suggestions, err := h.aiRulesService.GenerateRules(c.Context(), monitor.Schema, req.DataSample, req.Prompt)
+	// req.Fields llega de cualquier cliente autenticado, no solo de la UI: se
+	// filtra contra el esquema real del monitor antes de interpolarlo en el
+	// prompt. Un nombre inventado o desactualizado empuja al modelo hacia
+	// sugerencias que discardReason termina descartando — el modo guiado
+	// causando el mismo fallo silencioso que se armó para evitar — y de paso
+	// es higiene contra prompt injection.
+	schemaFields := make(map[string]bool, len(monitor.Schema))
+	for _, f := range monitor.Schema {
+		schemaFields[f.Name] = true
+	}
+	guidedFields := make([]string, 0, len(req.Fields))
+	for _, field := range req.Fields {
+		if schemaFields[field] {
+			guidedFields = append(guidedFields, field)
+		}
+	}
+
+	result, err := h.aiRulesService.GenerateRules(c.Context(), monitor.Schema, req.DataSample, req.Prompt, guidedFields)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	return c.JSON(fiber.Map{"suggestions": suggestions})
+	return c.JSON(result)
 }
