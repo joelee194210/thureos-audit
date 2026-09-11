@@ -16,6 +16,7 @@ import {
 } from "@/lib/api/chat";
 import { ArtifactCanvas } from "@/components/chat/artifact-canvas";
 import { MonitorMultiSelect } from "@/components/chat/monitor-multi-select";
+import { AddMonitorButton } from "@/components/chat/add-monitor-button";
 
 export default function ChatbotPage() {
   const { toastError } = useToast();
@@ -39,10 +40,25 @@ export default function ChatbotPage() {
   const [creating, setCreating] = useState(false);
   const [draftMonitorIds, setDraftMonitorIds] = useState<string[]>([]);
 
+  // Filtro del sidebar. Se aplica del lado del cliente sobre la lista
+  // completa en vez de pedirla filtrada al backend: listConversations()
+  // ya devuelve todas las del usuario sin paginación, así que no hay nada
+  // que ahorrar, y —más importante— activeConversation se deriva de
+  // `conversations`. Si el filtro achicara ese arreglo, la conversación
+  // abierta desaparecería de él y la cabecera se quedaría sin chips
+  // aunque el hilo siguiera abierto. El filtro del backend
+  // (listConversations(monitorId)) queda disponible para cuando haya
+  // paginación y el cliente deje de tenerlas todas.
+  const [filterMonitorId, setFilterMonitorId] = useState("");
+
   /** Espejo del backend: models.MaxMonitorsPerConversation. */
   const MAX_MONITORS = 6;
 
   const activeConversation = conversations.find((c) => c.id === conversationId);
+
+  const visibleConversations = filterMonitorId
+    ? conversations.filter((c) => c.monitorIds.includes(filterMonitorId))
+    : conversations;
 
   /**
    * Un id que no resuelve puede ser dos cosas distintas y no hay que
@@ -52,12 +68,17 @@ export default function ChatbotPage() {
    * (chat_service.go lo excluye y sigue respondiendo con el resto), así
    * que nunca va a resolver. Mostrar el ObjectID crudo es ilegible, y
    * decir "Monitor eliminado" antes de tener la lista sería mentira.
+   *
+   * Devuelve el id junto al nombre porque el nombre NO sirve como key de
+   * React: dos monitores pueden llamarse igual, y mientras cargan todos
+   * caen al mismo texto "Cargando…".
    */
-  function monitorNames(ids: string[]): string[] {
+  function monitorNames(ids: string[]): { id: string; name: string }[] {
     const desconocido = monitorsLoaded ? "Monitor eliminado" : "Cargando…";
-    return ids.map(
-      (id) => monitors.find((m) => m.id === id)?.name ?? desconocido,
-    );
+    return ids.map((id) => ({
+      id,
+      name: monitors.find((m) => m.id === id)?.name ?? desconocido,
+    }));
   }
 
   useEffect(() => {
@@ -120,6 +141,33 @@ export default function ChatbotPage() {
       setDraftMonitorIds([]);
     } catch {
       toastError("Error al crear la conversación");
+    }
+  }
+
+  /**
+   * Suma un monitor a la conversación abierta. El hilo no cambia: las
+   * respuestas anteriores se dieron sin este monitor y no se reescriben.
+   *
+   * El backend usa compare-and-set, así que puede responder que la
+   * conversación cambió mientras tanto — el caso real es tener dos
+   * pestañas abiertas. Ahí no se reintenta solo: el estado que el usuario
+   * vio ya no es el verdadero, así que se recarga la lista y se le dice.
+   */
+  async function addMonitor(monitorId: string) {
+    if (!conversationId) return;
+    try {
+      const updated = await chatApi.addMonitor(conversationId, monitorId);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c)),
+      );
+    } catch {
+      toastError(
+        "No se pudo agregar el monitor. La conversación pudo haber cambiado en otra pestaña; se recargó la lista.",
+      );
+      chatApi
+        .listConversations()
+        .then(setConversations)
+        .catch(() => toastError("Error al recargar las conversaciones"));
     }
   }
 
@@ -191,8 +239,29 @@ export default function ChatbotPage() {
               </div>
             )}
 
+            {conversations.length > 0 && (
+              <select
+                value={filterMonitorId}
+                onChange={(e) => setFilterMonitorId(e.target.value)}
+                aria-label="Filtrar conversaciones por monitor"
+                className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+              >
+                <option value="">Todos los monitores</option>
+                {monitors.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
             <div className="space-y-1">
-              {conversations.map((c) =>
+              {filterMonitorId && visibleConversations.length === 0 && (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Ninguna conversación incluye ese monitor.
+                </p>
+              )}
+              {visibleConversations.map((c) =>
                 deletingId === c.id ? (
                   <div
                     key={c.id}
@@ -230,7 +299,9 @@ export default function ChatbotPage() {
                     >
                       {c.title}
                       <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                        {monitorNames(c.monitorIds).join(" · ")}
+                        {monitorNames(c.monitorIds)
+                          .map((m) => m.name)
+                          .join(" · ")}
                       </span>
                     </button>
                     <button
@@ -251,15 +322,22 @@ export default function ChatbotPage() {
 
           <Card className="flex flex-col h-[70vh]">
             {activeConversation && (
-              <div className="flex flex-wrap gap-1.5 border-b px-4 py-2">
-                {monitorNames(activeConversation.monitorIds).map((name) => (
+              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2">
+                {monitorNames(activeConversation.monitorIds).map((m) => (
                   <span
-                    key={name}
+                    key={m.id}
                     className="rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground"
                   >
-                    {name}
+                    {m.name}
                   </span>
                 ))}
+                <AddMonitorButton
+                  monitors={monitors}
+                  selected={activeConversation.monitorIds}
+                  onAdd={addMonitor}
+                  max={MAX_MONITORS}
+                  disabled={sending}
+                />
               </div>
             )}
             <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
