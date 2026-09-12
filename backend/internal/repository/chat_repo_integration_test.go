@@ -62,7 +62,7 @@ func TestIntegracionAddMonitor_ConversacionLegacyConservaSuMonitorOriginal(t *te
 	db, cerrar := conectarParaTest(t)
 	defer cerrar()
 	ctx := context.Background()
-	repo := NewChatRepository(db)
+	repo := NewChatRepository(db, NewChatArtifactRepository(db))
 
 	convID := primitive.NewObjectID()
 	original := primitive.NewObjectID()

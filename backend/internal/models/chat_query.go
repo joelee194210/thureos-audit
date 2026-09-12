@@ -20,7 +20,8 @@ type ChatAggregateSpec struct {
 // llamar a la herramienta query_monitor_data, y también lo que un
 // ArtifactSource persiste.
 type ChatQueryInput struct {
-	// Monitor es el ALIAS del monitor a consultar, no su ObjectID.
+	// Monitor es el ALIAS del monitor a consultar, no su ObjectID. Lo
+	// resuelve executeQuery contra la allowlist de la conversación.
 	Monitor        string             `bson:"monitor" json:"monitor"`
 	ConditionGroup *ConditionGroup    `bson:"condition_group,omitempty" json:"conditionGroup,omitempty"`
 	Aggregate      *ChatAggregateSpec `bson:"aggregate,omitempty" json:"aggregate,omitempty"`

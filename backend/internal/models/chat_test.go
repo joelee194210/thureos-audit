@@ -123,3 +123,58 @@ func TestAppendMonitorID_ConjuntoVacioQuedaConUnSoloMonitor(t *testing.T) {
 		t.Fatalf("quiero [%s] con changed=true; tengo %v (changed=%v)", id.Hex(), next, changed)
 	}
 }
+
+func TestIsRerunnable_ConSourcesSi(t *testing.T) {
+	art := ChatArtifact{
+		Type:    ChatArtifactTable,
+		Sources: []ArtifactSource{{Monitor: "transacciones"}},
+	}
+	if !art.IsRerunnable() {
+		t.Error("un artefacto con sources debe ser re-ejecutable")
+	}
+}
+
+// La regla del spec es una sola: sources vacío ⇒ instantánea. Cubre por
+// igual a los artefactos legacy y a los custom.
+func TestIsRerunnable_SinSourcesNo(t *testing.T) {
+	legacy := ChatArtifact{
+		Type:      ChatArtifactTable,
+		ChartSpec: &ChartSpec{Data: []map[string]interface{}{{"a": 1}}},
+	}
+	if legacy.IsRerunnable() {
+		t.Error("un artefacto sin sources es instantánea, no re-ejecutable")
+	}
+
+	custom := ChatArtifact{Type: ChatArtifactCustom, Code: "<p>hola</p>"}
+	if custom.IsRerunnable() {
+		t.Error("un artefacto custom nunca es re-ejecutable")
+	}
+}
+
+func TestFromLegacyArtifact_ConservaLosDatosComoInstantanea(t *testing.T) {
+	legacy := &LegacyChatArtifact{
+		Type:      ChatArtifactTable,
+		Title:     "Ventas",
+		ChartSpec: &ChartSpec{Data: []map[string]interface{}{{"region": "Caribe"}}},
+	}
+	art := FromLegacyArtifact(legacy)
+
+	if art.Title != "Ventas" || art.Type != ChatArtifactTable {
+		t.Errorf("no conservó tipo/título: %+v", art)
+	}
+	if len(art.ChartSpec.Data) != 1 {
+		t.Error("debe conservar los datos guardados")
+	}
+	if art.IsRerunnable() {
+		t.Error("un artefacto legacy nunca es re-ejecutable")
+	}
+	if !art.ID.IsZero() {
+		t.Error("un artefacto legacy no tiene id propio")
+	}
+}
+
+func TestFromLegacyArtifact_NilDevuelveNil(t *testing.T) {
+	if FromLegacyArtifact(nil) != nil {
+		t.Error("nil debe devolver nil")
+	}
+}
