@@ -12,18 +12,6 @@ import (
 // (no agregada) del chatbot — nunca se le permite pedir todo el dataset.
 const chatQueryMaxLimit = 1000
 
-// ChatQueryInput es la forma exacta del "input" que el LLM manda al llamar
-// a la herramienta query_monitor_data (ver el contrato en chat_service.go).
-type ChatQueryInput struct {
-	// Monitor es el ALIAS del monitor a consultar, no su ObjectID. Lo
-	// resuelve executeQuery contra la allowlist de la conversación — ver
-	// Global Constraints (autorización).
-	Monitor        string                 `json:"monitor"`
-	ConditionGroup *models.ConditionGroup `json:"conditionGroup,omitempty"`
-	Aggregate      *ChatAggregateSpec     `json:"aggregate,omitempty"`
-	Limit          int                    `json:"limit,omitempty"`
-}
-
 // ParseQueryToolInput valida y normaliza el input crudo del tool call.
 // Nunca deja pasar un Limit fuera de rango ni un input sin conditionGroup
 // ni aggregate.

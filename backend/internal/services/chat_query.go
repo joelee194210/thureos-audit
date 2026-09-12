@@ -8,18 +8,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-// ChatAggregateSpec agrupa y agrega sin umbral — a diferencia de
-// models.AggregateCondition (pensada para el motor de reglas, que corta
-// por threshold), esta trae TODOS los grupos: el chatbot quiere el dato,
-// no una decisión de match/no-match.
-type ChatAggregateSpec struct {
-	Field      string             `json:"field"`
-	Function   models.AggFunction `json:"function"`
-	GroupBy    string             `json:"groupBy,omitempty"`
-	TimeField  string             `json:"timeField,omitempty"`
-	TimeWindow string             `json:"timeWindow,omitempty"`
-	Filter     []models.Condition `json:"filter,omitempty"`
-}
+// Alias hacia models: los tipos se mudaron allá porque ArtifactSource los
+// persiste (models no puede importar services sin crear un ciclo).
+type (
+	ChatQueryInput    = models.ChatQueryInput
+	ChatAggregateSpec = models.ChatAggregateSpec
+)
 
 // chatAggregateResultLimit topea cuántos grupos puede devolver una
 // agregación del chatbot — evita que una pregunta sobre un campo de alta
