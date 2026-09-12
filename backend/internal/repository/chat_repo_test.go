@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"testing"
 
+	"github.com/thureos/compliance/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -63,5 +65,23 @@ func TestMonitorSetFilter_DocumentoNuevoComparaElArrayCompleto(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != observed[0] || got[1] != observed[1] {
 		t.Errorf("el array comparado debe ser el observado, en orden; tengo %v", got)
+	}
+}
+
+// El tripwire que atajó la asimetría de escritura: Artifact es un campo de
+// salida (bson:"-"). Antes de este guard, CreateMessage lo aceptaba sin
+// avisar y el artefacto se perdía en silencio al releer el hilo — se veía
+// una vez en la respuesta del POST y desaparecía al recargar. El guard es
+// verificación pura, se dispara antes de tocar ninguna colección, así que
+// un ChatRepository{} de valor cero (sin Mongo real) alcanza para probarlo.
+func TestCreateMessage_ArtifactSinArtifactIDFalla(t *testing.T) {
+	var r ChatRepository
+	msg := &models.ChatMessage{
+		Artifact: &models.ChatArtifact{Type: models.ChatArtifactTable, Title: "Ventas"},
+	}
+
+	err := r.CreateMessage(context.Background(), msg)
+	if err == nil {
+		t.Fatal("Artifact sin ArtifactID debe fallar, no persistir en silencio")
 	}
 }

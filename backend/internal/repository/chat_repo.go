@@ -202,6 +202,13 @@ func (r *ChatRepository) SetTitle(ctx context.Context, id primitive.ObjectID, ti
 }
 
 func (r *ChatRepository) CreateMessage(ctx context.Context, msg *models.ChatMessage) error {
+	// Artifact es un campo de salida (bson:"-"): nunca se persiste. Un
+	// llamador que lo llene sin pasar por ArtifactID guardaría el mensaje
+	// creyendo que el artefacto quedó, y lo perdería en silencio al
+	// releer el hilo — justo el defecto que este guard existe para atajar.
+	if msg.Artifact != nil && msg.ArtifactID == nil {
+		return fmt.Errorf("creando mensaje: Artifact es un campo de salida; persistí el artefacto y usá ArtifactID")
+	}
 	msg.CreatedAt = time.Now()
 	res, err := r.messages.InsertOne(ctx, msg)
 	if err != nil {
