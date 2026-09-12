@@ -22,6 +22,14 @@ var ErrArtifactNotFound = errors.New("artefacto no encontrado")
 // custom) y no tiene consulta que volver a correr.
 var ErrArtifactNotRerunnable = errors.New("este artefacto no se puede actualizar")
 
+// ErrArtifactSourceUnavailable: alguna fuente ya no se puede resolver a un
+// monitor (renombrado sin respaldo posible, o borrado). Existe para que el
+// handler pueda activar el modo degradado que pide el spec —mostrar la
+// caché con un aviso de que la fuente ya no está disponible— sin comparar
+// cadenas de error: un fallo de Mongo NO debe mostrar datos viejos como si
+// siguieran vigentes, y sin este centinela las dos cosas son la misma.
+var ErrArtifactSourceUnavailable = errors.New("la fuente del artefacto ya no está disponible")
+
 // ArtifactRun es el resultado de ejecutar un artefacto: los datos ya
 // proyectados y (para un chart multi-fuente) pivoteados, más el momento
 // de la corrida.
@@ -60,29 +68,30 @@ func NewArtifactService(artifactRepo *repository.ChatArtifactRepository, monitor
 // RESPALDO POSICIONAL: el alias se deriva del NOMBRE del monitor —por eso
 // se recalcula en cada request y nunca se persiste—, así que renombrar un
 // monitor rompería todos los artefactos guardados que lo referencian. Pero
-// art.MonitorIDs guarda ObjectIDs ESTABLES, y un artefacto nace con
-// MonitorIDs igual a los monitores a los que resolvieron sus propias
-// sources. Por eso, con exactamente un monitor y una fuente, resolver por
-// posición devuelve EL MISMO monitor contra el que se construyó el
-// artefacto: no amplía el acceso —sigue siendo un monitor de la
-// allowlist—, solo recupera el artefacto.
+// art.MonitorIDs guarda ObjectIDs ESTABLES, así que con una allowlist de
+// un solo monitor y una sola fuente, resolver por posición devuelve EL
+// MISMO monitor contra el que se construyó el artefacto: no amplía el
+// acceso —sigue siendo el único monitor de la allowlist—, solo recupera el
+// artefacto.
 //
-// Con más de un monitor o más de una fuente NO se adivina: ahí sí elegir
-// por posición podría consultar el monitor equivocado, y mostrar datos de
-// otro monitor como si fueran los pedidos es peor que no mostrar nada.
+// Con más de una fuente NO se adivina, y tampoco si la allowlist tiene más
+// de un monitor: ahí elegir por posición podría consultar el monitor
+// equivocado, y mostrar datos de otro monitor como si fueran los pedidos es
+// peor que no mostrar nada.
 //
-// Precondición del respaldo: len(aliases) == 1 vale como "un solo
-// monitor" porque buildMonitorAliases inserta exactamente una clave por
-// monitor. `aliases` ya viene sin los monitores borrados, así que si un
-// artefacto tuviera dos MonitorIDs y uno estuviera borrado, una fuente
-// suelta caería en el respaldo y consultaría al sobreviviente; hoy no
-// pasa, porque un artefacto de una sola fuente tiene un solo MonitorID.
-func resolveArtifactMonitors(aliases map[string]*models.Monitor, sources []models.ArtifactSource) ([]*models.Monitor, error) {
+// allowlistSize es len(art.MonitorIDs), y se exige APARTE de len(aliases)
+// justamente porque no son lo mismo: `aliases` ya viene sin los monitores
+// borrados. Si la allowlist fuera [A, B] con A borrado, `aliases` quedaría
+// en 1 y una fuente que nombra a A se ejecutaría contra B en silencio —
+// exactamente el "nunca se ejecuta contra un monitor distinto del que se
+// resolvió" que el spec prohíbe. Con las dos condiciones, la precondición
+// se autoexige y no depende de cómo otra tarea decida poblar MonitorIDs.
+func resolveArtifactMonitors(aliases map[string]*models.Monitor, sources []models.ArtifactSource, allowlistSize int) ([]*models.Monitor, error) {
 	out := make([]*models.Monitor, 0, len(sources))
 	for i, src := range sources {
 		monitor, err := resolveQueryMonitor(aliases, src.Monitor)
 		if err != nil {
-			if len(aliases) == 1 && len(sources) == 1 {
+			if allowlistSize == 1 && len(aliases) == 1 && len(sources) == 1 {
 				// El `continue` es correcto SOLO por el len(sources) == 1:
 				// si esa guarda se relajara, cada fuente irresoluble
 				// apilaría el mismo monitor y el chequeo de longitud de
@@ -92,7 +101,7 @@ func resolveArtifactMonitors(aliases map[string]*models.Monitor, sources []model
 				}
 				continue
 			}
-			return nil, fmt.Errorf("fuente %d: %w", i, err)
+			return nil, fmt.Errorf("fuente %d: %w: %w", i, err, ErrArtifactSourceUnavailable)
 		}
 		out = append(out, monitor)
 	}
@@ -135,7 +144,7 @@ func (s *ArtifactService) RunArtifact(ctx context.Context, art *models.ChatArtif
 	}
 	aliases := buildMonitorAliases(monitors)
 
-	resolved, err := resolveArtifactMonitors(aliases, art.Sources)
+	resolved, err := resolveArtifactMonitors(aliases, art.Sources, len(art.MonitorIDs))
 	if err != nil {
 		return ArtifactRun{}, err
 	}

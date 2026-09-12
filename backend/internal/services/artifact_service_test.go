@@ -1,6 +1,9 @@
 package services
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/thureos/compliance/internal/models"
@@ -18,7 +21,7 @@ func TestResolveArtifactMonitors_AliasValidos(t *testing.T) {
 		{Monitor: "alertas_swift"},
 	}
 
-	got, err := resolveArtifactMonitors(aliases, sources)
+	got, err := resolveArtifactMonitors(aliases, sources, 2)
 	if err != nil {
 		t.Fatalf("no esperaba error: %v", err)
 	}
@@ -43,7 +46,7 @@ func TestResolveArtifactMonitors_AliasFueraDeLaAllowlist(t *testing.T) {
 	})
 	sources := []models.ArtifactSource{{Monitor: "clientes_secretos"}}
 
-	if _, err := resolveArtifactMonitors(aliases, sources); err == nil {
+	if _, err := resolveArtifactMonitors(aliases, sources, 2); err == nil {
 		t.Fatal("un alias fuera de la allowlist debe fallar")
 	}
 }
@@ -61,7 +64,7 @@ func TestResolveArtifactMonitors_ObjectIDCrudoNoResuelve(t *testing.T) {
 	})
 	sources := []models.ArtifactSource{{Monitor: id.Hex()}}
 
-	if _, err := resolveArtifactMonitors(aliases, sources); err == nil {
+	if _, err := resolveArtifactMonitors(aliases, sources, 2); err == nil {
 		t.Fatal("un ObjectID crudo no debe resolver")
 	}
 }
@@ -82,12 +85,113 @@ func TestResolveArtifactMonitors_RespaldoPosicionalTrasRenombrar(t *testing.T) {
 	aliases := buildMonitorAliases([]models.Monitor{{ID: id, Name: "Movimientos 2026"}})
 	sources := []models.ArtifactSource{{Monitor: "transacciones"}}
 
-	got, err := resolveArtifactMonitors(aliases, sources)
+	got, err := resolveArtifactMonitors(aliases, sources, 1)
 	if err != nil {
 		t.Fatalf("con una sola fuente y un solo monitor debería resolver por posición: %v", err)
 	}
 	if got[0].ID != id {
 		t.Error("resolvió al monitor equivocado")
+	}
+}
+
+// ARREGLO 2: la precondición del respaldo es len(art.MonitorIDs) == 1, no
+// len(aliases) == 1. `aliases` excluye los monitores BORRADOS, así que una
+// allowlist de dos monitores con uno borrado deja un solo alias — y sin
+// este chequeo una fuente que nombraba al borrado se ejecutaría contra el
+// sobreviviente en silencio, que es justo el "nunca se ejecuta contra un
+// monitor distinto del que se resolvió" que el spec prohíbe.
+func TestResolveArtifactMonitors_SinRespaldoSiLaAllowlistTeniaOtroMonitor(t *testing.T) {
+	// art.MonitorIDs = [A, B]; A fue borrado, así que solo B llega acá.
+	b := primitive.NewObjectID()
+	aliases := buildMonitorAliases([]models.Monitor{{ID: b, Name: "Alertas SWIFT"}})
+	sources := []models.ArtifactSource{{Monitor: "transacciones"}} // nombraba a A
+
+	if _, err := resolveArtifactMonitors(aliases, sources, 2); err == nil {
+		t.Fatal("no se debe caer al sobreviviente cuando la allowlist tenía otro monitor")
+	}
+}
+
+// ARREGLO 3: el handler tiene que poder distinguir "la fuente ya no está"
+// de "Mongo falló un segundo" sin comparar cadenas. La primera habilita el
+// modo degradado del spec (caché + aviso); la segunda NO puede mostrar
+// datos viejos como si estuvieran vigentes.
+func TestResolveArtifactMonitors_ErrorEsSourceUnavailable(t *testing.T) {
+	aliases := buildMonitorAliases([]models.Monitor{
+		{ID: primitive.NewObjectID(), Name: "Transacciones"},
+		{ID: primitive.NewObjectID(), Name: "Alertas SWIFT"},
+	})
+	sources := []models.ArtifactSource{{Monitor: "clientes_secretos"}}
+
+	_, err := resolveArtifactMonitors(aliases, sources, 2)
+	if !errors.Is(err, ErrArtifactSourceUnavailable) {
+		t.Fatalf("err = %v, quiero que envuelva ErrArtifactSourceUnavailable", err)
+	}
+	// El texto original de resolveQueryMonitor no se pierde: sigue siendo
+	// lo que se diagnostica en los logs.
+	if !strings.Contains(err.Error(), "clientes_secretos") {
+		t.Errorf("el error perdió el alias que falló: %v", err)
+	}
+}
+
+// ARREGLO 4: con UN solo monitor en la allowlist, el chequeo de alias es un
+// NO-OP — cualquier alias resuelve, incluso el Hex() de otro monitor. Es
+// una DECISIÓN, no un descuido, y por eso está fijada acá: el respaldo
+// posicional no puede distinguir un nombre viejo de uno inventado, y no
+// necesita hacerlo, porque el resultado está acotado al único monitor que
+// el artefacto ya tenía autorizado. La frontera no la sostiene el alias:
+// la sostiene que `aliases` se construya solo con art.MonitorIDs.
+//
+// Los tests de allowlist de arriba usan DOS monitores justamente porque
+// con uno no habría nada que probar.
+func TestResolveArtifactMonitors_ConUnSoloMonitorElAliasEsIrrelevante(t *testing.T) {
+	unico := primitive.NewObjectID()
+	otro := primitive.NewObjectID() // no está en la allowlist del artefacto
+	aliases := buildMonitorAliases([]models.Monitor{{ID: unico, Name: "Transacciones"}})
+	sources := []models.ArtifactSource{{Monitor: otro.Hex()}}
+
+	got, err := resolveArtifactMonitors(aliases, sources, 1)
+	if err != nil {
+		t.Fatalf("con un solo monitor el respaldo resuelve igual: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != unico {
+		t.Fatalf("el resultado debe estar acotado al monitor del artefacto, got = %v", got)
+	}
+}
+
+// ARREGLO 1: art.UserID != userID ⇒ ErrArtifactNotFound, indistinguible de
+// "no existe". Sin este test, borrar el chequeo no rompe nada.
+//
+// Sources NO vacío a propósito: si estuviera vacío el test pasaría por la
+// razón equivocada (ErrArtifactNotRerunnable), sin llegar a probar la
+// propiedad. Los repos van en nil porque ambos guardas retornan ANTES de
+// tocar el repositorio — que no haya panic es parte de lo que se afirma.
+func TestRunArtifact_DeOtroUsuarioEsNotFound(t *testing.T) {
+	art := &models.ChatArtifact{
+		UserID:  primitive.NewObjectID(),
+		Type:    models.ChatArtifactTable,
+		Sources: []models.ArtifactSource{{Monitor: "transacciones"}},
+	}
+	svc := &ArtifactService{}
+
+	_, err := svc.RunArtifact(context.Background(), art, primitive.NewObjectID())
+	if !errors.Is(err, ErrArtifactNotFound) {
+		t.Fatalf("err = %v, quiero ErrArtifactNotFound", err)
+	}
+}
+
+// ARREGLO 1: sources vacío ⇒ instantánea, NUNCA una ejecución.
+func TestRunArtifact_SinSourcesNoEjecuta(t *testing.T) {
+	userID := primitive.NewObjectID()
+	art := &models.ChatArtifact{
+		UserID:    userID,
+		Type:      models.ChatArtifactChart,
+		ChartSpec: &models.ChartSpec{ChartType: models.ChatChartBar, Data: []map[string]interface{}{{"x": 1}}},
+	}
+	svc := &ArtifactService{}
+
+	_, err := svc.RunArtifact(context.Background(), art, userID)
+	if !errors.Is(err, ErrArtifactNotRerunnable) {
+		t.Fatalf("err = %v, quiero ErrArtifactNotRerunnable", err)
 	}
 }
 
@@ -150,7 +254,7 @@ func TestResolveArtifactMonitors_SinRespaldoPosicionalSiHayAmbiguedad(t *testing
 	})
 	sources := []models.ArtifactSource{{Monitor: "transacciones"}}
 
-	if _, err := resolveArtifactMonitors(aliases, sources); err == nil {
+	if _, err := resolveArtifactMonitors(aliases, sources, 2); err == nil {
 		t.Fatal("con varios monitores no se debe adivinar cuál era")
 	}
 }
@@ -171,7 +275,7 @@ func TestResolveArtifactMonitors_SinRespaldoPosicionalConVariasFuentes(t *testin
 		{Monitor: "transacciones", Label: "2026"}, // alias viejo, ya no resuelve
 	}
 
-	if _, err := resolveArtifactMonitors(aliases, sources); err == nil {
+	if _, err := resolveArtifactMonitors(aliases, sources, 1); err == nil {
 		t.Fatal("con varias fuentes no hay respaldo posicional")
 	}
 }

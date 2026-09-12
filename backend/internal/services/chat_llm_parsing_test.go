@@ -218,6 +218,33 @@ func TestParseArtifact_ChartMultiFuenteSinXKeyEsInvalido(t *testing.T) {
 	}
 }
 
+// ...y tampoco sin yKeys: el pivote lee YKeys[0] como clave de valor, así
+// que con yKeys vacío escribiría row[""] y las Series nombrarían columnas
+// que nunca se crearon. El gráfico saldría VACÍO en silencio; se rechaza
+// al parsear, que es donde todavía se puede avisar.
+func TestParseArtifact_ChartMultiFuenteSinYKeysEsInvalido(t *testing.T) {
+	raw := []byte(`{"type":"chart","title":"T",
+	  "sources":[
+	    {"monitor":"a","query":{"monitor":"a","aggregate":{"field":"m","function":"sum"}}},
+	    {"monitor":"b","query":{"monitor":"b","aggregate":{"field":"m","function":"sum"}}}],
+	  "chartSpec":{"chartType":"bar","xKey":"_id"}}`)
+	if _, err := ParseArtifact(raw); err == nil {
+		t.Fatal("un chart multi-fuente sin yKeys debe ser rechazado")
+	}
+}
+
+// Un chart de UNA sola fuente no pivotea, así que no necesita ni xKey ni
+// yKeys para no salir vacío: los datos van tal cual. La validación nueva
+// no debe rechazarlo.
+func TestParseArtifact_ChartDeUnaFuenteSinYKeysEsValido(t *testing.T) {
+	raw := []byte(`{"type":"chart","title":"T",
+	  "sources":[{"monitor":"a","query":{"monitor":"a","aggregate":{"field":"m","function":"sum"}}}],
+	  "chartSpec":{"chartType":"bar","xKey":"_id"}}`)
+	if _, err := ParseArtifact(raw); err != nil {
+		t.Fatalf("un chart de una sola fuente sin yKeys es válido: %v", err)
+	}
+}
+
 // RunArtifact (Task 6) reconstruye el pipeline directo desde src.Query,
 // sin volver a llamar a ParseQueryToolInput. Si acá se guardara la query
 // cruda del LLM en vez de la normalizada, un alias con espacios no

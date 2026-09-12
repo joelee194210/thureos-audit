@@ -132,6 +132,14 @@ func ParseArtifact(raw json.RawMessage) (*models.ChatArtifact, error) {
 			if len(artifact.Sources) > 1 && artifact.ChartSpec.XKey == "" {
 				return nil, fmt.Errorf("un chart con varias fuentes requiere chartSpec.xKey")
 			}
+			// ...y sin YKeys no hay sobre qué pivotear tampoco: el valor
+			// que el pivote lee de cada fuente es YKeys[0], así que con
+			// YKeys vacío la clave de valor queda en "" y el gráfico sale
+			// VACÍO sin que nadie se entere. Un fallo ruidoso acá es mejor
+			// que un artefacto que se guarda y nunca dibuja nada.
+			if len(artifact.Sources) > 1 && len(artifact.ChartSpec.YKeys) == 0 {
+				return nil, fmt.Errorf("un chart con varias fuentes requiere chartSpec.yKeys")
+			}
 		}
 	case models.ChatArtifactCustom:
 		if artifact.Code == "" {
