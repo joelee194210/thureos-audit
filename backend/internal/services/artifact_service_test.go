@@ -133,6 +133,24 @@ func TestResolveArtifactMonitors_ErrorEsSourceUnavailable(t *testing.T) {
 	}
 }
 
+// El monitor único del artefacto fue borrado: allowlistSize == 1 pero
+// aliases queda VACÍO (buildMonitorAliases excluye a los borrados). El
+// respaldo posicional exige aliases == 1 además de allowlistSize == 1 —
+// sin ese conjuntivo, el `for range aliases` no itera, el respaldo agrega
+// cero monitores y devuelve nil sin error, y RunArtifact reporta un error
+// llano (por el chequeo de longitud) sin envolver
+// ErrArtifactSourceUnavailable: el handler ya no puede activar el modo
+// degradado (caché + aviso) y el punto ciego queda reabierto en silencio.
+func TestResolveArtifactMonitors_SoloMonitorBorradoEsSourceUnavailable(t *testing.T) {
+	aliases := map[string]*models.Monitor{} // el único monitor del artefacto ya no existe
+	sources := []models.ArtifactSource{{Monitor: "transacciones"}}
+
+	_, err := resolveArtifactMonitors(aliases, sources, 1)
+	if !errors.Is(err, ErrArtifactSourceUnavailable) {
+		t.Fatalf("err = %v, quiero que envuelva ErrArtifactSourceUnavailable", err)
+	}
+}
+
 // ARREGLO 4: con UN solo monitor en la allowlist, el chequeo de alias es un
 // NO-OP — cualquier alias resuelve, incluso el Hex() de otro monitor. Es
 // una DECISIÓN, no un descuido, y por eso está fijada acá: el respaldo
