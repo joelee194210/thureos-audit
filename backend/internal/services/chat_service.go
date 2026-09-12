@@ -118,15 +118,47 @@ rankings, distribuciones), agregá al FINAL de tu respuesta un bloque
 delimitado exactamente así, con un JSON válido dentro:
 
 <artifact>
-{"type": "chart", "title": "...", "chartSpec": {"chartType": "bar", "data": [{"x": "...", "y": 1}], "xKey": "x", "yKeys": ["y"]}}
+{"type": "chart", "title": "Monto por región",
+ "sources": [{"monitor": "transacciones", "label": "Bancolombia",
+              "query": {"aggregate": {"field": "monto", "function": "sum", "groupBy": "region"}}}],
+ "chartSpec": {"chartType": "bar", "xKey": "_id", "yKeys": ["aggValue"],
+               "labels": {"_id": "Región", "aggValue": "Monto total"}}}
 </artifact>
 
-Para una tabla simple: "type": "table" con el mismo "chartSpec" (sin
-chartType). Si necesitás algo que un gráfico de barra/línea/torta no puede
-expresar, usá "type": "custom" con "code": HTML/JS autocontenido que
-renderice la visualización — ese código corre aislado en un iframe sin
-acceso a la sesión ni a la red, así que tiene que traer sus propios datos
-embebidos en el propio "code" (no puede hacer fetch a nada).
+IMPORTANTE sobre "sources": el artefacto declara las CONSULTAS que lo
+alimentan, no sus datos. Poné en "sources" las mismas consultas que
+acabás de ejecutar con la herramienta, para que el artefacto muestre lo
+que describiste. Así se puede volver a abrir más adelante con datos
+actualizados.
+
+Los nombres de columna que devuelve una agregación son SIEMPRE "_id" (el
+valor por el que se agrupó), "aggValue" (el resultado de la función) y
+"count". Usá esos nombres en "xKey" y "yKeys", y poné en "labels" el
+nombre legible de cada uno — sin "labels" los ejes salen rotulados "_id"
+y "aggValue".
+
+Para una tabla sobre filas crudas (conditionGroup), declará en
+"chartSpec.columns" qué columnas mostrar: sin eso se vuelca el documento
+entero, con campos internos incluidos.
+
+<artifact>
+{"type": "table", "title": "Operaciones sobre 50M",
+ "sources": [{"monitor": "transacciones",
+              "query": {"conditionGroup": {"logic": "AND", "conditions": [
+                  {"field": "monto", "operator": "gt", "value": 50000000}]}, "limit": 200}}],
+ "chartSpec": {"columns": ["fecha", "monto", "beneficiario"],
+               "labels": {"fecha": "Fecha", "monto": "Monto", "beneficiario": "Beneficiario"}}}
+</artifact>
+
+Si un gráfico compara VARIOS monitores, poné una source por monitor con
+su "label", y un "xKey" común: se dibuja una serie por monitor.
+
+Si necesitás algo que un gráfico de barra/línea/torta no puede expresar,
+usá "type": "custom" con "code": HTML/JS autocontenido que renderice la
+visualización — ese código corre aislado en un iframe sin acceso a la
+sesión ni a la red, así que tiene que traer sus propios datos embebidos
+en el propio "code" (no puede hacer fetch a nada). Un artefacto custom no
+se puede actualizar después, así que usalo solo cuando haga falta.
 
 Si no hace falta artefacto, no incluyas el bloque <artifact>. Respondé
 siempre en español.`
@@ -193,13 +225,19 @@ func extractArtifactAndText(raw string) (string, *models.ChatArtifact) {
 }
 
 type ChatService struct {
-	chatRepo    *repository.ChatRepository
-	monitorRepo *repository.MonitorRepository
-	configRepo  *repository.SystemConfigRepository
+	chatRepo     *repository.ChatRepository
+	monitorRepo  *repository.MonitorRepository
+	configRepo   *repository.SystemConfigRepository
+	artifactRepo *repository.ChatArtifactRepository
 }
 
-func NewChatService(chatRepo *repository.ChatRepository, monitorRepo *repository.MonitorRepository, configRepo *repository.SystemConfigRepository) *ChatService {
-	return &ChatService{chatRepo: chatRepo, monitorRepo: monitorRepo, configRepo: configRepo}
+func NewChatService(
+	chatRepo *repository.ChatRepository,
+	monitorRepo *repository.MonitorRepository,
+	configRepo *repository.SystemConfigRepository,
+	artifactRepo *repository.ChatArtifactRepository,
+) *ChatService {
+	return &ChatService{chatRepo: chatRepo, monitorRepo: monitorRepo, configRepo: configRepo, artifactRepo: artifactRepo}
 }
 
 // executeQuery ejecuta lo que el LLM pidió vía query_monitor_data contra
@@ -345,11 +383,46 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 		ConversationID: conversationID,
 		Role:           models.ChatRoleAssistant,
 		Content:        text,
-		Artifact:       artifact,
 	}
 	if err := s.chatRepo.CreateMessage(ctx, &assistantMsg); err != nil {
 		return models.ChatMessage{}, fmt.Errorf("guardando respuesta: %w", err)
 	}
+
+	// El artefacto se persiste como entidad propia y el mensaje lo
+	// referencia por id. MonitorIDs se fija acá a partir de las SOURCES
+	// del artefacto (no de todos los monitores de la conversación): es la
+	// allowlist con la que se va a re-ejecutar después, quizá fuera de
+	// todo hilo, y darle acceso a monitores que sus sources nunca usan
+	// solo ampliaría esa allowlist sin motivo.
+	if artifact != nil {
+		artifact.UserID = userID
+		artifact.ConversationID = conversationID
+		artifact.MessageID = assistantMsg.ID
+		artifact.MonitorIDs = artifactMonitorIDs(aliases, artifact.Sources)
+		// Saved se fija explícitamente en false: un artefacto nace
+		// efímero y solo entra a la biblioteca del usuario a través del
+		// endpoint de guardado. ParseArtifact ya no deja que el LLM
+		// proponga este campo, pero se fija igual acá — en el único lugar
+		// donde la entidad se crea — como defensa en profundidad.
+		artifact.Saved = false
+		if err := s.artifactRepo.Create(ctx, artifact); err != nil {
+			// Un artefacto que no se pudo guardar no debe hacer perder la
+			// respuesta de texto, que es lo que el usuario está esperando
+			// (ver Global Constraints).
+			artifact = nil
+		} else {
+			assistantMsg.ArtifactID = &artifact.ID
+			// Si esto falla, el artefacto quedó guardado pero el mensaje
+			// no lo referencia: al releer el hilo, ListMessagesByConversation
+			// no encuentra artifact_id y el artefacto desaparece del
+			// historial (aunque sigue existiendo en chat_artifacts). No es
+			// fatal para este turno —la respuesta ya se devuelve con el
+			// artefacto adjunto— pero es una pérdida silenciosa en la
+			// próxima carga.
+			_ = s.chatRepo.SetMessageArtifact(ctx, assistantMsg.ID, artifact.ID)
+		}
+	}
+	assistantMsg.Artifact = artifact
 	_ = s.chatRepo.TouchConversation(ctx, conversationID)
 	return assistantMsg, nil
 }

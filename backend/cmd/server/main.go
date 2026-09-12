@@ -93,7 +93,7 @@ func main() {
 	aiRulesService := services.NewAIRulesService(systemConfigRepo)
 	chatArtifactRepo := repository.NewChatArtifactRepository(mongo)
 	chatRepo := repository.NewChatRepository(mongo, chatArtifactRepo)
-	chatService := services.NewChatService(chatRepo, monitorRepo, systemConfigRepo)
+	chatService := services.NewChatService(chatRepo, monitorRepo, systemConfigRepo, chatArtifactRepo)
 	notificationService := services.NewNotificationService(nil, systemConfigRepo)
 	ruleEngine.SetNotifier(notificationService)
 	watchmanClient := services.NewWatchmanClient(systemConfigRepo)

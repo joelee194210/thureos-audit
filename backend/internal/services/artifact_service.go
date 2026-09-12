@@ -108,6 +108,26 @@ func resolveArtifactMonitors(aliases map[string]*models.Monitor, sources []model
 	return out, nil
 }
 
+// artifactMonitorIDs traduce los alias de las sources a los ObjectID de
+// los monitores, para fijar la allowlist del artefacto al crearlo.
+// Un alias que no resuelve se omite: no se puede fabricar acceso a un
+// monitor que la conversación no tenía.
+func artifactMonitorIDs(aliases map[string]*models.Monitor, sources []models.ArtifactSource) []primitive.ObjectID {
+	seen := map[primitive.ObjectID]bool{}
+	ids := []primitive.ObjectID{}
+	for _, src := range sources {
+		monitor, err := resolveQueryMonitor(aliases, src.Monitor)
+		if err != nil {
+			continue
+		}
+		if !seen[monitor.ID] {
+			seen[monitor.ID] = true
+			ids = append(ids, monitor.ID)
+		}
+	}
+	return ids
+}
+
 // RunArtifact ejecuta las sources del artefacto y devuelve la tabla
 // resultante. Es el ÚNICO camino por el que se obtienen datos de un
 // artefacto: lo usan el render, la invocación y las exportaciones.

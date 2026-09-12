@@ -218,6 +218,15 @@ func (r *ChatRepository) CreateMessage(ctx context.Context, msg *models.ChatMess
 	return nil
 }
 
+// SetMessageArtifact enlaza un mensaje ya persistido con su artefacto.
+func (r *ChatRepository) SetMessageArtifact(ctx context.Context, messageID, artifactID primitive.ObjectID) error {
+	_, err := r.messages.UpdateByID(ctx, messageID, bson.M{"$set": bson.M{"artifact_id": artifactID}})
+	if err != nil {
+		return fmt.Errorf("enlazando artefacto al mensaje %s: %w", messageID.Hex(), err)
+	}
+	return nil
+}
+
 func (r *ChatRepository) ListMessagesByConversation(ctx context.Context, conversationID primitive.ObjectID) ([]models.ChatMessage, error) {
 	cursor, err := r.messages.Find(ctx,
 		bson.M{"conversation_id": conversationID},
