@@ -68,25 +68,36 @@ func BuildArtifactXLSX(art *models.ChatArtifact, run ArtifactRun) ([]byte, error
 
 	// Fecha de corrida: el spec de exportación la exige en los tres
 	// formatos —sin ella, dos descargas del mismo artefacto no se pueden
-	// distinguir por vigencia, y en cumplimiento eso no es cosmético. Va
-	// después de los datos para no correr la cabecera de la tabla.
-	footerRow := len(run.Data) + 2
-	labelCell, _ := excelize.CoordinatesToCellName(1, footerRow)
-	valueCell, _ := excelize.CoordinatesToCellName(2, footerRow)
+	// distinguir por vigencia, y en cumplimiento eso no es cosmético.
+	//
+	// FIX ROUND 2: el primer intento la ponía en la columna B, inmediata
+	// a la última fila de datos. Con dos o más columnas, B es una columna
+	// de datos legítima — con una tabla ["monitor", "fecha_transaccion"]
+	// la fecha de corrida caía en la MISMA columna que las fechas reales,
+	// y un =MAX(B2:B1000) se la comía como si fuera un dato más. Eso es
+	// justo la ambigüedad que esta fila existe para eliminar. Ahora se
+	// resiste por los dos lados: una fila en blanco la separa de la
+	// última fila de datos (rompe la selección automática de Excel, que
+	// se detiene en la primera celda vacía), y la columna del valor está
+	// SIEMPRE más allá de la última columna de datos declarada — nunca
+	// comparte columna con datos, así que ningún rango ni referencia de
+	// columna completa (B2:B1000, o B:B) puede confundirla con un dato.
+	footerRow := len(run.Data) + 3 // +1 cabecera, +1 fila en blanco
+	labelColIdx := len(columns)    // 0-based: la primera columna libre tras los datos
+	valueColIdx := labelColIdx + 1
+	labelCell, _ := excelize.CoordinatesToCellName(labelColIdx+1, footerRow)
+	valueCell, _ := excelize.CoordinatesToCellName(valueColIdx+1, footerRow)
 	_ = f.SetCellValue(artifactSheetName, labelCell, "Fecha de corrida:")
 	_ = f.SetCellStyle(artifactSheetName, labelCell, labelCell, headerStyle)
 	_ = f.SetCellValue(artifactSheetName, valueCell, run.RanAt)
 	_ = f.SetCellStyle(artifactSheetName, valueCell, valueCell, dateStyle)
 
 	// Ancho de columna por contenido: se calcula al final, sobre la hoja
-	// ya completa, porque AutoFitColWidth lee lo que ya está escrito.
-	// El rango cubre como mínimo A:B para que la fila de "Fecha de
-	// corrida:" también entre.
-	lastIdx := len(columns) - 1
-	if lastIdx < 1 {
-		lastIdx = 1
-	}
-	widthRange := fmt.Sprintf("A:%s", colLetter(lastIdx))
+	// ya completa, porque AutoFitColWidth lee lo que ya está escrito. El
+	// rango tiene que llegar hasta valueColIdx —la columna del pie— para
+	// que también se ajuste, aunque quede más allá de las columnas de
+	// datos.
+	widthRange := fmt.Sprintf("A:%s", colLetter(valueColIdx))
 	if err := f.AutoFitColWidth(artifactSheetName, widthRange); err != nil {
 		return nil, fmt.Errorf("ajustando el ancho de columnas: %w", err)
 	}

@@ -121,7 +121,7 @@ func TestBuildArtifactXLSX_FechaDeMongoQuedaComoFecha(t *testing.T) {
 // esto, dos descargas del mismo artefacto no se pueden distinguir por
 // vigencia.
 func TestBuildArtifactXLSX_ImprimeFechaDeCorrida(t *testing.T) {
-	art, run := artifactWithRows() // 2 filas de datos
+	art, run := artifactWithRows() // 2 columnas (region, monto), 2 filas de datos
 	data, err := BuildArtifactXLSX(art, run)
 	if err != nil {
 		t.Fatalf("no esperaba error: %v", err)
@@ -129,27 +129,97 @@ func TestBuildArtifactXLSX_ImprimeFechaDeCorrida(t *testing.T) {
 	f, _ := excelize.OpenReader(bytes.NewReader(data))
 	sheet := f.GetSheetName(0)
 
-	// Fila 1 = cabecera, filas 2-3 = datos, fila 4 = la de la fecha de
-	// corrida: va después de los datos para no correr la cabecera de la
-	// tabla.
-	if got, _ := f.GetCellValue(sheet, "A4"); got != "Fecha de corrida:" {
-		t.Errorf("A4 = %q, quiero el rótulo de la fecha de corrida", got)
+	// Fila 1 = cabecera, filas 2-3 = datos, fila 4 = en blanco (separa el
+	// pie de los datos), fila 5 = la fecha de corrida. Columna: hay 2
+	// columnas de datos (A, B), así que el pie arranca en C — nunca
+	// comparte columna con datos (ver FIX ROUND 2 en artifact_xlsx.go).
+	if got, _ := f.GetCellValue(sheet, "C5"); got != "Fecha de corrida:" {
+		t.Errorf("C5 = %q, quiero el rótulo de la fecha de corrida", got)
 	}
-	got, err := f.GetCellValue(sheet, "B4")
+	got, err := f.GetCellValue(sheet, "D5")
 	if err != nil {
-		t.Fatalf("no pude leer B4: %v", err)
+		t.Fatalf("no pude leer D5: %v", err)
 	}
 	if want := "15/03/2026 10:00"; got != want {
-		t.Errorf("B4 = %q, quiero %q (RanAt formateada)", got, want)
+		t.Errorf("D5 = %q, quiero %q (RanAt formateada)", got, want)
 	}
 	// Tiene que ser una fecha real, no el texto armado a mano: así se
 	// puede seguir comparando/ordenando si alguien la copia a otra hoja.
-	cellType, err := f.GetCellType(sheet, "B4")
+	cellType, err := f.GetCellType(sheet, "D5")
 	if err != nil {
-		t.Fatalf("no pude leer el tipo de B4: %v", err)
+		t.Fatalf("no pude leer el tipo de D5: %v", err)
 	}
 	if cellType == excelize.CellTypeSharedString || cellType == excelize.CellTypeInlineString {
-		t.Errorf("B4 quedó como texto (%v); la fecha de corrida debe ser una fecha real", cellType)
+		t.Errorf("D5 quedó como texto (%v); la fecha de corrida debe ser una fecha real", cellType)
+	}
+}
+
+// FIX ROUND 2: sonda de colisión. El primer intento del arreglo 1 escribía
+// el valor de la fecha de corrida en la columna B, fija — y con una tabla
+// de dos o más columnas, B es una columna de datos legítima. Se prueba a
+// propósito con ["monitor", "fecha_transaccion"]: la segunda columna es de
+// FECHAS, mismo tipo que la fecha de corrida, así que si el pie cayera ahí
+// ningún =MAX/=SUM podría distinguir el dato real de la fecha de corrida.
+// Con una sola columna el bug no se manifiesta —por eso la tabla acá tiene
+// dos—: este test pasaría por la razón equivocada.
+func TestBuildArtifactXLSX_FechaDeCorridaNoColisionaConDatos(t *testing.T) {
+	art := &models.ChatArtifact{
+		Type:      models.ChatArtifactTable,
+		Title:     "T",
+		ChartSpec: &models.ChartSpec{Columns: []string{"monitor", "fecha_transaccion"}},
+	}
+	run := ArtifactRun{
+		RanAt: time.Date(2026, 3, 15, 10, 0, 0, 0, time.UTC),
+		Data: []map[string]interface{}{
+			{"monitor": "Transacciones", "fecha_transaccion": time.Date(2026, 1, 10, 8, 0, 0, 0, time.UTC)},
+		},
+	}
+	data, err := BuildArtifactXLSX(art, run)
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	f, _ := excelize.OpenReader(bytes.NewReader(data))
+	sheet := f.GetSheetName(0)
+
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		t.Fatalf("no pude leer las filas: %v", err)
+	}
+	labelRow, labelCol := -1, -1
+	for r, row := range rows {
+		for c, v := range row {
+			if v == "Fecha de corrida:" {
+				labelRow, labelCol = r, c // 0-based
+			}
+		}
+	}
+	if labelRow == -1 {
+		t.Fatal("no encontré el rótulo de la fecha de corrida")
+	}
+
+	// INVARIANTE 1: la columna del VALOR (justo después del rótulo) no
+	// puede ser una de las columnas de datos declaradas — si lo fuera,
+	// una fórmula sobre esa columna (=MAX(B2:B1000), o B:B entera) se
+	// tragaría la fecha de corrida como si fuera un dato de la tabla.
+	valueCol := labelCol + 1
+	numDataCols := len(art.ChartSpec.Columns)
+	if valueCol < numDataCols {
+		t.Errorf("la celda del valor cae en la columna %d, dentro de las %d columnas de datos (0-based)", valueCol, numDataCols)
+	}
+
+	// INVARIANTE 2: además, la fila del pie no está pegada a la última
+	// fila de datos — tiene que haber al menos una fila en blanco de por
+	// medio (0-based: fila 0 = cabecera, fila 1 = el único dato).
+	lastDataRow := len(run.Data)
+	if labelRow-lastDataRow < 2 {
+		t.Errorf("el pie está en la fila %d, pegado a los datos (última fila de datos: %d); falta una fila en blanco de separación", labelRow, lastDataRow)
+	}
+
+	// Y el valor sigue siendo una fecha real, no texto.
+	valueCell, _ := excelize.CoordinatesToCellName(valueCol+1, labelRow+1)
+	got, _ := f.GetCellValue(sheet, valueCell)
+	if want := "15/03/2026 10:00"; got != want {
+		t.Errorf("valor del pie = %q, quiero %q", got, want)
 	}
 }
 
