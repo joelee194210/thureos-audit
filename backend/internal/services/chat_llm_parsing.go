@@ -114,6 +114,8 @@ func ParseArtifact(raw json.RawMessage) (*models.ChatArtifact, error) {
 				return nil, fmt.Errorf("la fuente %d tiene una query inválida: %w", i, err)
 			}
 			src.Query = normalized
+			// Si src.Monitor y src.Query.Monitor difirieran, se prefiere
+			// el de la query: es el que de verdad se ejecuta.
 			src.Monitor = normalized.Monitor
 		}
 		if artifact.Type == models.ChatArtifactChart {
@@ -135,6 +137,15 @@ func ParseArtifact(raw json.RawMessage) (*models.ChatArtifact, error) {
 		if artifact.Code == "" {
 			return nil, fmt.Errorf("artefacto custom requiere code")
 		}
+		// Un custom trae su HTML/JS con los datos YA embebidos y nunca se
+		// re-ejecuta (ver models.ChatArtifact.IsRerunnable) — 'sources' no
+		// se valida en este caso (arriba, ese bloque es exclusivo de
+		// chart/table), así que una fuente con monitor vacío pasaría sin
+		// chequeo alguno. Se limpia en vez de rechazar el artefacto entero
+		// por un campo que no le correspondía: lo que importa es que no
+		// sobreviva para volver "re-ejecutable" (IsRerunnable == len(Sources) > 0)
+		// algo que el spec dice explícitamente que no lo es.
+		artifact.Sources = nil
 	default:
 		return nil, fmt.Errorf("tipo de artefacto inválido: %q", artifact.Type)
 	}

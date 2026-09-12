@@ -91,3 +91,67 @@ func TestPivotSources_ConservaElOrdenDeAparicion(t *testing.T) {
 		t.Errorf("el pivote debe conservar el orden en que llegaron las x (el pipeline ya ordenó): %v", got)
 	}
 }
+
+// FIX ROUND 1 / ARREGLO 2: como ParseArtifact reescribe src.Monitor con
+// el alias normalizado, dos fuentes sobre el MISMO monitor (comparar
+// 2024 contra 2025, por ejemplo) producen el mismo label salvo que el
+// LLM ponga Label explícito — nada lo exige. Antes del arreglo, la
+// segunda fuente pisaba en silencio la columna de la primera y el
+// gráfico perdía una serie entera.
+func TestPivotSources_LabelsDuplicadosNoSePisan(t *testing.T) {
+	results := [][]map[string]interface{}{
+		{{"_id": "Caribe", "aggValue": 100}},
+		{{"_id": "Caribe", "aggValue": 60}},
+	}
+	got := pivotSources(results, []string{"tx", "tx"}, "_id", "aggValue")
+
+	if len(got) != 1 {
+		t.Fatalf("quiero 1 fila (un solo valor de x), tengo %d: %v", len(got), got)
+	}
+	values := map[interface{}]bool{}
+	for k, v := range got[0] {
+		if k == "_id" {
+			continue
+		}
+		values[v] = true
+	}
+	if !values[100] {
+		t.Errorf("el valor de la primera fuente (100) no debe perderse: %v", got[0])
+	}
+	if !values[60] {
+		t.Errorf("el valor de la segunda fuente (60) no debe perderse: %v", got[0])
+	}
+}
+
+// FIX ROUND 1 / ARREGLO 3: un label igual a xKey pisaba pivoted[xKey],
+// borrando el valor de x de la fila.
+func TestPivotSources_LabelIgualAXKeyNoBorraLaX(t *testing.T) {
+	results := [][]map[string]interface{}{
+		{{"_id": "Caribe", "aggValue": 100}},
+	}
+	got := pivotSources(results, []string{"_id"}, "_id", "aggValue")
+	if got[0]["_id"] != "Caribe" {
+		t.Errorf("un label igual a xKey no debe borrar el valor de x: %v", got[0])
+	}
+}
+
+// FIX ROUND 1 / ARREGLO 4: xKey lo elige el LLM; si apunta a un campo con
+// un valor no comparable (un arreglo o un documento anidado de Mongo),
+// usarlo directo como llave de un map[interface{}] paniquea ("hash of
+// unhashable type"). Hoy eso solo lo atrapa el recover() del router, que
+// lo convierte en un 500.
+func TestPivotSources_XKeyNoHasheableNoPaniquea(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("pivotSources no debería paniquear con un xKey no hasheable: %v", r)
+		}
+	}()
+	results := [][]map[string]interface{}{
+		{{"_id": []interface{}{"a", "b"}, "aggValue": 10}},
+		{{"_id": []interface{}{"a", "b"}, "aggValue": 20}},
+	}
+	got := pivotSources(results, []string{"S1", "S2"}, "_id", "aggValue")
+	if len(got) != 1 {
+		t.Fatalf("las dos filas con el mismo valor de x (aunque no hasheable) deben agruparse en 1, tengo %d", len(got))
+	}
+}

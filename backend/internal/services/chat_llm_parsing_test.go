@@ -291,3 +291,23 @@ func TestParseArtifact_CamposDeSoloServidorSeIgnoranDelLLM(t *testing.T) {
 		t.Error("ID debe quedar en su cero")
 	}
 }
+
+// FIX ROUND 1 / ARREGLO 1: un custom trae su HTML/JS con los datos YA
+// embebidos y nunca se re-ejecuta (ver models.ChatArtifact.IsRerunnable).
+// El bloque de validación de 'sources' es exclusivo de chart/table, así
+// que sin este arreglo una fuente con monitor vacío y query vacía pasaba
+// sin chequeo y volvía "re-ejecutable" a un artefacto que el spec dice
+// explícitamente que no lo es.
+func TestParseArtifact_CustomIgnoraSources(t *testing.T) {
+	raw := []byte(`{"type":"custom","code":"<b>x</b>","sources":[{"monitor":"","query":{}}]}`)
+	art, err := ParseArtifact(raw)
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	if len(art.Sources) != 0 {
+		t.Errorf("custom no debe conservar sources: %v", art.Sources)
+	}
+	if art.IsRerunnable() {
+		t.Error("un custom nunca es re-ejecutable")
+	}
+}
