@@ -14,6 +14,7 @@ import {
 } from "@/lib/red-flag-labels";
 import { readReportColors, type RGB } from "@/lib/pdf-tokens";
 import { formatDate } from "@/lib/utils";
+import { formatValue, unionColumns } from "@/lib/format-value";
 
 /** Tope del backend en `GET /red-flags/:id/records`; pedir más lo baja a 50. */
 const MAX_RECORDS = 500;
@@ -23,21 +24,6 @@ const MARGIN = 14;
 const HEADER_H = 24;
 
 type AutoTableDoc = jsPDF & { lastAutoTable?: { finalY: number } };
-
-function formatValue(val: unknown): string {
-  if (val === null || val === undefined || val === "") return "—";
-  if (typeof val === "number")
-    return new Intl.NumberFormat("es-CO").format(val);
-  if (typeof val === "boolean") return val ? "Sí" : "No";
-  if (typeof val === "object") return JSON.stringify(val);
-  const s = String(val);
-  // Fechas ISO que llegan como texto desde colecciones dinámicas.
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return formatDate(s);
-  }
-  return s;
-}
 
 function slugify(text: string): string {
   return text
@@ -225,7 +211,11 @@ export async function generateRedFlagReport(redFlag: RedFlag): Promise<void> {
       contentW,
     );
   } else {
-    const allColumns = Object.keys(records[0]).filter(
+    // La unión de columnas de todas las filas (no solo la primera): filas
+    // de una colección dinámica no tienen por qué compartir campos, y
+    // basarse solo en la fila 0 pierde columnas en silencio — igual que en
+    // la tabla del chat y su CSV, que usan la misma unionColumns().
+    const allColumns = unionColumns(records).filter(
       (k) => !k.startsWith("_"),
     );
     const columns = allColumns.slice(0, MAX_COLUMNS);

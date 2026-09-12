@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatArtifact } from "@/lib/api/chat";
 import { exportChartAsPNG, exportTableAsCSV } from "@/lib/chat-export";
+import { cn } from "@/lib/utils";
+import { classifyValue, formatValue, unionColumns } from "@/lib/format-value";
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -140,8 +142,14 @@ function ChartArtifact({
 }
 
 function TableArtifact({ data }: { data: Record<string, unknown>[] }) {
-  if (data.length === 0) return null;
-  const columns = Object.keys(data[0]);
+  if (data.length === 0) {
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        La consulta no devolvió resultados.
+      </p>
+    );
+  }
+  const columns = unionColumns(data);
 
   return (
     <div className="overflow-x-auto">
@@ -149,7 +157,7 @@ function TableArtifact({ data }: { data: Record<string, unknown>[] }) {
         <thead>
           <tr className="border-b">
             {columns.map((col) => (
-              <th key={col} className="text-left p-2 font-medium">
+              <th key={col} className="p-2 text-left font-medium">
                 {col}
               </th>
             ))}
@@ -158,11 +166,31 @@ function TableArtifact({ data }: { data: Record<string, unknown>[] }) {
         <tbody>
           {data.map((row, i) => (
             <tr key={i} className="border-b last:border-0">
-              {columns.map((col) => (
-                <td key={col} className="p-2">
-                  {String(row[col] ?? "")}
-                </td>
-              ))}
+              {columns.map((col) => {
+                const kind = classifyValue(row[col]);
+                return (
+                  <td
+                    key={col}
+                    className={cn(
+                      "p-2",
+                      // Montos y timestamps en mono (manual de marca); los
+                      // montos además a la derecha para comparar cifras de
+                      // un vistazo por alineación de dígitos. Identificadores
+                      // y hashes quedarían igual de bien en mono, pero
+                      // distinguirlos de texto común requiere el tipo de
+                      // campo del esquema del monitor, que esta tabla no
+                      // recibe (llegan filas crudas): por ahora se quedan en
+                      // la tipografía de lectura hasta que el trabajo de
+                      // artefactos declare sus propias columnas.
+                      kind === "number" && "text-right font-mono tabular-nums",
+                      kind === "date" && "font-mono",
+                      kind === "empty" && "text-muted-foreground",
+                    )}
+                  >
+                    {formatValue(row[col])}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
