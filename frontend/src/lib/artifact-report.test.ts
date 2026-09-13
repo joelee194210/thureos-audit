@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { escapeHTML, buildArtifactHTML } from "./artifact-report";
+import { escapeHTML, buildArtifactHTML, exportArtifactPDF } from "./artifact-report";
 import type { ChatArtifact } from "./api/chat";
 
 describe("escapeHTML", () => {
@@ -132,5 +132,92 @@ describe("buildArtifactHTML", () => {
     expect(() =>
       buildArtifactHTML(baseArtifact, [{ a: 1 }], "2026-01-01T00:00:00Z", []),
     ).not.toThrow();
+  });
+
+  it("no revienta si falta ranAt: es opcional en ChatArtifact (instantánea sin sources)", () => {
+    expect(() =>
+      buildArtifactHTML(baseArtifact, [{ a: 1 }], undefined, []),
+    ).not.toThrow();
+    const html = buildArtifactHTML(baseArtifact, [{ a: 1 }], undefined, []);
+    expect(html).toContain("Datos al: sin fecha de corrida");
+  });
+
+  it("no revienta con una fecha de corrida inválida", () => {
+    expect(() =>
+      buildArtifactHTML(baseArtifact, [{ a: 1 }], "no-es-una-fecha", []),
+    ).not.toThrow();
+    const html = buildArtifactHTML(
+      baseArtifact,
+      [{ a: 1 }],
+      "no-es-una-fecha",
+      [],
+    );
+    expect(html).toContain("Datos al: sin fecha de corrida");
+  });
+
+  it("un artefacto custom es su propio código, no una tabla envuelta en marca", () => {
+    const code = "<!doctype html><html><body><h1>hola</h1></body></html>";
+    const html = buildArtifactHTML(
+      { type: "custom", title: "Panel a medida", code },
+      [{ a: 1 }],
+      "2026-01-01T00:00:00Z",
+      [],
+    );
+    expect(html).toBe(code);
+    // No lleva la cabecera de marca ni el mensaje de tabla vacía: es el
+    // documento del LLM tal cual, no la plantilla de Thureos Compliance.
+    expect(html).not.toContain("Thureos Compliance");
+    expect(html).not.toContain("La consulta no devolvió resultados.");
+  });
+
+  it("un custom sin código no revienta: sale un documento vacío válido", () => {
+    const html = buildArtifactHTML(
+      { type: "custom", title: "Sin código" },
+      [],
+      "2026-01-01T00:00:00Z",
+      [],
+    );
+    expect(html).toContain("<html>");
+  });
+
+  it("no incluye recursos externos: sin http(s)://, @import ni url()", () => {
+    const html = buildArtifactHTML(
+      {
+        ...baseArtifact,
+        chartSpec: { columns: ["a"], labels: { a: "Columna A" } },
+      },
+      [{ a: 1 }],
+      "2026-01-01T00:00:00Z",
+      ["Monitor de prueba"],
+    );
+    expect(html).not.toMatch(/https?:\/\//);
+    expect(html).not.toContain("@import");
+    expect(html).not.toContain("url(");
+  });
+
+  it("un gráfico embebido tampoco introduce recursos externos: el data URI no es una URL de red", () => {
+    const html = buildArtifactHTML(
+      { ...baseArtifact, type: "chart" },
+      [{ a: 1 }],
+      "2026-01-01T00:00:00Z",
+      [],
+      "data:image/png;base64,AAAA",
+    );
+    expect(html).not.toMatch(/https?:\/\//);
+    expect(html).not.toContain("@import");
+    expect(html).not.toContain("url(");
+  });
+});
+
+describe("exportArtifactPDF", () => {
+  it("rechaza un artefacto custom en vez de generar un PDF sin sentido", async () => {
+    await expect(
+      exportArtifactPDF(
+        { type: "custom", title: "Panel a medida", code: "<h1>hola</h1>" },
+        [],
+        "2026-01-01T00:00:00Z",
+        [],
+      ),
+    ).rejects.toThrow(/informe en PDF/);
   });
 });

@@ -46,6 +46,22 @@ export function escapeHTML(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * `ranAt` es opcional en `ChatArtifact` (un artefacto instantánea, sin
+ * `sources`, nunca corrió) y `formatDate` no perdona una fecha ausente o
+ * inválida: `new Date("")` es "Invalid Date", y `Intl.DateTimeFormat.
+ * format()` sobre eso lanza `RangeError: Invalid time value` en vez de
+ * devolver texto. Mismo patrón de guarda que `classifyValue` en
+ * format-value.ts: se valida ANTES de formatear, nunca se deja que el
+ * formateador reciba lo que no sabe manejar.
+ */
+function formatRanAt(ranAt: string | undefined): string {
+  if (!ranAt) return "sin fecha de corrida";
+  const parsed = new Date(ranAt);
+  if (Number.isNaN(parsed.getTime())) return "sin fecha de corrida";
+  return formatDate(parsed);
+}
+
 function slugify(text: string): string {
   return text
     .normalize("NFD")
@@ -99,10 +115,22 @@ function reportColors() {
 export function buildArtifactHTML(
   artifact: ChatArtifact,
   rows: Record<string, unknown>[],
-  ranAt: string,
+  ranAt: string | undefined,
   monitorNames: string[],
   chartImage?: string | null,
 ): string {
+  // Un artefacto `custom` ES el código HTML que generó el LLM (el mismo que
+  // ya se renderiza sandboxeado en un <iframe> en artifact-canvas.tsx) — no
+  // una tabla que envolver en la plantilla de marca. Insertarlo DENTRO de
+  // esa plantilla, concatenado junto a texto escapado, sería precisamente
+  // el vector que la constraint de escapado prohíbe: marcado no confiable
+  // mezclado con el resto del documento. Servirlo tal cual, como su propio
+  // archivo/pestaña, no es más riesgoso que el iframe que la app ya
+  // renderiza para ese mismo contenido — así que no pasa por acá abajo.
+  if (artifact.type === "custom") {
+    return artifact.code ?? "<!doctype html><html><body></body></html>";
+  }
+
   const c = reportColors();
   const generatedAt = new Date();
   const title = escapeHTML(artifact.title || "Artefacto");
@@ -270,7 +298,7 @@ export function buildArtifactHTML(
   <div class="brand">Thureos Compliance</div>
   <h1>${title}</h1>
   <div class="meta">
-    <span>Datos al: ${escapeHTML(formatDate(ranAt))}</span>
+    <span>Datos al: ${escapeHTML(formatRanAt(ranAt))}</span>
     <span>Generado: ${escapeHTML(formatDate(generatedAt))}</span>
   </div>
   ${monitorChips}
@@ -298,7 +326,7 @@ async function resolveChartImage(
 export async function downloadArtifactHTML(
   artifact: ChatArtifact,
   rows: Record<string, unknown>[],
-  ranAt: string,
+  ranAt: string | undefined,
   monitorNames: string[],
   chartContainerId?: string,
 ): Promise<void> {
@@ -323,7 +351,7 @@ export async function downloadArtifactHTML(
 export async function openArtifactHTML(
   artifact: ChatArtifact,
   rows: Record<string, unknown>[],
-  ranAt: string,
+  ranAt: string | undefined,
   monitorNames: string[],
   chartContainerId?: string,
 ): Promise<void> {
@@ -345,14 +373,26 @@ export async function openArtifactHTML(
 /**
  * Informe PDF de un artefacto: sigue el patrón de `red-flag-report.ts`
  * (`readReportColors`, cabecera de marca, `autoTable`).
+ *
+ * `custom` queda afuera a propósito: es código HTML, no datos tabulares, y
+ * no hay una tabla razonable que autoTable pueda dibujar a partir de él
+ * (mismo criterio que excluye a `custom` del export a Excel en el backend).
+ * Se lanza en vez de generar un PDF vacío o sin sentido, para que quien
+ * llame lo note y no ofrezca el botón para este caso.
  */
 export async function exportArtifactPDF(
   artifact: ChatArtifact,
   rows: Record<string, unknown>[],
-  ranAt: string,
+  ranAt: string | undefined,
   monitorNames: string[],
   chartContainerId?: string,
 ): Promise<void> {
+  if (artifact.type === "custom") {
+    throw new Error(
+      "Los artefactos personalizados no tienen informe en PDF: son código, no datos tabulares.",
+    );
+  }
+
   const chartImage = await resolveChartImage(artifact, chartContainerId);
   const c = reportColors();
 
@@ -382,7 +422,7 @@ export async function exportArtifactPDF(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   setColor(c.muted);
-  doc.text(`Datos al: ${formatDate(ranAt)}`, MARGIN, y);
+  doc.text(`Datos al: ${formatRanAt(ranAt)}`, MARGIN, y);
   doc.text(`Generado: ${formatDate(generatedAt)}`, MARGIN + contentW / 2, y);
   y += 7;
 
