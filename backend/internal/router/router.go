@@ -31,6 +31,7 @@ type Handlers struct {
 	Notifier      *services.NotificationService
 	Screening     *handlers.ScreeningHandler
 	Chat          *handlers.ChatHandler
+	Artifact      *handlers.ArtifactHandler
 }
 
 func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
@@ -134,6 +135,16 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 	chat.Post("/conversations/:id/messages", h.Chat.Ask)
 	chat.Post("/conversations/:id/monitors", h.Chat.AddMonitor)
 	chat.Delete("/conversations/:id", h.Chat.DeleteConversation)
+
+	// Artefactos del chatbot: privados del usuario que los generó, misma
+	// vara que las conversaciones.
+	artifacts := protected.Group("/chat/artifacts")
+	artifacts.Get("/", h.Artifact.List)
+	artifacts.Post("/:id/save", h.Artifact.Save)
+	artifacts.Delete("/:id/save", h.Artifact.Unsave)
+	artifacts.Post("/:id/run", h.Artifact.Run)
+	artifacts.Get("/:id/export.xlsx", h.Artifact.ExportXLSX)
+	artifacts.Delete("/:id", h.Artifact.Delete)
 
 	// Dashboards
 	dashboards := protected.Group("/dashboards")

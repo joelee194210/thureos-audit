@@ -86,10 +86,11 @@ type ChatArtifact struct {
 	UserID         primitive.ObjectID `bson:"user_id" json:"userId"`
 	ConversationID primitive.ObjectID `bson:"conversation_id" json:"conversationId"`
 	MessageID      primitive.ObjectID `bson:"message_id,omitempty" json:"messageId,omitempty"`
-	// MonitorIDs es la allowlist del artefacto: se fija al crearlo a
-	// partir de los monitores de su conversación, y es contra esto que se
-	// resuelven los alias de las sources al re-ejecutar. Un artefacto
-	// nunca puede ganar acceso a un monitor que su conversación no tenía.
+	// MonitorIDs es la allowlist del artefacto: se deriva de las sources
+	// ya resueltas del propio artefacto al crearlo, acotadas contra los
+	// monitores de la conversación, y es contra esto que se resuelven los
+	// alias de las sources al re-ejecutar. Un artefacto nunca puede ganar
+	// acceso a un monitor que su conversación no tenía.
 	MonitorIDs []primitive.ObjectID `bson:"monitor_ids,omitempty" json:"monitorIds"`
 
 	Type      ChatArtifactType `bson:"type" json:"type"`
