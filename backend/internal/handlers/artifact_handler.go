@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/thureos/compliance/internal/models"
 	"github.com/thureos/compliance/internal/repository"
 	"github.com/thureos/compliance/internal/services"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"golang.org/x/text/unicode/norm"
 )
 
 type ArtifactHandler struct {
@@ -143,16 +145,24 @@ func (h *ArtifactHandler) ExportXLSX(c *fiber.Ctx) error {
 	}
 	run, err := h.artifactService.RunArtifact(c.Context(), art, userID)
 	if err != nil {
-		// Una instantánea no se re-ejecuta, pero sí se puede exportar con
-		// los datos que ya tiene guardados. ErrArtifactSourceUnavailable
-		// NO entra en este respaldo a propósito: significa que el
-		// artefacto SÍ tiene fuentes pero una ya no resuelve a un
-		// monitor, y exportar en silencio una caché que puede estar
-		// desactualizada por eso sería peor que devolver el error —el
-		// usuario pide un archivo, no una pantalla con un aviso al lado.
-		if errors.Is(err, services.ErrArtifactNotRerunnable) && len(art.CachedData) > 0 {
+		switch {
+		case errors.Is(err, services.ErrArtifactNotRerunnable) && len(art.CachedData) > 0:
+			// Una instantánea no se re-ejecuta, pero sí se puede exportar
+			// con los datos que ya tiene guardados.
 			run = services.ArtifactRun{Data: art.CachedData, RanAt: art.RanAt}
-		} else {
+		case errors.Is(err, services.ErrArtifactSourceUnavailable):
+			// Mismo negocio que en Run, mismo código (409, no 500): una
+			// fuente que ya no resuelve a un monitor es un estado
+			// permanente del artefacto, no un fallo transitorio del
+			// servidor, y el cliente debe poder distinguirlos igual acá
+			// que en /run. NO cae al respaldo de caché de la rama de
+			// arriba a propósito: ese respaldo es solo para instantáneas
+			// sin sources, y acá el artefacto SÍ tiene fuentes y una
+			// desapareció — exportar en silencio una caché que puede
+			// estar desactualizada sería peor que devolver el error, ya
+			// que una descarga no tiene dónde mostrar el aviso.
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		default:
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
@@ -160,13 +170,92 @@ func (h *ArtifactHandler) ExportXLSX(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-	// El título lo escribió el LLM: fuera comillas y saltos de línea antes
-	// de meterlo en una cabecera HTTP, para que no rompa ni inyecte en
-	// Content-Disposition.
-	safeTitle := strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(art.Title)
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.xlsx"`, safeTitle))
+	c.Set("Content-Disposition", xlsxContentDisposition(art.Title))
 	return c.Send(data)
+}
+
+// sanitizeXLSXFilename saca las comillas dobles del título antes de
+// interpolarlo en Content-Disposition: fasthttp NO las toca, y una sin
+// escapar rompe el atributo filename="...". El CR/LF también se
+// descarta acá, aunque es cinturón y tirantes — fasthttp (c.Set) ya los
+// elimina de cualquier valor de cabecera antes de escribirlo.
+func sanitizeXLSXFilename(title string) string {
+	return strings.NewReplacer(`"`, "", "\r", "", "\n", "").Replace(title)
+}
+
+// asciiXLSXFilename arma el respaldo ASCII de filename= para clientes
+// viejos que no leen filename*= (RFC 5987/6266). El título es texto
+// libre en español —tildes, eñes y ¿¡ son lo esperable en casi
+// cualquier artefacto real, no el caso raro— así que no alcanza con
+// descartar los bytes no ASCII sin más: primero se separan los acentos
+// de la letra (NFD) y se descartan solo las marcas combinantes, mismo
+// criterio que stripDiacritics en services/chat_monitors.go, para que
+// "Región" caiga en "Region" y no en "Regin". Si no queda ni un
+// carácter reconocible (un título que sea solo símbolos o CJK), se usa
+// un nombre genérico en vez de un archivo sin nombre.
+func asciiXLSXFilename(title string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(title) {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		if r <= unicode.MaxASCII {
+			b.WriteRune(r)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		out = "artefacto"
+	}
+	return out
+}
+
+// rfc5987AttrChar son los bytes que RFC 5987 permite sin percent-encode
+// en un ext-value. Todo lo demás —incluido cualquier byte de una
+// secuencia UTF-8 multibyte, que siempre cae fuera de este conjunto— se
+// codifica byte a byte, que es exactamente cómo pide la RFC el charset
+// UTF-8 con comillas simples vacías (ver xlsxContentDisposition).
+func rfc5987AttrChar(c byte) bool {
+	switch {
+	case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		return true
+	}
+	switch c {
+	case '!', '#', '$', '&', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	}
+	return false
+}
+
+// percentEncodeRFC5987 codifica s para el ext-value de un filename*=,
+// byte a byte sobre su representación UTF-8 (no rune a rune: un acento
+// es varios bytes y todos necesitan su propio %XX).
+func percentEncodeRFC5987(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if rfc5987AttrChar(c) {
+			b.WriteByte(c)
+		} else {
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+// xlsxContentDisposition arma el header completo de la descarga. Manda
+// las dos formas que define RFC 6266: filename= en ASCII de respaldo
+// (para el cliente que no entienda filename*=) y un filename*= con el
+// prefijo UTF-8 de comillas simples vacías y el título completo, tildes
+// y ñ incluidas, percent-encoded — así un título como
+// `Análisis "Región" Caribe` no degrada a mojibake en el navegador que
+// sí lo lee, que es el caso común de un producto en español, no el borde.
+func xlsxContentDisposition(title string) string {
+	safe := sanitizeXLSXFilename(title)
+	ascii := asciiXLSXFilename(safe)
+	encoded := percentEncodeRFC5987(safe + ".xlsx")
+	return fmt.Sprintf(`attachment; filename="%s.xlsx"; filename*=UTF-8''%s`, ascii, encoded)
 }
 
 func (h *ArtifactHandler) Delete(c *fiber.Ctx) error {
