@@ -16,7 +16,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { ChatArtifact } from "@/lib/api/chat";
-import { classifyValue, formatValue, unionColumns } from "@/lib/format-value";
+import { classifyValue, formatValue, resolveColumns } from "@/lib/format-value";
 import { chartToPNGDataURL } from "@/lib/chat-export";
 import { readReportColors, type RGB } from "@/lib/pdf-tokens";
 import { formatDate } from "@/lib/utils";
@@ -72,15 +72,6 @@ function slugify(text: string): string {
     .slice(0, 60);
 }
 
-/** Columnas a mostrar y en qué orden: la proyección del artefacto, o todas si no la declaró. */
-function resolveColumns(
-  artifact: ChatArtifact,
-  rows: Record<string, unknown>[],
-): string[] {
-  const declared = artifact.chartSpec?.columns;
-  return declared && declared.length > 0 ? declared : unionColumns(rows);
-}
-
 function resolveLabel(artifact: ChatArtifact, column: string): string {
   return artifact.chartSpec?.labels?.[column] ?? column;
 }
@@ -134,7 +125,7 @@ export function buildArtifactHTML(
   const c = reportColors();
   const generatedAt = new Date();
   const title = escapeHTML(artifact.title || "Artefacto");
-  const columns = resolveColumns(artifact, rows);
+  const columns = resolveColumns(artifact.chartSpec?.columns, rows);
 
   const monitorChips = monitorNames.length
     ? `<div class="chips">${monitorNames
@@ -497,7 +488,7 @@ export async function exportArtifactPDF(
     setColor(c.muted);
     doc.text("La consulta no devolvió resultados.", MARGIN, y);
   } else {
-    const allColumns = resolveColumns(artifact, rows);
+    const allColumns = resolveColumns(artifact.chartSpec?.columns, rows);
     const columns = allColumns.slice(0, MAX_COLUMNS);
     const labels = columns.map((col) => resolveLabel(artifact, col));
 

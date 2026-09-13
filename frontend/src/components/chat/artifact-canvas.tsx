@@ -31,7 +31,7 @@ import { ApiError } from "@/lib/api/client";
 import { ExportMenu } from "@/components/chat/export-menu";
 import { formatRanAt } from "@/lib/artifact-report";
 import { cn } from "@/lib/utils";
-import { classifyValue, formatValue, unionColumns } from "@/lib/format-value";
+import { classifyValue, formatValue, resolveColumns } from "@/lib/format-value";
 import { useToast } from "@/lib/use-toast";
 
 const CHART_COLORS = [
@@ -197,8 +197,12 @@ export function ArtifactCanvas({
             <CardTitle className="truncate text-base">
               {savedName ?? artifact.title}
             </CardTitle>
+            {/* Un artefacto que nunca corrió no tiene `ranAt` — el backend
+                ya no serializa el cero de time.Time como si fuera una
+                fecha— y "Datos al sin fecha de corrida" no es una frase.
+                Se dice de una vez lo que pasa. */}
             <p className="font-mono text-xs text-muted-foreground">
-              Datos al {formatRanAt(ranAt)}
+              {ranAt ? `Datos al ${formatRanAt(ranAt)}` : "Sin corrida registrada"}
             </p>
           </div>
 
@@ -285,7 +289,13 @@ export function ArtifactCanvas({
             {artifact.type === "chart" && artifact.chartSpec && (
               <ChartArtifact spec={artifact.chartSpec} rows={rows} series={series} label={label} />
             )}
-            {artifact.type === "table" && <TableArtifact data={rows} label={label} />}
+            {artifact.type === "table" && (
+              <TableArtifact
+                data={rows}
+                columns={artifact.chartSpec?.columns}
+                label={label}
+              />
+            )}
             {artifact.type === "custom" && artifact.code && (
               <CustomArtifact code={artifact.code} />
             )}
@@ -311,6 +321,15 @@ function ChartArtifact({
   series: string[];
   label: (key: string) => string;
 }) {
+  // Cero filas es un ESTADO, no un gráfico: sin esto Recharts dibuja los
+  // ejes y la grilla sin una sola barra, que es indistinguible de un
+  // gráfico roto (el spec lo pide explícito: "estado vacío explícito, no
+  // un gráfico en blanco"). La tabla y los exports HTML/PDF ya lo hacían
+  // con esta misma frase; el gráfico era el que faltaba.
+  if (rows.length === 0) {
+    return <EmptyResults />;
+  }
+
   if (spec.chartType === "pie") {
     const dataKey = series[0] ?? "value";
     return (
@@ -375,21 +394,35 @@ function ChartArtifact({
   );
 }
 
+/** Una consulta que no devolvió filas, dicha con las mismas palabras que
+ *  usan el documento HTML y el PDF. */
+function EmptyResults() {
+  return (
+    <p className="p-4 text-sm text-muted-foreground">
+      La consulta no devolvió resultados.
+    </p>
+  );
+}
+
 function TableArtifact({
   data,
+  columns: declared,
   label,
 }: {
   data: Record<string, unknown>[];
+  /** Proyección declarada por el artefacto (`chartSpec.columns`), si la hay. */
+  columns: string[] | undefined;
   label: (key: string) => string;
 }) {
   if (data.length === 0) {
-    return (
-      <p className="p-4 text-sm text-muted-foreground">
-        La consulta no devolvió resultados.
-      </p>
-    );
+    return <EmptyResults />;
   }
-  const columns = unionColumns(data);
+  // MISMA regla que el XLSX del backend y que el HTML/PDF: cuando el
+  // artefacto declara `columns`, ese es el orden, acá también. Antes esta
+  // tabla usaba la unión de claves a secas —el orden del cable, que para
+  // el map de Go es el alfabético—, así que lo que se veía en el chat y
+  // lo que se descargaba tenían las columnas en distinto orden.
+  const columns = resolveColumns(declared, data);
 
   return (
     <div className="overflow-x-auto">

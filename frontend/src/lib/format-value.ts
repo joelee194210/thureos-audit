@@ -68,3 +68,25 @@ export function unionColumns(rows: Record<string, unknown>[]): string[] {
   }
   return Array.from(seen);
 }
+
+/**
+ * Columnas a mostrar y EN QUÉ ORDEN: la proyección que declaró el
+ * artefacto (`chartSpec.columns`), o la unión de las claves de las filas
+ * si no declaró ninguna.
+ *
+ * Punto único de la decisión, y esa es toda su razón de ser: el XLSX
+ * (backend), el HTML y el PDF ya respetaban el orden declarado, pero la
+ * tabla de la app usaba `unionColumns` a secas — o sea el orden del
+ * cable, que para el `map[string]interface{}` del backend es el
+ * alfabético de Go. El usuario veía una tabla y descargaba otra, con las
+ * mismas columnas en otro orden (ver hallazgo 6 de la revisión de rama).
+ *
+ * El caso SIN declarar sigue siendo la unión sin ordenar, que es el orden
+ * de primera aparición: el spec solo promete orden cuando hay `columns`.
+ */
+export function resolveColumns(
+  declared: string[] | undefined,
+  rows: Record<string, unknown>[],
+): string[] {
+  return declared && declared.length > 0 ? declared : unionColumns(rows);
+}

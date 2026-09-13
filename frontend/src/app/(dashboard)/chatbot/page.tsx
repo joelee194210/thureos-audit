@@ -427,8 +427,16 @@ export default function ChatbotPage() {
           </Card>
 
           {activeArtifact && (
+            /* La key decide cuándo el canvas se REMONTA, y el canvas
+               guarda sus filas en estado propio: si no cambia, la vista
+               nueva se pinta sobre los datos de la anterior. Un artefacto
+               legacy no tiene id (antes traía uno de ceros, que en JS es
+               truthy y hacía que TODOS compartieran key), así que se
+               antepone la conversación: cambiar de hilo siempre remonta,
+               que es justo el caso donde no había forma de distinguirlos.
+               Los artefactos de la biblioteca sí tienen id propio. */
             <ArtifactCanvas
-              key={activeArtifact.id ?? activeArtifact.title}
+              key={`${conversationId ?? "biblioteca"}:${activeArtifact.id ?? activeArtifact.title}`}
               artifact={activeArtifact}
               monitorNames={artifactMonitorNames(activeArtifact)}
               onSaved={handleArtifactSaved}

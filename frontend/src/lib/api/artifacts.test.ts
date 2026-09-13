@@ -105,6 +105,39 @@ describe("resolveInitialSeries", () => {
   it("sin cachedData ni yKeys devuelve un arreglo vacío", () => {
     expect(resolveInitialSeries({ type: "chart", title: "x" })).toEqual([]);
   });
+
+  // HALLAZGO 7 (revisión de rama): el último hermano de la familia de
+  // gráficos en blanco. El ParseArtifact viejo exigía `data` no vacío
+  // pero NUNCA exigió `yKeys`, así que hay instantáneas guardadas con
+  // filas y sin series. Devolver [] ahí dibuja ejes sin una sola barra, y
+  // para siempre: una instantánea no tiene `sources`, no llama a /run y
+  // no se corrige sola.
+  it("con data inline y yKeys vacías deriva la serie de las filas", () => {
+    const artifact: ChatArtifact = {
+      type: "chart",
+      title: "x",
+      chartSpec: {
+        xKey: "fecha",
+        data: [{ fecha: "2026-01-01", monto: 10, cantidad: 2 }],
+      },
+    };
+    expect(resolveInitialSeries(artifact)).toEqual(["monto", "cantidad"]);
+  });
+
+  it("yKeys declaradas le siguen ganando al respaldo derivado de las filas", () => {
+    // El respaldo es un respaldo: si el artefacto dice qué graficar, eso
+    // se grafica, aunque las filas traigan más columnas.
+    const artifact: ChatArtifact = {
+      type: "chart",
+      title: "x",
+      chartSpec: {
+        xKey: "fecha",
+        yKeys: ["monto"],
+        data: [{ fecha: "2026-01-01", monto: 10, cantidad: 2 }],
+      },
+    };
+    expect(resolveInitialSeries(artifact)).toEqual(["monto"]);
+  });
 });
 
 describe("resolveRunSeries", () => {

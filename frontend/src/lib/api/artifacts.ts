@@ -64,13 +64,25 @@ export function resolveInitialRows(
  * ORIGINAL y puede no describir esas columnas (pivote multi-fuente), así
  * que se deriva de `cachedData` mismo. Sin `cachedData`, es una
  * instantánea legacy sin `sources` — ahí `chartSpec.data` es la única
- * ejecución que existió y `yKeys` sí la describe correctamente.
+ * ejecución que existió y `yKeys` sí la describe correctamente...
+ * SIEMPRE QUE LAS TENGA. El `ParseArtifact` viejo exigía `data` no vacío
+ * pero nunca exigió `yKeys`, así que hay instantáneas guardadas con filas
+ * y sin series, y para ellas esto devolvía `[]`: ejes dibujados sin una
+ * sola barra, PARA SIEMPRE —una instantánea no llama a `/run`, así que no
+ * tiene cómo corregirse sola—. El mismo respaldo que ya usan
+ * `resolveRunSeries` y la rama de `cachedData` cierra el último miembro
+ * de la familia de gráficos en blanco.
  */
 export function resolveInitialSeries(artifact: ChatArtifact): string[] {
   if (artifact.cachedData) {
     return deriveSeriesFromRows(artifact.cachedData, artifact.chartSpec?.xKey);
   }
-  return artifact.chartSpec?.yKeys ?? [];
+  const yKeys = artifact.chartSpec?.yKeys ?? [];
+  if (yKeys.length > 0) return yKeys;
+  return deriveSeriesFromRows(
+    artifact.chartSpec?.data ?? [],
+    artifact.chartSpec?.xKey,
+  );
 }
 
 /**

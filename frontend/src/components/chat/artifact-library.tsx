@@ -127,8 +127,12 @@ export function ArtifactLibrary({ monitors, monitorsLoaded, onOpen }: ArtifactLi
                     ))}
                   </span>
                 )}
+                {/* Sin `ranAt` el artefacto todavía no corrió nunca (el
+                    backend ya no manda el cero de time.Time disfrazado de
+                    fecha). "Sin corridas" lo dice; "sin fecha de corrida"
+                    sonaría a que la fecha se perdió. */}
                 <span className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
-                  {formatRanAt(a.ranAt)}
+                  {a.ranAt ? formatRanAt(a.ranAt) : "Sin corridas"}
                 </span>
               </span>
             </button>
