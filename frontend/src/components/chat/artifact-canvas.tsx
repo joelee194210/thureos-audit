@@ -42,9 +42,15 @@ export function ArtifactCanvas({ artifact }: { artifact: ChatArtifact }) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              exportChartAsPNG("artifact-canvas-content", `${artifact.title}.png`)
-            }
+            onClick={() => {
+              // Fire-and-forget: la serialización ahora es async (el PNG se
+              // resuelve por Promise), pero el botón no tiene un estado de
+              // carga que mostrar ni falta que hace.
+              void exportChartAsPNG(
+                "artifact-canvas-content",
+                `${artifact.title}.png`,
+              );
+            }}
           >
             <Download className="h-4 w-4" />
           </Button>
@@ -54,7 +60,10 @@ export function ArtifactCanvas({ artifact }: { artifact: ChatArtifact }) {
             variant="outline"
             size="sm"
             onClick={() =>
-              exportTableAsCSV(artifact.chartSpec!.data, `${artifact.title}.csv`)
+              exportTableAsCSV(
+                artifact.chartSpec?.data ?? [],
+                `${artifact.title}.csv`,
+              )
             }
           >
             <Download className="h-4 w-4" />
@@ -66,7 +75,7 @@ export function ArtifactCanvas({ artifact }: { artifact: ChatArtifact }) {
           <ChartArtifact spec={artifact.chartSpec} />
         )}
         {artifact.type === "table" && artifact.chartSpec && (
-          <TableArtifact data={artifact.chartSpec.data} />
+          <TableArtifact data={artifact.chartSpec.data ?? []} />
         )}
         {artifact.type === "custom" && artifact.code && (
           <CustomArtifact code={artifact.code} />
@@ -81,6 +90,10 @@ function ChartArtifact({
 }: {
   spec: NonNullable<ChatArtifact["chartSpec"]>;
 }) {
+  // Ausente cuando el artefacto viene de `sources` sin re-ejecutar todavía
+  // (ver ChartSpec.data en lib/api/chat.ts): sin este default, spec.data.map
+  // revienta con un TypeError apenas se abre el canvas.
+  const data = spec.data ?? [];
   const yKeys = spec.yKeys ?? [];
 
   if (spec.chartType === "pie") {
@@ -89,13 +102,13 @@ function ChartArtifact({
       <ResponsiveContainer width="100%" height={320}>
         <PieChart>
           <Pie
-            data={spec.data}
+            data={data}
             dataKey={dataKey}
             nameKey={spec.xKey ?? "name"}
             outerRadius={110}
             label
           >
-            {spec.data.map((_, i) => (
+            {data.map((_, i) => (
               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
             ))}
           </Pie>
@@ -108,7 +121,7 @@ function ChartArtifact({
   if (spec.chartType === "line") {
     return (
       <ResponsiveContainer width="100%" height={320}>
-        <LineChart data={spec.data}>
+        <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey={spec.xKey} />
           <YAxis />
@@ -128,7 +141,7 @@ function ChartArtifact({
 
   return (
     <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={spec.data}>
+      <BarChart data={data}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey={spec.xKey} />
         <YAxis />

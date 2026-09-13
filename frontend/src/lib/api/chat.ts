@@ -2,18 +2,42 @@ import { api } from "./client";
 
 export interface ChartSpec {
   chartType?: "bar" | "line" | "pie";
-  data: Record<string, unknown>[];
+  /**
+   * Ausente cuando el dato viene de `sources`: el backend lo re-ejecuta
+   * contra la data actual (ver `artifactsApi.run`) en vez de guardarlo acá.
+   * Todo consumidor debe tratar `data` como opcional.
+   */
+  data?: Record<string, unknown>[];
   xKey?: string;
   yKeys?: string[];
+  /** Proyección: qué columnas mostrar y en qué orden. Vacío = todas. */
+  columns?: string[];
+  /** Nombre de presentación por columna. No toca los datos. */
+  labels?: Record<string, string>;
 }
 
 export type ChatArtifactType = "chart" | "table" | "custom";
 
+/** Una fuente que alimenta un artefacto re-ejecutable. */
+export interface ArtifactSource {
+  monitor: string;
+  label?: string;
+}
+
 export interface ChatArtifact {
+  id?: string;
   type: ChatArtifactType;
   title: string;
   chartSpec?: ChartSpec;
   code?: string;
+  /** Consultas que lo alimentan; su presencia es lo que lo hace re-ejecutable. */
+  sources?: ArtifactSource[];
+  monitorIds?: string[];
+  saved?: boolean;
+  savedName?: string;
+  /** Última corrida conocida, para mostrar algo antes de volver a correrlo. */
+  cachedData?: Record<string, unknown>[];
+  ranAt?: string;
 }
 
 export type ChatRole = "user" | "assistant";

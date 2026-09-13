@@ -135,7 +135,14 @@ class ApiClient {
       throw new Error("Unauthorized");
     }
     if (!response.ok) {
-      throw new Error("Request failed");
+      // Igual que en request(): se conserva el status (ej. 409 de un
+      // artefacto cuyo monitor de origen desapareció) en vez de un Error
+      // pelado, para que quien llama pueda distinguir el modo degradado
+      // de un fallo genérico.
+      const error = await response
+        .json()
+        .catch(() => ({ error: "Request failed" }));
+      throw new ApiError(error.error || "Request failed", response.status);
     }
     return response.blob();
   }
