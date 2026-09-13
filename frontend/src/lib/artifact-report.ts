@@ -55,7 +55,7 @@ export function escapeHTML(value: unknown): string {
  * format-value.ts: se valida ANTES de formatear, nunca se deja que el
  * formateador reciba lo que no sabe manejar.
  */
-function formatRanAt(ranAt: string | undefined): string {
+export function formatRanAt(ranAt: string | undefined): string {
   if (!ranAt) return "sin fecha de corrida";
   const parsed = new Date(ranAt);
   if (Number.isNaN(parsed.getTime())) return "sin fecha de corrida";

@@ -4,6 +4,7 @@
  */
 import { api } from "./client";
 import type { ChatArtifact } from "./chat";
+import { unionColumns } from "@/lib/format-value";
 
 export interface ArtifactRun {
   data: Record<string, unknown>[];
@@ -22,6 +23,23 @@ export interface ArtifactRun {
  */
 export function isRerunnable(artifact: ChatArtifact): boolean {
   return (artifact.sources?.length ?? 0) > 0;
+}
+
+/**
+ * Serie a graficar mientras no hay una corrida fresca todavía. El backend
+ * NO persiste `series` junto con `cachedData` — solo lo devuelve al vuelo
+ * en `/run` — así que al abrir un artefacto que ya corrió antes no hay
+ * forma de recuperar la lista real que usó esa corrida. `chartSpec.yKeys`
+ * tampoco sirve: son las claves de la ejecución ORIGINAL, y dejan de
+ * apuntar a nada en cuanto el backend pivotea con más de una fuente (ver
+ * Global Constraints). El mejor dato disponible es derivarla de las
+ * columnas que sí trae `cachedData`, descartando la del eje X.
+ */
+export function deriveSeriesFromRows(
+  rows: Record<string, unknown>[],
+  xKey: string | undefined,
+): string[] {
+  return unionColumns(rows).filter((key) => key !== xKey);
 }
 
 export const artifactsApi = {

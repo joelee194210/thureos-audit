@@ -11,13 +11,16 @@ import { monitorsApi } from "@/lib/api/monitors";
 import type { Monitor } from "@/lib/types";
 import {
   chatApi,
+  type ChatArtifact,
   type ChatConversation,
   type ChatMessage,
 } from "@/lib/api/chat";
 import { ArtifactCanvas } from "@/components/chat/artifact-canvas";
+import { ArtifactLibrary } from "@/components/chat/artifact-library";
 import { MonitorMultiSelect } from "@/components/chat/monitor-multi-select";
 import { AddMonitorButton } from "@/components/chat/add-monitor-button";
 import { Markdown } from "@/components/chat/markdown";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function ChatbotPage() {
   const { toastError } = useToast();
@@ -37,6 +40,11 @@ export default function ChatbotPage() {
     ChatMessage["artifact"] | null
   >(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  /** Pestañas del sidebar: conversaciones o biblioteca de artefactos guardados. */
+  const [sidebarTab, setSidebarTab] = useState<"conversations" | "artifacts">(
+    "conversations",
+  );
 
   const [creating, setCreating] = useState(false);
   const [draftMonitorIds, setDraftMonitorIds] = useState<string[]>([]);
@@ -80,6 +88,16 @@ export default function ChatbotPage() {
       id,
       name: monitors.find((m) => m.id === id)?.name ?? desconocido,
     }));
+  }
+
+  /** Solo los nombres, para el pie de los exports del artefacto activo. */
+  function artifactMonitorNames(artifact: ChatArtifact): string[] {
+    return monitorNames(artifact.monitorIds ?? []).map((m) => m.name);
+  }
+
+  /** El artefacto guardado/quitado vuelve del servidor: se refleja en el canvas. */
+  function handleArtifactSaved(updated: ChatArtifact) {
+    setActiveArtifact(updated);
   }
 
   useEffect(() => {
@@ -211,115 +229,137 @@ export default function ChatbotPage() {
               : "grid-cols-[220px_1fr]"
           }`}
         >
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start gap-2"
-              onClick={() => setCreating((v) => !v)}
-            >
-              <Plus className="h-4 w-4" /> Nueva conversación
-            </Button>
+          <Tabs
+            value={sidebarTab}
+            onValueChange={(v) => setSidebarTab(v as "conversations" | "artifacts")}
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="conversations" className="flex-1">
+                Conversaciones
+              </TabsTrigger>
+              <TabsTrigger value="artifacts" className="flex-1">
+                Artefactos
+              </TabsTrigger>
+            </TabsList>
 
-            {creating && (
-              <div className="space-y-2 rounded-md border p-2">
-                <MonitorMultiSelect
-                  monitors={monitors}
-                  selected={draftMonitorIds}
-                  onChange={setDraftMonitorIds}
-                  max={MAX_MONITORS}
-                />
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={draftMonitorIds.length === 0}
-                  onClick={newConversation}
-                >
-                  Empezar
-                </Button>
-              </div>
-            )}
-
-            {conversations.length > 0 && (
-              <select
-                value={filterMonitorId}
-                onChange={(e) => setFilterMonitorId(e.target.value)}
-                aria-label="Filtrar conversaciones por monitor"
-                className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+            <TabsContent value="conversations" className="space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={() => setCreating((v) => !v)}
               >
-                <option value="">Todos los monitores</option>
-                {monitors.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            )}
+                <Plus className="h-4 w-4" /> Nueva conversación
+              </Button>
 
-            <div className="space-y-1">
-              {filterMonitorId && visibleConversations.length === 0 && (
-                <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Ninguna conversación incluye ese monitor.
-                </p>
-              )}
-              {visibleConversations.map((c) =>
-                deletingId === c.id ? (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1.5 text-xs"
+              {creating && (
+                <div className="space-y-2 rounded-md border p-2">
+                  <MonitorMultiSelect
+                    monitors={monitors}
+                    selected={draftMonitorIds}
+                    onChange={setDraftMonitorIds}
+                    max={MAX_MONITORS}
+                  />
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    disabled={draftMonitorIds.length === 0}
+                    onClick={newConversation}
                   >
-                    <span className="flex-1 truncate text-muted-foreground">
-                      ¿Borrar?
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-destructive hover:text-destructive"
-                      onClick={() => confirmDeleteConversation(c.id)}
-                    >
-                      Sí
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5"
-                      onClick={() => setDeletingId(null)}
-                    >
-                      No
-                    </Button>
-                  </div>
-                ) : (
-                  <div key={c.id} className="group flex items-center">
-                    <button
-                      onClick={() => setConversationId(c.id)}
-                      className={`flex-1 min-w-0 text-left rounded-md px-2 py-1.5 text-sm truncate ${
-                        c.id === conversationId
-                          ? "bg-accent text-accent-foreground"
-                          : "hover:bg-accent/50"
-                      }`}
-                    >
-                      {c.title}
-                      <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                        {monitorNames(c.monitorIds)
-                          .map((m) => m.name)
-                          .join(" · ")}
-                      </span>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeletingId(c.id);
-                      }}
-                      className="shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                      aria-label={`Borrar conversación ${c.title}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ),
+                    Empezar
+                  </Button>
+                </div>
               )}
-            </div>
-          </div>
+
+              {conversations.length > 0 && (
+                <select
+                  value={filterMonitorId}
+                  onChange={(e) => setFilterMonitorId(e.target.value)}
+                  aria-label="Filtrar conversaciones por monitor"
+                  className="h-8 w-full rounded-md border bg-background px-2 text-xs"
+                >
+                  <option value="">Todos los monitores</option>
+                  {monitors.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <div className="space-y-1">
+                {filterMonitorId && visibleConversations.length === 0 && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                    Ninguna conversación incluye ese monitor.
+                  </p>
+                )}
+                {visibleConversations.map((c) =>
+                  deletingId === c.id ? (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-1.5 text-xs"
+                    >
+                      <span className="flex-1 truncate text-muted-foreground">
+                        ¿Borrar?
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 text-destructive hover:text-destructive"
+                        onClick={() => confirmDeleteConversation(c.id)}
+                      >
+                        Sí
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5"
+                        onClick={() => setDeletingId(null)}
+                      >
+                        No
+                      </Button>
+                    </div>
+                  ) : (
+                    <div key={c.id} className="group flex items-center">
+                      <button
+                        onClick={() => setConversationId(c.id)}
+                        className={`flex-1 min-w-0 text-left rounded-md px-2 py-1.5 text-sm truncate ${
+                          c.id === conversationId
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/50"
+                        }`}
+                      >
+                        {c.title}
+                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                          {monitorNames(c.monitorIds)
+                            .map((m) => m.name)
+                            .join(" · ")}
+                        </span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingId(c.id);
+                        }}
+                        className="shrink-0 rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                        aria-label={`Borrar conversación ${c.title}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ),
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="artifacts">
+              <ArtifactLibrary
+                monitors={monitors}
+                monitorsLoaded={monitorsLoaded}
+                onOpen={(artifact) => setActiveArtifact(artifact)}
+              />
+            </TabsContent>
+          </Tabs>
 
           <Card className="flex flex-col h-[70vh]">
             {activeConversation && (
@@ -386,7 +426,14 @@ export default function ChatbotPage() {
             </form>
           </Card>
 
-          {activeArtifact && <ArtifactCanvas artifact={activeArtifact} />}
+          {activeArtifact && (
+            <ArtifactCanvas
+              key={activeArtifact.id ?? activeArtifact.title}
+              artifact={activeArtifact}
+              monitorNames={artifactMonitorNames(activeArtifact)}
+              onSaved={handleArtifactSaved}
+            />
+          )}
         </div>
       </div>
     </>
