@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -299,5 +300,37 @@ func TestBuildArtifactXLSX_SinProyeccionUsaLasClavesDeLasFilas(t *testing.T) {
 	// recorrido de un mapa en Go es aleatorio.
 	if got, _ := f.GetCellValue(sheet, "A1"); got != "a" {
 		t.Errorf("A1 = %q, quiero %q (columnas ordenadas)", got, "a")
+	}
+}
+
+// HALLAZGO 3 (revisión de rama): una instantánea que NUNCA corrió llega
+// con RanAt en cero, y formatearlo como fecha imprimía "01/01/0001" — un
+// centinela disfrazado de fecha de vigencia, que es peor que no tener
+// ninguna en un documento de cumplimiento. Debe decirlo en palabras.
+func TestBuildArtifactXLSX_InstantaneaSinCorridaNoImprimeElAno1(t *testing.T) {
+	art, run := artifactWithRows()
+	run.RanAt = time.Time{} // nunca corrió: datos inline de la instantánea
+
+	data, err := BuildArtifactXLSX(art, run)
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	f, _ := excelize.OpenReader(bytes.NewReader(data))
+	sheet := f.GetSheetName(0)
+
+	// Mismo lugar que la fecha real: 2 columnas de datos ⇒ rótulo en C,
+	// valor en D; fila 5 (cabecera + 2 datos + blanco).
+	if got, _ := f.GetCellValue(sheet, "C5"); got != "Fecha de corrida:" {
+		t.Errorf("C5 = %q, quiero el rótulo de la fecha de corrida", got)
+	}
+	got, err := f.GetCellValue(sheet, "D5")
+	if err != nil {
+		t.Fatalf("no pude leer D5: %v", err)
+	}
+	if strings.Contains(got, "0001") {
+		t.Errorf("D5 = %q: el cero de time.Time no puede salir como fecha", got)
+	}
+	if got != "sin corrida registrada (datos de la instantánea)" {
+		t.Errorf("D5 = %q, quiero el aviso en palabras", got)
 	}
 }

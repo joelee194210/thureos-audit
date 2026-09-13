@@ -398,7 +398,14 @@ func (s *ChatService) Ask(ctx context.Context, conversationID, userID primitive.
 		artifact.UserID = userID
 		artifact.ConversationID = conversationID
 		artifact.MessageID = assistantMsg.ID
-		artifact.MonitorIDs = artifactMonitorIDs(aliases, artifact.Sources)
+		// bindArtifactSources hace las dos cosas de una sola pasada y con
+		// el mismo mapa: fija la allowlist Y ata cada fuente al ObjectID
+		// del monitor que el alias nombraba EN ESTE TURNO. Lo segundo es
+		// lo que hace que re-ejecutar consulte el mismo monitor: los
+		// alias se recalculan después contra art.MonitorIDs, que está
+		// reordenado respecto de conv.MonitorIDs, y con dos nombres que
+		// colisionan al truncar eso basta para intercambiarlos.
+		artifact.MonitorIDs = bindArtifactSources(aliases, artifact.Sources)
 		// Saved se fija explícitamente en false: un artefacto nace
 		// efímero y solo entra a la biblioteca del usuario a través del
 		// endpoint de guardado. ParseArtifact ya no deja que el LLM

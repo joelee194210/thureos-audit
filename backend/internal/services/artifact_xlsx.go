@@ -89,8 +89,18 @@ func BuildArtifactXLSX(art *models.ChatArtifact, run ArtifactRun) ([]byte, error
 	valueCell, _ := excelize.CoordinatesToCellName(valueColIdx+1, footerRow)
 	_ = f.SetCellValue(artifactSheetName, labelCell, "Fecha de corrida:")
 	_ = f.SetCellStyle(artifactSheetName, labelCell, labelCell, headerStyle)
-	_ = f.SetCellValue(artifactSheetName, valueCell, run.RanAt)
-	_ = f.SetCellStyle(artifactSheetName, valueCell, valueCell, dateStyle)
+	if run.RanAt.IsZero() {
+		// Una instantánea que nunca corrió (datos inline, sin sources)
+		// llega acá con el cero de time.Time. Formatearlo como fecha
+		// imprime "01/01/0001", que no es una fecha de corrida sino un
+		// valor centinela disfrazado — y en cumplimiento, una fecha de
+		// vigencia falsa es peor que ninguna. Se dice en palabras, y sin
+		// el estilo de fecha: es texto, no un instante.
+		_ = f.SetCellValue(artifactSheetName, valueCell, "sin corrida registrada (datos de la instantánea)")
+	} else {
+		_ = f.SetCellValue(artifactSheetName, valueCell, run.RanAt)
+		_ = f.SetCellStyle(artifactSheetName, valueCell, valueCell, dateStyle)
+	}
 
 	// Ancho de columna por contenido: se calcula al final, sobre la hoja
 	// ya completa, porque AutoFitColWidth lee lo que ya está escrito. El

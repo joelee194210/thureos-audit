@@ -87,8 +87,42 @@ func NewArtifactService(artifactRepo *repository.ChatArtifactRepository, monitor
 // resolvió" que el spec prohíbe. Con las dos condiciones, la precondición
 // se autoexige y no depende de cómo otra tarea decida poblar MonitorIDs.
 func resolveArtifactMonitors(aliases map[string]*models.Monitor, sources []models.ArtifactSource, allowlistSize int) ([]*models.Monitor, error) {
+	byID := monitorsByID(aliases)
 	out := make([]*models.Monitor, 0, len(sources))
 	for i, src := range sources {
+		// VÍNCULO PERSISTIDO (ver models.ArtifactSource.MonitorID): si la
+		// fuente sabe contra qué monitor se creó, se resuelve por ahí y no
+		// por el alias. El alias se recalcula en cada corrida a partir del
+		// nombre y del ORDEN de art.MonitorIDs —que no es el de
+		// conv.MonitorIDs—, así que dos nombres que colisionan al truncar
+		// se intercambian el alias base y el "_2" y la fuente 0 termina
+		// consultando el monitor de la fuente 1. El id no se mueve.
+		//
+		// SIGUE SIENDO LA ALLOWLIST LA QUE MANDA: byID se deriva de
+		// `aliases`, y `aliases` se construye en RunArtifact SOLO con los
+		// monitores cargados desde art.MonitorIDs. Un id que no esté en la
+		// allowlist no tiene entrada en byID y no se ejecuta nada — el
+		// vínculo es un registro de a qué se ató la fuente, nunca una
+		// llave para salir de la lista.
+		if !src.MonitorID.IsZero() {
+			if monitor, ok := byID[src.MonitorID]; ok {
+				out = append(out, monitor)
+				continue
+			}
+			// El monitor al que esta fuente estaba atada ya no está en la
+			// allowlist viva (borrado). NO se cae al camino por alias a
+			// propósito: ahí es donde el alias podría resolver a OTRO
+			// monitor y ejecutarse en su nombre, que es exactamente lo que
+			// el spec prohíbe. Modo degradado: caché con aviso.
+			return nil, fmt.Errorf(
+				"fuente %d: el monitor %s ya no está disponible: %w",
+				i, src.MonitorID.Hex(), ErrArtifactSourceUnavailable,
+			)
+		}
+
+		// Artefactos creados ANTES del vínculo: no hay id estampado, así
+		// que se resuelve como siempre, por alias y con el respaldo
+		// posicional de abajo. Camino sin migración de datos.
 		monitor, err := resolveQueryMonitor(aliases, src.Monitor)
 		if err != nil {
 			if allowlistSize == 1 && len(aliases) == 1 && len(sources) == 1 {
@@ -108,18 +142,42 @@ func resolveArtifactMonitors(aliases map[string]*models.Monitor, sources []model
 	return out, nil
 }
 
-// artifactMonitorIDs traduce los alias de las sources a los ObjectID de
-// los monitores, para fijar la allowlist del artefacto al crearlo.
-// Un alias que no resuelve se omite: no se puede fabricar acceso a un
-// monitor que la conversación no tenía.
-func artifactMonitorIDs(aliases map[string]*models.Monitor, sources []models.ArtifactSource) []primitive.ObjectID {
+// monitorsByID indexa por ObjectID los monitores de un mapa de alias.
+// Cada monitor tiene exactamente un alias (buildMonitorAliases desambigua
+// con sufijos, nunca descarta), así que el índice es completo. La
+// provenance importa: quien llame con los alias de la allowlist obtiene
+// un índice acotado a la allowlist, y nada más.
+func monitorsByID(aliases map[string]*models.Monitor) map[primitive.ObjectID]*models.Monitor {
+	byID := make(map[primitive.ObjectID]*models.Monitor, len(aliases))
+	for _, monitor := range aliases {
+		byID[monitor.ID] = monitor
+	}
+	return byID
+}
+
+// bindArtifactSources ATA cada fuente al monitor contra el que se resolvió
+// al crear el artefacto: le estampa el ObjectID (ver
+// models.ArtifactSource.MonitorID) y devuelve la allowlist deduplicada
+// —los mismos ids, en orden de aparición— para ChatArtifact.MonitorIDs.
+//
+// `aliases` tiene que ser el de la conversación, en el orden de
+// conv.MonitorIDs: es el mapa con el que el LLM eligió el alias que
+// escribió, así que es el único que traduce esa palabra al monitor que de
+// verdad se consultó en el turno.
+//
+// Un alias que no resuelve se omite de la allowlist y queda con MonitorID
+// en cero —igual que antes de existir el vínculo—: no se puede fabricar
+// acceso a un monitor que la conversación no tenía, y la fuente cae al
+// camino por alias al re-ejecutar.
+func bindArtifactSources(aliases map[string]*models.Monitor, sources []models.ArtifactSource) []primitive.ObjectID {
 	seen := map[primitive.ObjectID]bool{}
 	ids := []primitive.ObjectID{}
-	for _, src := range sources {
-		monitor, err := resolveQueryMonitor(aliases, src.Monitor)
+	for i := range sources {
+		monitor, err := resolveQueryMonitor(aliases, sources[i].Monitor)
 		if err != nil {
 			continue
 		}
+		sources[i].MonitorID = monitor.ID
 		if !seen[monitor.ID] {
 			seen[monitor.ID] = true
 			ids = append(ids, monitor.ID)

@@ -11,6 +11,7 @@ import (
 	"github.com/thureos/compliance/internal/repository"
 	"github.com/thureos/compliance/internal/services"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -45,11 +46,40 @@ func (h *ArtifactHandler) load(c *fiber.Ctx) (*models.ChatArtifact, primitive.Ob
 		return nil, primitive.NilObjectID, false
 	}
 	art, err := h.artifactRepo.GetByID(c.Context(), id)
-	if err != nil || art.UserID != userID {
+	if err != nil {
+		// Un fallo de Mongo que NO es "no hay documento" (deadline, blip
+		// del replica set, error de decodificación) es transitorio y no se
+		// puede contar como 404: eso le diría a la biblioteca que el
+		// artefacto ya no existe y la llevaría a sacarlo de la lista por
+		// un problema de un segundo. Mismo criterio que RunArtifact, que
+		// tampoco se traga estos errores al cargar monitores.
+		if status := artifactLoadStatus(err); status != fiber.StatusNotFound {
+			_ = c.Status(status).JSON(fiber.Map{"error": fmt.Sprintf("cargando el artefacto: %s", err.Error())})
+			return nil, primitive.NilObjectID, false
+		}
+		_ = c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "artefacto no encontrado"})
+		return nil, primitive.NilObjectID, false
+	}
+	if art.UserID != userID {
+		// El artefacto de otro usuario es 404, NUNCA 403: no se distingue
+		// "no es tuyo" de "no existe" (ver Global Constraints). Esto no
+		// cambia — el que cambió arriba es el error de infraestructura.
 		_ = c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "artefacto no encontrado"})
 		return nil, primitive.NilObjectID, false
 	}
 	return art, userID, true
+}
+
+// artifactLoadStatus traduce el error de GetByID al código HTTP: 404 solo
+// cuando Mongo dice que no hay documento, 500 para todo lo demás. Vive
+// aparte de load —que necesita una conexión a Mongo para ejercitarse— para
+// que la distinción quede cubierta por un test puro, que es como se
+// prueban los handlers de este paquete.
+func artifactLoadStatus(err error) int {
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fiber.StatusNotFound
+	}
+	return fiber.StatusInternalServerError
 }
 
 func (h *ArtifactHandler) Save(c *fiber.Ctx) error {
@@ -146,10 +176,29 @@ func (h *ArtifactHandler) ExportXLSX(c *fiber.Ctx) error {
 	run, err := h.artifactService.RunArtifact(c.Context(), art, userID)
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrArtifactNotRerunnable) && len(art.CachedData) > 0:
-			// Una instantánea no se re-ejecuta, pero sí se puede exportar
-			// con los datos que ya tiene guardados.
-			run = services.ArtifactRun{Data: art.CachedData, RanAt: art.RanAt}
+		case errors.Is(err, services.ErrArtifactNotRerunnable):
+			// Una instantánea no se re-ejecuta, pero sí se exporta con los
+			// datos que ya tiene. Y los tiene en DOS lugares distintos: la
+			// caché de una corrida previa, o —si nunca corrió— los datos
+			// inline con los que nació. ParseArtifact sigue aceptando un
+			// chart/table con chartSpec.data y sin sources (instantánea),
+			// Ask lo persiste con id real y availableFormats le ofrece
+			// Excel: mirar solo CachedData devolvía 500 con las filas ahí
+			// al lado.
+			data := snapshotData(art)
+			if len(data) == 0 {
+				// Sin filas en ningún lado. El caso real es `custom`: es
+				// código con sus datos embebidos, no una tabla, y no hay
+				// nada que volcar en una hoja de cálculo. Es un 4xx —un
+				// pedido que no aplica a este artefacto—, no un 500, y
+				// tampoco un 409: ese código ya significa "el monitor de
+				// origen desapareció" y el frontend lo traduce con ese
+				// texto exacto, que acá sería mentira.
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"error": "este artefacto no tiene datos tabulares para exportar a Excel",
+				})
+			}
+			run = services.ArtifactRun{Data: data, RanAt: art.RanAt}
 		case errors.Is(err, services.ErrArtifactSourceUnavailable):
 			// Mismo negocio que en Run, mismo código (409, no 500): una
 			// fuente que ya no resuelve a un monitor es un estado
@@ -173,6 +222,22 @@ func (h *ArtifactHandler) ExportXLSX(c *fiber.Ctx) error {
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", xlsxContentDisposition(art.Title))
 	return c.Send(data)
+}
+
+// snapshotData son las filas de un artefacto que no se puede re-ejecutar:
+// la última corrida cacheada si la hubo, y si no los datos inline con los
+// que el artefacto nació (una instantánea que nunca corrió: chart/table
+// con chartSpec.data y sin sources, que ParseArtifact acepta y Ask
+// persiste). Devuelve nil cuando no hay ninguna de las dos, que es el caso
+// de `custom` — código, no tabla.
+func snapshotData(art *models.ChatArtifact) []map[string]interface{} {
+	if len(art.CachedData) > 0 {
+		return art.CachedData
+	}
+	if art.ChartSpec != nil && len(art.ChartSpec.Data) > 0 {
+		return art.ChartSpec.Data
+	}
+	return nil
 }
 
 // sanitizeXLSXFilename saca las comillas dobles del título antes de

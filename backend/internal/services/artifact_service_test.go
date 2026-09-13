@@ -352,3 +352,166 @@ func TestShape_TablaMultiFuenteConcatena(t *testing.T) {
 		t.Errorf("una tabla sin chartSpec no tiene series: %v", series)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// HALLAZGO 1 (revisión de rama): una fuente re-ejecutándose contra OTRO
+// monitor.
+//
+// El alias se deriva del nombre y se TRUNCA en 40 caracteres
+// (monitorAliasMaxLen), así que dos monitores descriptivos que solo
+// difieren en el año colisionan: los dos dan
+// "transacciones_internacionales_bancolombi" y buildMonitorAliases le
+// cuelga "_2" al SEGUNDO de la lista. Cuál es el segundo depende del
+// orden, y el orden cambia entre la conversación (conv.MonitorIDs) y el
+// artefacto (art.MonitorIDs, derivado de las sources, que el LLM pudo
+// listar al revés). Con el orden invertido, la fuente 0 se ejecutaba
+// contra el monitor de la fuente 1 llevando puesto el rótulo de la 0:
+// serie mal etiquetada, columna _monitor mentirosa, cero errores.
+//
+// El fixture es compartido por los dos tests de abajo, que son un PAR: uno
+// prueba el arreglo, el otro deja constancia empírica del bug en el camino
+// viejo (que sigue vivo, sin migración, para los artefactos ya guardados).
+func colisionDeAliasFixture() (monitor2024, monitor2025 models.Monitor) {
+	return models.Monitor{ID: primitive.NewObjectID(), Name: "Transacciones internacionales Bancolombia 2024"},
+		models.Monitor{ID: primitive.NewObjectID(), Name: "Transacciones internacionales Bancolombia 2025"}
+}
+
+func TestBindArtifactSources_LaFuenteQuedaAtadaAlMonitorDeSuTurno(t *testing.T) {
+	m2024, m2025 := colisionDeAliasFixture()
+	if monitorAlias(m2024.Name) != monitorAlias(m2025.Name) {
+		t.Fatalf("el fixture ya no colisiona (%q vs %q): el test dejó de probar lo que existe para probar",
+			monitorAlias(m2024.Name), monitorAlias(m2025.Name))
+	}
+
+	// La conversación: [2024, 2025]. El alias base queda para el 2024 y el
+	// 2025 se lleva el "_2".
+	convAliases := buildMonitorAliases([]models.Monitor{m2024, m2025})
+	base := monitorAlias(m2024.Name)
+
+	// El artefacto que escribió el LLM lista PRIMERO el 2025.
+	art := &models.ChatArtifact{
+		Type: models.ChatArtifactTable,
+		Sources: []models.ArtifactSource{
+			{Monitor: base + "_2", Label: "2025"},
+			{Monitor: base, Label: "2024"},
+		},
+	}
+	art.MonitorIDs = bindArtifactSources(convAliases, art.Sources)
+
+	if len(art.MonitorIDs) != 2 || art.MonitorIDs[0] != m2025.ID || art.MonitorIDs[1] != m2024.ID {
+		t.Fatalf("MonitorIDs = %v; el orden lo dan las sources: [2025, 2024]", art.MonitorIDs)
+	}
+	if art.Sources[0].MonitorID != m2025.ID || art.Sources[1].MonitorID != m2024.ID {
+		t.Fatalf("el vínculo quedó mal estampado: %s / %s",
+			art.Sources[0].MonitorID.Hex(), art.Sources[1].MonitorID.Hex())
+	}
+
+	// Re-ejecución: los alias se reconstruyen desde art.MonitorIDs, o sea
+	// [2025, 2024] — invertido respecto de la conversación. Acá el alias
+	// base ya es el del 2025 y el "_2" el del 2024: si la resolución fuera
+	// por alias, cada fuente consultaría el monitor de la otra.
+	runAliases := buildMonitorAliases([]models.Monitor{m2025, m2024})
+	resolved, err := resolveArtifactMonitors(runAliases, art.Sources, len(art.MonitorIDs))
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	if resolved[0].ID != m2025.ID {
+		t.Errorf("la fuente rotulada 2025 se ejecutó contra %q", resolved[0].Name)
+	}
+	if resolved[1].ID != m2024.ID {
+		t.Errorf("la fuente rotulada 2024 se ejecutó contra %q", resolved[1].Name)
+	}
+}
+
+// La otra mitad del par: SIN el vínculo estampado —un artefacto guardado
+// antes de este arreglo— la resolución sigue siendo por alias y por lo
+// tanto sigue invirtiéndose. Está acá para que quede a la vista que el
+// arreglo es el id y no otra cosa, y para fijar que el camino viejo no
+// cambió: es el que usan los artefactos ya persistidos, que no se migran.
+func TestResolveArtifactMonitors_SinVinculoElAliasSigueSiendoElCamino(t *testing.T) {
+	m2024, m2025 := colisionDeAliasFixture()
+	base := monitorAlias(m2024.Name)
+	sources := []models.ArtifactSource{
+		{Monitor: base + "_2", Label: "2025"}, // sin MonitorID: artefacto viejo
+		{Monitor: base, Label: "2024"},
+	}
+
+	runAliases := buildMonitorAliases([]models.Monitor{m2025, m2024})
+	resolved, err := resolveArtifactMonitors(runAliases, sources, 2)
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	// El alias manda, y con este orden "base_2" es el 2024: exactamente el
+	// comportamiento anterior, intacto.
+	if resolved[0].ID != m2024.ID || resolved[1].ID != m2025.ID {
+		t.Fatalf("el camino por alias cambió de comportamiento: %q / %q", resolved[0].Name, resolved[1].Name)
+	}
+}
+
+// AUTORIZACIÓN. El vínculo es un REGISTRO de a qué monitor se ató la
+// fuente, jamás una llave para salir de la allowlist: un id que no está
+// entre los monitores vivos de art.MonitorIDs no resuelve y no ejecuta
+// ninguna consulta. Acá los alias se construyen solo con B y la fuente
+// viene estampada con A.
+func TestResolveArtifactMonitors_VinculoFueraDeLaAllowlistNoResuelve(t *testing.T) {
+	monitorA := primitive.NewObjectID()
+	monitorB := models.Monitor{ID: primitive.NewObjectID(), Name: "Alertas SWIFT"}
+	aliases := buildMonitorAliases([]models.Monitor{monitorB})
+	sources := []models.ArtifactSource{{Monitor: "alertas_swift", MonitorID: monitorA}}
+
+	got, err := resolveArtifactMonitors(aliases, sources, 1)
+	if err == nil {
+		t.Fatalf("un vínculo fuera de la allowlist no puede resolver; devolvió %v", got)
+	}
+	if !errors.Is(err, ErrArtifactSourceUnavailable) {
+		t.Fatalf("err = %v, quiero ErrArtifactSourceUnavailable (modo degradado: caché con aviso)", err)
+	}
+	// Y NO cae al camino por alias: ahí "alertas_swift" resolvería a B y la
+	// fuente de A se ejecutaría contra B en silencio, que es justo lo que
+	// el spec prohíbe ("nunca se ejecuta contra un monitor distinto del que
+	// se resolvió").
+	if got != nil {
+		t.Fatalf("no debe resolver a ningún monitor, resolvió %v", got)
+	}
+}
+
+// El vínculo tampoco se deja arrastrar por el respaldo posicional: con un
+// solo monitor en la allowlist, una fuente estampada contra un monitor
+// BORRADO falla en vez de caer sobre el que quedó. El respaldo posicional
+// existe para artefactos sin vínculo (renombrados), no para pasarle por
+// encima a uno que sí sabe contra qué se creó.
+func TestResolveArtifactMonitors_VinculoABorradoNoUsaElRespaldoPosicional(t *testing.T) {
+	borrado := primitive.NewObjectID()
+	sobreviviente := models.Monitor{ID: primitive.NewObjectID(), Name: "Transacciones"}
+	aliases := buildMonitorAliases([]models.Monitor{sobreviviente})
+	sources := []models.ArtifactSource{{Monitor: "transacciones_viejas", MonitorID: borrado}}
+
+	if _, err := resolveArtifactMonitors(aliases, sources, 1); !errors.Is(err, ErrArtifactSourceUnavailable) {
+		t.Fatalf("err = %v, quiero ErrArtifactSourceUnavailable", err)
+	}
+}
+
+// Un alias que no resuelve al crear no puede fabricar acceso: se omite de
+// la allowlist y queda sin vínculo, así que al re-ejecutar recorre el
+// camino por alias como cualquier artefacto viejo. Sin esto, empezar a
+// estampar podría haber roto la creación de artefactos con una fuente
+// inventada por el LLM, que hoy simplemente se ignora.
+func TestBindArtifactSources_AliasDesconocidoNoEstampaNiEntraALaAllowlist(t *testing.T) {
+	monitor := models.Monitor{ID: primitive.NewObjectID(), Name: "Transacciones"}
+	aliases := buildMonitorAliases([]models.Monitor{monitor})
+	sources := []models.ArtifactSource{
+		{Monitor: "transacciones"},
+		{Monitor: "clientes_secretos"},
+	}
+
+	ids := bindArtifactSources(aliases, sources)
+	if len(ids) != 1 || ids[0] != monitor.ID {
+		t.Fatalf("MonitorIDs = %v, quiero solo el monitor resuelto", ids)
+	}
+	if sources[0].MonitorID != monitor.ID {
+		t.Error("la fuente resoluble debe quedar atada")
+	}
+	if !sources[1].MonitorID.IsZero() {
+		t.Errorf("la fuente irresoluble no puede quedar atada a nada: %s", sources[1].MonitorID.Hex())
+	}
+}

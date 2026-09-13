@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/thureos/compliance/internal/models"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func TestParseQueryToolInput_ConConditionGroupValido(t *testing.T) {
@@ -336,5 +337,34 @@ func TestParseArtifact_CustomIgnoraSources(t *testing.T) {
 	}
 	if art.IsRerunnable() {
 		t.Error("un custom nunca es re-ejecutable")
+	}
+}
+
+// HALLAZGO 1, constraint 1: el bloque <artifact> que escribe el LLM no
+// puede llegar nunca a ArtifactSource.MonitorID. Es el campo que decide
+// contra qué monitor se ejecuta una fuente al re-ejecutar el artefacto, y
+// el texto del LLM está moldeado por los CSV que suben los usuarios: si
+// tuviera tag json, una inyección en una celda podría elegir el monitor.
+// Este test entra por la puerta real (ParseArtifact sobre el JSON crudo),
+// no por el struct.
+func TestParseArtifact_ElLLMNoPuedeEscribirElMonitorIDDeUnaFuente(t *testing.T) {
+	intruso := primitive.NewObjectID()
+	raw := []byte(`{"type":"table","title":"Movimientos",
+	  "sources":[{"monitor":"transacciones",
+	              "monitorId":"` + intruso.Hex() + `",
+	              "monitor_id":"` + intruso.Hex() + `",
+	              "MonitorID":"` + intruso.Hex() + `",
+	              "query":{"monitor":"transacciones","conditionGroup":{"logic":"AND","conditions":[{"field":"monto","operator":"gt","value":1000}]},"limit":10}}]}`)
+
+	art, err := ParseArtifact(raw)
+	if err != nil {
+		t.Fatalf("no esperaba error: %v", err)
+	}
+	if len(art.Sources) != 1 {
+		t.Fatalf("quiero una fuente, tengo %d", len(art.Sources))
+	}
+	if !art.Sources[0].MonitorID.IsZero() {
+		t.Fatalf("el LLM escribió el vínculo (%s): el campo tiene que ser invisible para JSON",
+			art.Sources[0].MonitorID.Hex())
 	}
 }
