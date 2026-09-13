@@ -20,7 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import type { ChatArtifact } from "@/lib/api/chat";
-import { artifactsApi, deriveSeriesFromRows, isRerunnable } from "@/lib/api/artifacts";
+import {
+  artifactsApi,
+  isRerunnable,
+  resolveInitialRows,
+  resolveInitialSeries,
+  resolveRunSeries,
+} from "@/lib/api/artifacts";
 import { ApiError } from "@/lib/api/client";
 import { ExportMenu } from "@/components/chat/export-menu";
 import { formatRanAt } from "@/lib/artifact-report";
@@ -42,22 +48,6 @@ const CHART_COLORS = [
 /** id del contenedor: lo reutilizan chartToPNGDataURL y ExportMenu. */
 const CONTAINER_ID = "artifact-canvas-content";
 
-/** Filas y serie a pintar de arranque, antes de que llegue una corrida fresca. */
-function initialRows(artifact: ChatArtifact): Record<string, unknown>[] {
-  return artifact.cachedData ?? artifact.chartSpec?.data ?? [];
-}
-
-function initialSeries(artifact: ChatArtifact): string[] {
-  // cachedData viene de una corrida real ya pivoteada; chartSpec.yKeys es
-  // la lista de la ejecución ORIGINAL y ya no describe esas columnas (ver
-  // deriveSeriesFromRows). chartSpec.data, en cambio, es una instantánea
-  // legacy sin sources: ahí yKeys sí sigue siendo correcto.
-  if (artifact.cachedData) {
-    return deriveSeriesFromRows(artifact.cachedData, artifact.chartSpec?.xKey);
-  }
-  return artifact.chartSpec?.yKeys ?? [];
-}
-
 interface ArtifactCanvasProps {
   artifact: ChatArtifact;
   /** Nombres (no ids) de los monitores consultados, para el pie del export. */
@@ -73,8 +63,10 @@ export function ArtifactCanvas({
 }: ArtifactCanvasProps) {
   const { toastError, toastSuccess } = useToast();
 
-  const [rows, setRows] = useState<Record<string, unknown>[]>(() => initialRows(artifact));
-  const [series, setSeries] = useState<string[]>(() => initialSeries(artifact));
+  const [rows, setRows] = useState<Record<string, unknown>[]>(() =>
+    resolveInitialRows(artifact),
+  );
+  const [series, setSeries] = useState<string[]>(() => resolveInitialSeries(artifact));
   const [ranAt, setRanAt] = useState(artifact.ranAt);
   // Arranca en `true` cuando el montaje va a disparar una corrida (ver el
   // efecto de abajo), calculado con el mismo lazy initializer que rows/
@@ -119,7 +111,7 @@ export function ArtifactCanvas({
       .then((run) => {
         if (cancelled) return;
         setRows(run.data);
-        setSeries(run.series);
+        setSeries(resolveRunSeries(run, artifact.chartSpec?.xKey));
         setRanAt(run.ranAt);
         setStaleReason(null);
       })
@@ -150,7 +142,7 @@ export function ArtifactCanvas({
     try {
       const run = await artifactsApi.run(artifact.id);
       setRows(run.data);
-      setSeries(run.series);
+      setSeries(resolveRunSeries(run, artifact.chartSpec?.xKey));
       setRanAt(run.ranAt);
       setStaleReason(null);
     } catch (err) {
@@ -270,6 +262,7 @@ export function ArtifactCanvas({
               ranAt={ranAt}
               monitorNames={monitorNames}
               chartContainerId={CONTAINER_ID}
+              staleReason={staleReason}
             />
           </div>
         </div>

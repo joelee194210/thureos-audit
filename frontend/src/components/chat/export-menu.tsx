@@ -46,6 +46,14 @@ interface ExportMenuProps {
   monitorNames: string[];
   /** id del contenedor del gráfico en el DOM, para PNG/PDF/HTML embebidos. */
   chartContainerId?: string;
+  /**
+   * Aviso del canvas de que `rows` es una caché rancia (corrida fallida o
+   * 409). El PDF y el HTML ya estampan `ranAt` adentro del documento; el
+   * CSV y el PNG no llevan ninguna fecha, así que sin este aviso en el
+   * propio menú —ANTES de descargar— alguien se lleva un archivo
+   * indistinguible de uno fresco.
+   */
+  staleReason?: string | null;
 }
 
 /**
@@ -59,6 +67,7 @@ export function ExportMenu({
   ranAt,
   monitorNames,
   chartContainerId,
+  staleReason,
 }: ExportMenuProps) {
   const { toastError } = useToast();
   const [busy, setBusy] = useState<ExportFormat | null>(null);
@@ -149,6 +158,14 @@ export function ExportMenu({
             {f.label}
           </DropdownMenuItem>
         ))}
+        {staleReason && (
+          <>
+            <DropdownMenuSeparator />
+            <p className="px-2 py-1.5 text-xs text-warning-fg">
+              Datos desactualizados: {staleReason}
+            </p>
+          </>
+        )}
         {notice && (
           <>
             <DropdownMenuSeparator />

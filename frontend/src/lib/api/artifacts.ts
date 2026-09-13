@@ -42,6 +42,55 @@ export function deriveSeriesFromRows(
   return unionColumns(rows).filter((key) => key !== xKey);
 }
 
+/**
+ * Filas a pintar ANTES de que llegue una corrida fresca: la caché de una
+ * corrida real anterior, o los datos embebidos de una instantánea legacy
+ * (sin `sources`, nunca se re-ejecuta). Vive acá y no en el componente
+ * porque decide cuál de las dos ramas de `deriveSeriesFromRows`/`yKeys`
+ * corresponde — invertir esa rama en silencio es exactamente el fallo que
+ * esta función existe para no reproducir, así que se prueba en `lib/`
+ * como el resto de las funciones puras del repo.
+ */
+export function resolveInitialRows(
+  artifact: ChatArtifact,
+): Record<string, unknown>[] {
+  return artifact.cachedData ?? artifact.chartSpec?.data ?? [];
+}
+
+/**
+ * Serie a graficar ANTES de que llegue una corrida fresca (ver
+ * `resolveInitialRows`). Con `cachedData` presente, el artefacto tiene
+ * `sources` y ya corrió antes: `chartSpec.yKeys` es de la ejecución
+ * ORIGINAL y puede no describir esas columnas (pivote multi-fuente), así
+ * que se deriva de `cachedData` mismo. Sin `cachedData`, es una
+ * instantánea legacy sin `sources` — ahí `chartSpec.data` es la única
+ * ejecución que existió y `yKeys` sí la describe correctamente.
+ */
+export function resolveInitialSeries(artifact: ChatArtifact): string[] {
+  if (artifact.cachedData) {
+    return deriveSeriesFromRows(artifact.cachedData, artifact.chartSpec?.xKey);
+  }
+  return artifact.chartSpec?.yKeys ?? [];
+}
+
+/**
+ * Serie a graficar a partir de una corrida fresca de `/run`. `run.series`
+ * es la fuente de verdad casi siempre — pero `ParseArtifact` en el backend
+ * solo exige `yKeys` no vacías cuando el artefacto declara MÁS DE UNA
+ * fuente; con una sola, el LLM puede omitirlas legítimamente, y entonces
+ * `run.series` llega vacío con filas reales. Sin este respaldo, el
+ * gráfico dibujaría los ejes sin ninguna barra/línea — el mismo fallo
+ * silencioso que la restricción "usar siempre `run.series`" existe para
+ * evitar, alcanzado por el camino hermano. Nunca cae a `chartSpec.yKeys`:
+ * ese es justamente el dato que puede no aplicar más.
+ */
+export function resolveRunSeries(
+  run: ArtifactRun,
+  xKey: string | undefined,
+): string[] {
+  return run.series.length > 0 ? run.series : deriveSeriesFromRows(run.data, xKey);
+}
+
 export const artifactsApi = {
   list: () => api.get<ChatArtifact[]>("/chat/artifacts"),
 
