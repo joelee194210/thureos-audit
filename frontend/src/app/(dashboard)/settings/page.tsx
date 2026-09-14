@@ -258,6 +258,14 @@ export default function SettingsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {/* De dónde salió la lista. Sin esto, un respaldo se lee
+                      igual que un catálogo, que es como se llegó a pedir un
+                      modelo que el proveedor ya había retirado. */}
+                  <p className="text-xs text-ink-muted">
+                    {aiProvider === aiConfig?.provider && aiConfig?.modelsAreLive
+                      ? "Lista leída del proveedor."
+                      : "El proveedor no respondió: se muestran los últimos modelos conocidos."}
+                  </p>
                 </div>
               </div>
 

@@ -412,13 +412,28 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load AI config"})
 		}
+		// El catálogo del proveedor configurado se pregunta en vivo; los
+		// demás conservan su lista compilada. Así el desplegable no puede
+		// quedar ofreciendo un modelo que el proveedor ya retiró, que es
+		// exactamente cómo se rompió el chat en septiembre de 2026.
+		available := map[models.AIProvider][]string{}
+		for p, m := range models.AIProviderModels {
+			available[p] = m
+		}
+		live, isLive := services.ListProviderModels(c.Context(), aiCfg.AI)
+		available[aiCfg.AI.Provider] = live
+
 		return c.JSON(fiber.Map{
 			"provider":        string(aiCfg.AI.Provider),
 			"model":           aiCfg.AI.Model,
 			"apiKeyMasked":    models.MaskAPIKey(aiCfg.AI.APIKey),
 			"apiKeySet":       aiCfg.AI.APIKey != "",
 			"baseUrl":         aiCfg.AI.BaseURL,
-			"availableModels": models.AIProviderModels,
+			"availableModels": available,
+			// Para que la pantalla pueda distinguir "esto es lo que el
+			// proveedor ofrece" de "no contestó, te muestro lo último que
+			// sé". Sin esta señal, un respaldo se lee como catálogo.
+			"modelsAreLive": isLive,
 		})
 	})
 
@@ -438,23 +453,26 @@ func Setup(app *fiber.App, cfg *config.Config, h *Handlers) {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid provider, must be 'anthropic' or 'deepseek'"})
 		}
 
-		// Validate model belongs to provider
-		validModels := models.AIProviderModels[provider]
-		modelValid := false
-		for _, m := range validModels {
-			if m == body.Model {
-				modelValid = true
-				break
-			}
-		}
-		if !modelValid {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid model for provider"})
-		}
-
 		// Get current config to preserve API key if not provided
 		current, err := h.ConfigRepo.Get(c.Context())
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load current config"})
+		}
+
+		// El modelo se valida contra el catálogo del proveedor al que se
+		// está cambiando, con la clave que va a quedar guardada — no con la
+		// configuración vigente, que puede ser de otro proveedor.
+		probeKey := body.APIKey
+		if probeKey == "" {
+			probeKey = current.AI.APIKey
+		}
+		live, _ := services.ListProviderModels(c.Context(), models.AIConfig{
+			Provider: provider,
+			APIKey:   probeKey,
+			BaseURL:  body.BaseURL,
+		})
+		if !services.ModelAllowedForProvider(live, provider, current.AI.Model, body.Model) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid model for provider"})
 		}
 
 		apiKey := body.APIKey

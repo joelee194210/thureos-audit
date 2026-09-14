@@ -7,6 +7,13 @@ export interface AIConfigResponse {
   apiKeySet: boolean;
   baseUrl: string;
   availableModels: Record<string, string[]>;
+  /**
+   * Si `availableModels` del proveedor activo se leyó del proveedor mismo
+   * o es la lista compilada de respaldo. La pantalla lo dice en voz alta:
+   * un respaldo presentado como catálogo fue justo lo que dejó al chat
+   * pidiendo un modelo retirado sin que nadie lo notara.
+   */
+  modelsAreLive?: boolean;
 }
 
 export interface NotificationSettings {
