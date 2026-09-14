@@ -517,6 +517,10 @@ export default function RedFlagsPage() {
 
   useEffect(() => {
     loadRedFlags();
+    // debt: se recarga al cambiar la fecha, que es el disparador buscado.
+    // loadRedFlags se redeclara en cada render, así que listarla convertiría
+    // esto en un bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
   async function loadRedFlags() {

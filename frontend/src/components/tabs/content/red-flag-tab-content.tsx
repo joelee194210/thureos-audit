@@ -83,7 +83,7 @@ export function RedFlagTabContent({
       if (esNoEncontrado(err)) setNoExiste(true);
       else toastError("Error al cargar el caso");
     }
-  }, [id]);
+  }, [id, toastError]);
 
   useEffect(() => {
     // load() es async: todo setState ocurre después de un await, nunca

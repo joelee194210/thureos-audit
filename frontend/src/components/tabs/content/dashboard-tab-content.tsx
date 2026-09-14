@@ -247,6 +247,11 @@ export function DashboardTabContent({
           console.error("Failed to load rules:", err);
         });
     }
+    // debt: se recarga al cambiar de dashboard, que es el disparador buscado.
+    // loadDashboard y loadData se redeclaran en cada render, así que listarlas
+    // convertiría esto en un bucle. toastError sí es estable, pero no se puede
+    // añadir sola sin silenciar también las otras dos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function loadDashboard() {
@@ -372,7 +377,7 @@ export function DashboardTabContent({
         setDrillLoading(false);
       }
     },
-    [id],
+    [id, toastError],
   );
 
   function handleChartClick(

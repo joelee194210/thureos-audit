@@ -33,6 +33,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   }, []);
 
+  // Los useCallback no son decorativos: varios consumidores listan toastError
+  // en las dependencias de sus efectos, y eso solo es correcto mientras su
+  // identidad sea estable. addToast depende de [] y estas de [addToast], así
+  // que ninguna cambia nunca. Si alguien las convierte en funciones sueltas,
+  // esos efectos pasan a reejecutarse en cada render.
   const toastError = useCallback((message: string) => addToast(message, "error"), [addToast]);
   const toastSuccess = useCallback((message: string) => addToast(message, "success"), [addToast]);
 

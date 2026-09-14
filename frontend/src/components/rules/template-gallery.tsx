@@ -53,7 +53,7 @@ export function TemplateGallery({
       .then(setTemplates)
       .catch(() => toastError("Error al cargar tipologías"));
     return () => setSelected(null);
-  }, [open]);
+  }, [open, toastError]);
 
   const monitor = monitors.find((m) => m.id === monitorId);
 

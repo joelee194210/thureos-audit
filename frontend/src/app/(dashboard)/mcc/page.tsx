@@ -54,7 +54,12 @@ export default function MCCPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadMccs(); }, []);
+  useEffect(() => {
+    loadMccs();
+    // debt: carga de montaje. loadMccs se redeclara en cada render; listarla
+    // en las dependencias reejecutaría el efecto en bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openEdit(m: MCC) {
     setEditForm({ riskLevel: m.riskLevel, networks: [...m.networks], description: m.description });

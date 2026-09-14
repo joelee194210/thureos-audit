@@ -159,7 +159,7 @@ export default function UploadsPage() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [toastError]);
 
   // Unique source types for filter dropdown
   const sourceTypes = useMemo(() => {

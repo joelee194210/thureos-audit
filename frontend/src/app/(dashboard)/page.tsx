@@ -48,7 +48,7 @@ export default function HomePage() {
       setRecentRedFlags(redFlags);
       setRecentMonitors(monitors.slice(0, 5));
     }).catch(() => toastError("Error al cargar datos del dashboard"));
-  }, []);
+  }, [toastError]);
 
   const statCards = [
     { title: "Monitores", value: stats.monitors, icon: Monitor, color: "text-accent-fg" },

@@ -90,6 +90,10 @@ export default function ActivityLogsPage() {
     // TanStack Query.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadLogs();
+    // debt: carga de montaje. loadLogs se redeclara en cada render, así que
+    // listarla en las dependencias reejecutaría el efecto en bucle. Se cierra
+    // solo -> al migrar la bitácora a TanStack Query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const uniqueUsers = useMemo(() => {

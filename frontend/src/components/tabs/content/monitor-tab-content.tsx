@@ -161,6 +161,10 @@ export function MonitorTabContent({
       loadData();
       loadRules();
     }
+    // debt: se recarga al cambiar de monitor, que es el disparador buscado.
+    // Las tres se redeclaran en cada render, así que listarlas en las
+    // dependencias convertiría esto en un bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
@@ -332,6 +336,10 @@ export function MonitorTabContent({
         setChecking(false);
       }
     },
+    // debt: doUpload es una función declarada en el cuerpo, nueva en cada
+    // render; listarla aquí reharía este useCallback siempre y anularía su
+    // propósito. Cierra sobre el mismo id, que sí está en las dependencias.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [id],
   );
 

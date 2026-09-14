@@ -55,7 +55,7 @@ export function NotificationsCard() {
         );
       })
       .catch(() => toastError("Error al cargar notificaciones"));
-  }, []);
+  }, [toastError]);
 
   async function save() {
     setSaving(true);

@@ -541,6 +541,9 @@ function RulesContent() {
   useEffect(() => {
     loadRules();
     loadMonitors();
+    // debt: carga de montaje. Las dos se redeclaran en cada render; listarlas
+    // en las dependencias reejecutaría el efecto en bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function runBacktest(

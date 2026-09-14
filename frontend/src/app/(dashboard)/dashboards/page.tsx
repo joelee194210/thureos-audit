@@ -25,6 +25,10 @@ export default function DashboardsPage() {
   useEffect(() => {
     loadDashboards();
     monitorsApi.list().then(setMonitors).catch(() => toastError("Error al cargar monitores"));
+    // debt: carga de montaje. loadDashboards se redeclara en cada render;
+    // listarla reejecutaría el efecto en bucle. toastError sí es estable, pero
+    // no se puede añadir sola sin silenciar también la otra.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadDashboards() {

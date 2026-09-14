@@ -76,6 +76,13 @@ class ApiClient {
     if (response.status === 401) {
       this.clearToken();
       if (typeof window !== "undefined") {
+        // Navegación dura a propósito: esto es la ruta de sesión expirada (401)
+        // dentro de una clase, no de un componente. `redirect()` es solo de
+        // servidor y `useRouter()` necesita un componente, así que ninguna de
+        // las dos alternativas que sugiere la regla aplica aquí. Además el
+        // recargado completo es lo que se busca: vacía el estado de cliente
+        // (los stores de Zustand) en vez de dejar datos del usuario anterior.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = "/login";
       }
       throw new Error("Unauthorized");
@@ -147,6 +154,8 @@ class ApiClient {
     if (response.status === 404) return null;
     if (response.status === 401) {
       this.clearToken();
+      // Misma ruta de sesión expirada que en request(); ver la nota de arriba.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       if (typeof window !== "undefined") window.location.href = "/login";
       throw new Error("Unauthorized");
     }

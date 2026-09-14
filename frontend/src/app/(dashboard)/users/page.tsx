@@ -61,6 +61,9 @@ export default function UsersPage() {
 
   useEffect(() => {
     loadUsers();
+    // debt: carga de montaje. loadUsers se redeclara en cada render; listarla
+    // en las dependencias reejecutaría el efecto en bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadUsers() {

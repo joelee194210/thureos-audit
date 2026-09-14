@@ -98,6 +98,9 @@ export default function MonitorsPage() {
 
   useEffect(() => {
     loadMonitors();
+    // debt: carga de montaje. loadMonitors se redeclara en cada render;
+    // listarla en las dependencias reejecutaría el efecto en bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadMonitors() {
