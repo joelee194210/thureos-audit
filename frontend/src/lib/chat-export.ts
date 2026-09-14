@@ -36,40 +36,65 @@ function resolveChartColors(root: SVGElement) {
   root.querySelectorAll<SVGElement>("[fill], [stroke]").forEach(resolveElement);
 }
 
+/**
+ * Serializa el primer <svg> dentro de containerId a un data URI PNG @2x.
+ * Punto único de esta serialización: el PDF y el documento HTML del
+ * informe de artefactos la reusan para embeber la imagen sin duplicar la
+ * resolución de colores ni el paso por canvas (ver artifact-report.ts).
+ */
+export function chartToPNGDataURL(containerId: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const container = document.getElementById(containerId);
+    const svg = container?.querySelector("svg");
+    if (!svg) {
+      resolve(null);
+      return;
+    }
+
+    const { width, height } = svg.getBoundingClientRect();
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    resolveChartColors(clone);
+
+    const svgData = new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width * 2; // @2x para exportar nítido
+      canvas.height = height * 2;
+      const ctx = canvas.getContext("2d");
+      URL.revokeObjectURL(svgUrl);
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      ctx.scale(2, 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      resolve(null);
+    };
+    img.src = svgUrl;
+  });
+}
+
 /** Serializa el primer <svg> dentro de containerId y lo baja como PNG. */
-export function exportChartAsPNG(containerId: string, filename: string) {
-  const container = document.getElementById(containerId);
-  const svg = container?.querySelector("svg");
-  if (!svg) return;
-
-  const { width, height } = svg.getBoundingClientRect();
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("width", String(width));
-  clone.setAttribute("height", String(height));
-  resolveChartColors(clone);
-
-  const svgData = new XMLSerializer().serializeToString(clone);
-  const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-  const svgUrl = URL.createObjectURL(svgBlob);
-
-  const img = new Image();
-  img.onload = () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = width * 2; // @2x para exportar nítido
-    canvas.height = height * 2;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.scale(2, 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(img, 0, 0, width, height);
-    URL.revokeObjectURL(svgUrl);
-
-    canvas.toBlob((blob) => {
-      if (blob) downloadBlob(blob, filename);
-    }, "image/png");
-  };
-  img.src = svgUrl;
+export async function exportChartAsPNG(
+  containerId: string,
+  filename: string,
+): Promise<void> {
+  const dataUrl = await chartToPNGDataURL(containerId);
+  if (!dataUrl) return;
+  const blob = await (await fetch(dataUrl)).blob();
+  downloadBlob(blob, filename);
 }
 
 /** Arma un CSV simple (con comillas escapadas) y lo baja. */

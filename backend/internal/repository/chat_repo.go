@@ -17,12 +17,14 @@ import (
 type ChatRepository struct {
 	conversations *mongo.Collection
 	messages      *mongo.Collection
+	artifacts     *ChatArtifactRepository
 }
 
-func NewChatRepository(db *database.MongoDB) *ChatRepository {
+func NewChatRepository(db *database.MongoDB, artifacts *ChatArtifactRepository) *ChatRepository {
 	r := &ChatRepository{
 		conversations: db.Collection("chat_conversations"),
 		messages:      db.Collection("chat_messages"),
+		artifacts:     artifacts,
 	}
 	r.ensureIndexes()
 	return r
@@ -200,12 +202,28 @@ func (r *ChatRepository) SetTitle(ctx context.Context, id primitive.ObjectID, ti
 }
 
 func (r *ChatRepository) CreateMessage(ctx context.Context, msg *models.ChatMessage) error {
+	// Artifact es un campo de salida (bson:"-"): nunca se persiste. Un
+	// llamador que lo llene sin pasar por ArtifactID guardaría el mensaje
+	// creyendo que el artefacto quedó, y lo perdería en silencio al
+	// releer el hilo — justo el defecto que este guard existe para atajar.
+	if msg.Artifact != nil && msg.ArtifactID == nil {
+		return fmt.Errorf("creando mensaje: Artifact es un campo de salida; persistí el artefacto y usá ArtifactID")
+	}
 	msg.CreatedAt = time.Now()
 	res, err := r.messages.InsertOne(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("creando mensaje: %w", err)
 	}
 	msg.ID = res.InsertedID.(primitive.ObjectID)
+	return nil
+}
+
+// SetMessageArtifact enlaza un mensaje ya persistido con su artefacto.
+func (r *ChatRepository) SetMessageArtifact(ctx context.Context, messageID, artifactID primitive.ObjectID) error {
+	_, err := r.messages.UpdateByID(ctx, messageID, bson.M{"$set": bson.M{"artifact_id": artifactID}})
+	if err != nil {
+		return fmt.Errorf("enlazando artefacto al mensaje %s: %w", messageID.Hex(), err)
+	}
 	return nil
 }
 
@@ -223,6 +241,24 @@ func (r *ChatRepository) ListMessagesByConversation(ctx context.Context, convers
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, fmt.Errorf("decodificando mensajes: %w", err)
 	}
+
+	// Resolver el artefacto de cada mensaje: los nuevos apuntan por
+	// artifact_id, los viejos lo llevan embebido. El frontend recibe
+	// siempre la misma forma y no tiene que distinguir.
+	for i := range results {
+		switch {
+		case results[i].ArtifactID != nil:
+			art, err := r.artifacts.GetByID(ctx, *results[i].ArtifactID)
+			if err == nil {
+				results[i].Artifact = art
+			}
+			// Un artefacto borrado deja el mensaje sin artefacto, no rompe
+			// la carga del hilo.
+		case results[i].LegacyArtifact != nil:
+			results[i].Artifact = models.FromLegacyArtifact(results[i].LegacyArtifact)
+		}
+		results[i].LegacyArtifact = nil
+	}
 	return results, nil
 }
 
@@ -230,6 +266,9 @@ func (r *ChatRepository) ListMessagesByConversation(ctx context.Context, convers
 // llamador es responsable de verificar ownership antes de invocar esto
 // (mismo criterio que el resto del repositorio — ver chat_handler.go).
 func (r *ChatRepository) DeleteConversation(ctx context.Context, id primitive.ObjectID) error {
+	if err := r.artifacts.DeleteUnsavedByConversation(ctx, id); err != nil {
+		return err
+	}
 	if _, err := r.messages.DeleteMany(ctx, bson.M{"conversation_id": id}); err != nil {
 		return fmt.Errorf("borrando mensajes de la conversación %s: %w", id.Hex(), err)
 	}

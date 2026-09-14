@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { classifyValue, formatValue, unionColumns } from "./format-value";
+import {
+  classifyValue,
+  formatValue,
+  resolveColumns,
+  unionColumns,
+} from "./format-value";
 
 describe("formatValue", () => {
   it("formatea números con separador de miles es-CO", () => {
@@ -76,5 +81,40 @@ describe("unionColumns", () => {
   it("no repite una columna que ya apareció", () => {
     const rows = [{ a: 1 }, { a: 2 }, { a: 3 }];
     expect(unionColumns(rows)).toEqual(["a"]);
+  });
+});
+
+// HALLAZGO 6 (revisión de rama): el orden declarado se respetaba en el
+// XLSX, el HTML y el PDF, pero no en la tabla de la propia app, que usaba
+// `unionColumns` a secas — o sea el orden del cable, que para el
+// map[string]interface{} del backend es el alfabético de Go. El usuario
+// veía una tabla y descargaba otra.
+describe("resolveColumns", () => {
+  it("respeta el orden declarado, no el de las claves de las filas", () => {
+    const rows = [{ beneficiario: "ACME", fecha: "2026-01-01", monto: 10 }];
+    expect(resolveColumns(["fecha", "monto", "beneficiario"], rows)).toEqual([
+      "fecha",
+      "monto",
+      "beneficiario",
+    ]);
+  });
+
+  it("sin columnas declaradas cae a la unión de claves", () => {
+    const rows = [{ z: 1 }, { a: 2 }];
+    expect(resolveColumns(undefined, rows)).toEqual(["z", "a"]);
+  });
+
+  it("una lista declarada vacía es lo mismo que no declarar", () => {
+    const rows = [{ z: 1, a: 2 }];
+    expect(resolveColumns([], rows)).toEqual(["z", "a"]);
+  });
+
+  it("lo declarado manda aunque la fila no traiga esa columna", () => {
+    // Misma decisión que ya tomaban el HTML y el PDF: la columna sale, con
+    // su celda vacía. Es la proyección la que define la forma de la tabla.
+    expect(resolveColumns(["fecha", "monto"], [{ fecha: "2026-01-01" }])).toEqual([
+      "fecha",
+      "monto",
+    ]);
   });
 });
