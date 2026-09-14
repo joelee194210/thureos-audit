@@ -647,11 +647,10 @@ func (s *ChatService) askDeepSeek(ctx context.Context, ai models.AIConfig, alias
 	model := ai.Model
 	if model == "" {
 		// deepseek-chat y deepseek-reasoner fueron retirados de la API. El
-		// catálogo vivo (GET /models) son deepseek-v4-pro y deepseek-flash.
-		// Pro es el default y no Flash —que es el que pidió el usuario—
-		// porque este camino depende de tool_calls y Flash estaba
-		// devolviendo la cola llena; ver la nota en AIProviderModels.
-		model = "deepseek-v4-pro"
+		// catálogo vivo (GET /models) son deepseek-flash y deepseek-v4-pro.
+		// Ver la nota en AIProviderModels sobre cuál elegir si este camino
+		// —que depende de tool_calls— empieza a colgarse.
+		model = "deepseek-flash"
 	}
 
 	tool := chatDeepSeekTool{

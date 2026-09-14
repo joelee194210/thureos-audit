@@ -24,18 +24,22 @@ const (
 // Configuración, así que el frontend no repite la lista.
 //
 // El orden importa: el primero es el que el frontend autoselecciona al
-// cambiar de proveedor. Va Pro primero a propósito. deepseek-flash
-// (DeepSeek-V4.1-Flash) aceptaba la conexión y se quedaba colgado sin
-// responder —cinco de cinco intentos— mientras Pro respondía cinco de
-// cinco; es la cola saturada que el propio proveedor reporta como
-// "Service is too busy". Cuando Flash se descongestione, elegirlo es un
-// clic en Configuración, sin tocar código.
+// cambiar de proveedor. Va deepseek-flash (DeepSeek-V4.1-Flash) primero
+// por decisión explícita del responsable del producto.
+//
+// Conviene saber lo que se eligió: el 2026-09-14, Flash aceptaba la
+// conexión y se quedaba colgado sin enviar cuerpo —cinco de cinco
+// intentos, medido dos veces con una hora de diferencia— mientras
+// deepseek-v4-pro respondía cinco de cinco. Es la cola saturada que el
+// proveedor reporta como "Service is too busy". Si el chat vuelve a dar
+// ese error, esta es la causa y no hace falta buscar más: cambiar a
+// deepseek-v4-pro en Configuración lo devuelve a la vida sin desplegar.
 //
 // Las entradas de Anthropic de abajo no se revisaron en esa pasada y
 // probablemente arrastran el mismo desfase.
 var AIProviderModels = map[AIProvider][]string{
 	AIProviderAnthropic: {"claude-sonnet-4-20250514", "claude-3-5-sonnet-latest"},
-	AIProviderDeepSeek:  {"deepseek-v4-pro", "deepseek-flash"},
+	AIProviderDeepSeek:  {"deepseek-flash", "deepseek-v4-pro"},
 }
 
 // DefaultAIBaseURLs defines the default API base URL per provider.

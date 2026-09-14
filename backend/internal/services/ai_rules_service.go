@@ -270,7 +270,7 @@ func callDeepSeek(ctx context.Context, ai models.AIConfig, userMessage string) (
 	model := ai.Model
 	if model == "" {
 		// Mismo criterio que en chat_service: deepseek-chat ya no existe.
-		model = "deepseek-v4-pro"
+		model = "deepseek-flash"
 	}
 
 	reqBody := deepSeekRequest{
