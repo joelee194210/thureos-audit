@@ -15,9 +15,27 @@ const (
 )
 
 // AIProviderModels maps each provider to its available models.
+//
+// Los ids de DeepSeek se verificaron el 2026-09-14 contra GET /models de la
+// API viva: el catálogo son deepseek-v4-pro y deepseek-flash. Los anteriores
+// —deepseek-chat y deepseek-reasoner— ya NO existen, y una config guardada
+// que todavía los nombre deja de funcionar. Este mapa es la única fuente de
+// verdad: lo valida el router al guardar y lo consume el desplegable de
+// Configuración, así que el frontend no repite la lista.
+//
+// El orden importa: el primero es el que el frontend autoselecciona al
+// cambiar de proveedor. Va Pro primero a propósito. deepseek-flash
+// (DeepSeek-V4.1-Flash) aceptaba la conexión y se quedaba colgado sin
+// responder —cinco de cinco intentos— mientras Pro respondía cinco de
+// cinco; es la cola saturada que el propio proveedor reporta como
+// "Service is too busy". Cuando Flash se descongestione, elegirlo es un
+// clic en Configuración, sin tocar código.
+//
+// Las entradas de Anthropic de abajo no se revisaron en esa pasada y
+// probablemente arrastran el mismo desfase.
 var AIProviderModels = map[AIProvider][]string{
 	AIProviderAnthropic: {"claude-sonnet-4-20250514", "claude-3-5-sonnet-latest"},
-	AIProviderDeepSeek:  {"deepseek-chat", "deepseek-reasoner"},
+	AIProviderDeepSeek:  {"deepseek-v4-pro", "deepseek-flash"},
 }
 
 // DefaultAIBaseURLs defines the default API base URL per provider.

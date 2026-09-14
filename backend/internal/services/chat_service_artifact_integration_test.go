@@ -155,7 +155,7 @@ func TestIntegracionAsk_ArtifactoSePersisteYSeEnlazaAlMensaje(t *testing.T) {
 	defer server.Close()
 
 	if err := configRepo.Upsert(ctx, &models.SystemConfig{
-		AI: models.AIConfig{Provider: models.AIProviderDeepSeek, APIKey: "test-key", BaseURL: server.URL, Model: "deepseek-chat"},
+		AI: models.AIConfig{Provider: models.AIProviderDeepSeek, APIKey: "test-key", BaseURL: server.URL, Model: "deepseek-v4-pro"},
 	}); err != nil {
 		t.Fatalf("guardando config de IA: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestIntegracionAsk_FalloAlPersistirArtefactoNoPierdeLaRespuesta(t *testing.
 	defer server.Close()
 
 	if err := configRepo.Upsert(ctx, &models.SystemConfig{
-		AI: models.AIConfig{Provider: models.AIProviderDeepSeek, APIKey: "test-key", BaseURL: server.URL, Model: "deepseek-chat"},
+		AI: models.AIConfig{Provider: models.AIProviderDeepSeek, APIKey: "test-key", BaseURL: server.URL, Model: "deepseek-v4-pro"},
 	}); err != nil {
 		t.Fatalf("guardando config de IA: %v", err)
 	}
