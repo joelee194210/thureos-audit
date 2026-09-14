@@ -15,6 +15,10 @@ integración de marca. Los hallazgos marcados **[resuelto]** se corrigieron en l
 | `npm run lint` | ❌ ESLint sin configurar | ❌ sin cambios (fuera de alcance) |
 | Tests | ❌ cero | ❌ cero (fuera de alcance) |
 
+> Esta tabla es la foto del 2026-08-20 y se deja como quedó. **Al 2026-09-14 las tres
+> filas en rojo están cerradas:** `gofmt -l .` sin salida, `npm run lint` en 0 problemas
+> y 342 casos de prueba en Go más 127 en el frontend. El detalle, en F4, F5 y F6.
+
 ## 2. Hallazgos
 
 ### F1 · Puertos desalineados entre compose y configuración — **[resuelto]**
@@ -126,16 +130,31 @@ contador y `locked_until` antes de evaluar la contraseña. Verificado contra Mon
 real —un usuario con 5 intentos y bloqueo vencido queda en 1 intento y sin bloqueo
 tras un fallo, donde antes quedaba en 6 y bloqueado de nuevo—.
 
-### F4 · 16 archivos Go sin formatear — *pendiente*
-`gofmt -l backend/` los lista. No afecta a la ejecución.
+### F4 · 16 archivos Go sin formatear — **[resuelto]**
+`gofmt -l backend/` los listaba. No afectaba a la ejecución.
 
-### F5 · ESLint sin configurar — *pendiente*
-`package.json` declara `"lint": "next lint"` pero no existe `eslint.config.*`. El script
-abre un asistente interactivo: inutilizable en CI.
+**Verificado el 2026-09-14:** `gofmt -l .` sobre `backend/` no devuelve nada.
+Se fue cerrando por goteo en el trabajo posterior, no en una pasada dedicada.
 
-### F6 · Sin cobertura de pruebas — *pendiente, con la primera mella*
+### F5 · ESLint sin configurar — **[resuelto]**
+`package.json` declaraba `"lint": "next lint"` sin que existiera `eslint.config.*`. El
+script abría un asistente interactivo: inutilizable en CI.
+
+**Verificado el 2026-09-14:** existe `frontend/eslint.config.mjs` y el script es
+`"lint": "eslint ."`, no interactivo. La salida está en **0 problemas**: los 18
+warnings que quedaban se cerraron en `9630737`, seis como arreglo real y diez como
+supresión documentada con su motivo.
+
+### F6 · Sin cobertura de pruebas — **[resuelto]**
 Vitest y `@testing-library/react` instalados, cero archivos de test en el frontend.
-`rule_engine.go` (718 líneas) es el núcleo del producto y sigue sin una sola prueba.
+`rule_engine.go` (718 líneas) es el núcleo del producto y no tenía una sola prueba.
+
+**Verificado el 2026-09-14:** 41 archivos `_test.go` con 342 casos repartidos en los
+seis paquetes del backend, y 14 archivos de test en el frontend con 127 casos. El hueco
+que este hallazgo señalaba por su nombre está cubierto: existe
+`internal/services/rule_engine_test.go`. El patrón que proponía el párrafo siguiente
+—interfaces declaradas en el consumidor para correr sin Mongo ni Redis— es el que se
+acabó siguiendo.
 
 El backend ya no está a cero: F3 y B1 trajeron los **primeros tests en Go del
 repositorio**, cuatro casos que corren con `go test ./...` sin Mongo, sin Redis y sin
@@ -219,7 +238,7 @@ Ejecutada sobre `feat/linea-grafica-thureos` antes de decidir la integración.
 | `npx next build` | ✅ 16 rutas |
 | Colores literales en `frontend/src` | ✅ sin salida |
 | Nombre de producto anterior en todo el repo | ✅ sin salida |
-| `gofmt -l backend/` | ❌ 10 archivos (F4, sigue pendiente) |
+| `gofmt -l backend/` | ✅ sin salida (F4 cerrado; ver la nota de 2026-09-14) |
 | Clon limpio: `go build ./cmd/server` | ✅ tras corregir F11 |
 | Clon limpio: `npm ci && npx next build` | ✅ 16 rutas |
 

@@ -136,8 +136,11 @@ Dashboards are composed of configurable widgets tied to specific monitors and ru
 - All errors wrapped with context: `fmt.Errorf("operation: %w", err)`
 - Configuration via environment variables loaded in `internal/config/`
 
-> Estado del proyecto y hallazgos abiertos (sin tests, ESLint sin configurar, `gofmt`
-> pendiente, sin rate limiting): `docs/superpowers/auditoria-2026-08-20.md`.
+> Auditoría del proyecto: `docs/superpowers/auditoria-2026-08-20.md`. Los cuatro
+> hallazgos que esta nota listaba como abiertos —sin tests, ESLint sin configurar,
+> `gofmt` pendiente, sin rate limiting— **están cerrados y verificados el 2026-09-14**.
+> Queda como advertencia F9: desplegar sobre una instalación anterior al renombrado
+> `datawatch` → `thureos_compliance` la apunta en silencio a una base vacía.
 
 ## Sistema de marca Thureos
 
