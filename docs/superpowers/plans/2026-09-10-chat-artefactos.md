@@ -2253,6 +2253,41 @@ Expected: todo verde.
 
 ---
 
+### Estado de la verificación — 2026-09-14
+
+Siete de los nueve pasos no necesitaban la pila levantada: ya estaban cubiertos por
+pruebas automáticas que se escribieron durante la implementación. Se deja constancia de
+cuál cubre cuál, para que nadie los vuelva a caminar a mano.
+
+| Paso | Cubierto por |
+|---|---|
+| 2 · Artefactos viejos | `TestRunArtifact_SinSourcesNoEjecuta`, `TestSnapshotData_CaeAlDataInlineDeLaInstantanea`, `TestSnapshotData_PrefiereLaCacheSobreElDataInline` |
+| 5 · Multi-fuente | `TestShape_ChartMultiFuenteDevuelveLosLabelsComoSeries`, `TestShape_TablaMultiFuenteConcatena` |
+| 6 · Exportaciones | `TestBuildArtifactXLSX_LosNumerosSonNumeros` (los montos no entran como texto), `TestBuildArtifactXLSX_UsaLosRotulosComoCabecera`, `TestBuildArtifactXLSX_ObjectIDSaleComoHexLimpio` |
+| 7 · Exportar no muta | inspección de código, abajo |
+| 8 · Autorización | `TestRunArtifact_DeOtroUsuarioEsNotFound` |
+| 9 · Suite completa | eslint 0 problemas, tsc limpio, 127/127 en el frontend, 342 casos en Go, `golangci-lint` 0 issues, `gofmt` limpio, build verde |
+
+**Paso 7, por qué basta leer el código.** En todo el backend hay **un solo escritor** de
+`cached_data`/`ran_at`: `SetCache`, en `chat_artifact_repo.go`. Y `SetCache` tiene **un
+solo llamador**: `artifact_handler.go:165`, dentro de `Run`. `ExportXLSX` llega a
+`BuildArtifactXLSX` y `c.Send` sin escribir en ninguna de sus tres ramas. La invariante
+es estructural, no de comportamiento, y el propio handler ya la documenta en su
+línea 135. No se le añadió una prueba: verificar por reflexión una llamada que se puede
+ver que no existe no agrega garantía, y el seam para espiarla obligaría a reconectar el
+handler entero.
+
+**Pasos 3 y 4: pendientes, y hay que correrlos con la pila arriba.** No es una omisión
+sino la naturaleza del paso 4, que es el chequeo crítico que este plan se puso a sí
+mismo: subir datos nuevos a un monitor y confirmar que los números del artefacto
+guardado **cambian**. Si no cambian, está sirviendo la caché y hay un bug en el contrato
+de `sources`. Ninguna prueba unitaria lo sustituye —haría falta ingerir un archivo real
+en un monitor vivo y reabrir el artefacto—, y fabricar una que lo simule sería fingir
+que se verificó. El paso 3 (guardar con nombre, reabrir desde la biblioteca y ver la
+fecha de corrida) es su antesala por la interfaz.
+
+---
+
 ## Auto-repaso del plan
 
 **Cobertura del spec:**
