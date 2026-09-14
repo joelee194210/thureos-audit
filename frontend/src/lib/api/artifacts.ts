@@ -104,7 +104,7 @@ export function resolveRunSeries(
 }
 
 export const artifactsApi = {
-  list: () => api.get<ChatArtifact[]>("/chat/artifacts"),
+  list: () => api.getList<ChatArtifact>("/chat/artifacts"),
 
   save: (id: string, name: string) =>
     api.post<ChatArtifact>(`/chat/artifacts/${id}/save`, { name }),

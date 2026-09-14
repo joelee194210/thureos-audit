@@ -95,6 +95,22 @@ class ApiClient {
     return this.request<T>(path);
   }
 
+  /**
+   * GET de un endpoint que devuelve una lista. Un slice nil en Go se
+   * serializa como el JSON `null`, no como `[]`: el tipo `T[]` del método
+   * `get` mentía, y quien hacía `.map()` sobre la respuesta reventaba con
+   * "Cannot read properties of null". Pasó en producción al abrir un caso
+   * recién creado, que por definición no tiene notas.
+   *
+   * El backend inicializa sus slices, pero eso es una convención que hay
+   * que recordar en cada endpoint nuevo. Esto lo vuelve cierto siempre, de
+   * un solo lado, para todos los consumidores.
+   */
+  async getList<T>(path: string): Promise<T[]> {
+    const data = await this.request<T[] | null>(path);
+    return Array.isArray(data) ? data : [];
+  }
+
   post<T>(path: string, data?: unknown): Promise<T> {
     return this.request<T>(path, {
       method: "POST",

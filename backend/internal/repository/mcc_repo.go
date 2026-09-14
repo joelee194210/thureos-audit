@@ -62,7 +62,7 @@ func (r *MCCRepository) FindAll(ctx context.Context) ([]models.MCC, error) {
 	if err != nil {
 		return nil, err
 	}
-	var results []models.MCC
+	results := []models.MCC{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (r *MCCRepository) Search(ctx context.Context, query string) ([]models.MCC,
 	if err != nil {
 		return nil, err
 	}
-	var results []models.MCC
+	results := []models.MCC{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (r *MCCRepository) FindByCategory(ctx context.Context, category string) ([]
 	if err != nil {
 		return nil, err
 	}
-	var results []models.MCC
+	results := []models.MCC{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (r *MCCRepository) FindByRiskLevel(ctx context.Context, level string) ([]mo
 	if err != nil {
 		return nil, err
 	}
-	var results []models.MCC
+	results := []models.MCC{}
 	if err := cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}

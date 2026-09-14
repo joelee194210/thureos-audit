@@ -66,7 +66,7 @@ export const chatApi = {
 
   /** monitorId es un filtro opcional: sin él trae todas las del usuario. */
   listConversations: (monitorId?: string) =>
-    api.get<ChatConversation[]>(
+    api.getList<ChatConversation>(
       monitorId
         ? `/chat/conversations?monitorId=${monitorId}`
         : "/chat/conversations",
@@ -79,7 +79,7 @@ export const chatApi = {
     ),
 
   listMessages: (conversationId: string) =>
-    api.get<ChatMessage[]>(`/chat/conversations/${conversationId}/messages`),
+    api.getList<ChatMessage>(`/chat/conversations/${conversationId}/messages`),
 
   ask: (conversationId: string, content: string) =>
     api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, {

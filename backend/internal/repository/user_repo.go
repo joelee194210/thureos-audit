@@ -73,7 +73,7 @@ func (r *UserRepository) FindAll(ctx context.Context) ([]models.User, error) {
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var users []models.User
+	users := []models.User{}
 	if err := cursor.All(ctx, &users); err != nil {
 		return nil, err
 	}

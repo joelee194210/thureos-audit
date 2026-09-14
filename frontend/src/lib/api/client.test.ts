@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { ApiError, esNoEncontrado } from "./client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api, ApiError, esNoEncontrado } from "./client";
 
 // Antes el cliente lanzaba un Error pelado con el mensaje, así que nadie
 // podía distinguir "esto no existe" de "el servidor falló". Una pestaña
@@ -38,5 +38,43 @@ describe("esNoEncontrado", () => {
     expect(esNoEncontrado(new TypeError("Failed to fetch"))).toBe(false);
     expect(esNoEncontrado(new Error("cualquier cosa"))).toBe(false);
     expect(esNoEncontrado(undefined)).toBe(false);
+  });
+});
+
+// Un slice nil en Go se serializa como el JSON `null`, no como `[]`. El tipo
+// `T[]` de `get` mentía, y el `.map()` del consumidor reventaba: abrir un
+// caso recién creado —que por definición no tiene notas— tiraba abajo la
+// página de detalle en producción.
+describe("api.getList", () => {
+  function responderCon(body: unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("convierte el null del backend en una lista vacía", async () => {
+    responderCon(null);
+    await expect(
+      api.getList<{ id: string }>("/red-flags/x/notes"),
+    ).resolves.toEqual([]);
+  });
+
+  it("devuelve la lista intacta cuando el backend manda elementos", async () => {
+    responderCon([{ id: "a" }, { id: "b" }]);
+    await expect(
+      api.getList<{ id: string }>("/red-flags/x/notes"),
+    ).resolves.toEqual([{ id: "a" }, { id: "b" }]);
+  });
+
+  // Un objeto donde se esperaba una lista es una respuesta rota, no cero
+  // elementos: devolver [] es preferible a dejar pasar algo sin .map().
+  it("no deja pasar una respuesta que no es una lista", async () => {
+    responderCon({ error: "algo raro" });
+    await expect(api.getList<{ id: string }>("/mccs")).resolves.toEqual([]);
   });
 });

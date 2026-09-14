@@ -9,7 +9,7 @@ export const usersApi = {
     role: Role;
   }) => api.post<User>("/users", data),
 
-  list: () => api.get<User[]>("/users"),
+  list: () => api.getList<User>("/users"),
 
   get: (id: string) => api.get<User>(`/users/${id}`),
 

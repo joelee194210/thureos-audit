@@ -60,7 +60,7 @@ func (r *DashboardRepository) FindAccessible(ctx context.Context, userID primiti
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 
-	var dashboards []models.Dashboard
+	dashboards := []models.Dashboard{}
 	if err := cursor.All(ctx, &dashboards); err != nil {
 		return nil, err
 	}
